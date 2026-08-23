@@ -138,3 +138,19 @@
 | `GET /api/v1/model/status` | 通过，返回 `not_ready`、四分类和阈值 `0.60` |
 | Web 看板 AI 状态 | 通过，显示 `MODEL PENDING`，不虚构预测结果 |
 | 截图留档 | `C:\Users\DELL\Desktop\测试实习\smartagri-dashboard-day06-ai.png` |
+
+## 2026-08-23 - Day 7 APP 基础与可视化
+
+- 在现有 Web 看板上增加 `overview`、`trends`、`devices` 三个页面路由，作为 ArkTS 页面映射基线。
+- 增加移动端响应式导航和设备注册页，展示 API、MQTT、AI 三条连接状态。
+- 趋势页增加土壤湿度、空气温度/光照 Canvas 曲线，缓存最近 18 个样本并按 5 秒刷新。
+- 新增 `docs/day07-harmony-app.md`，记录 ArkTS 页面结构、`@State`/`@Prop` 状态模型和网络层约定。
+
+### Day 7 验证记录
+
+| 检查项 | 结果 |
+| --- | --- |
+| 概览/趋势/设备路由 | 已实现 |
+| 移动端布局 | 已实现，待 HarmonyOS 真机验收 |
+| 实时数据和趋势缓存 | 已实现，使用虚拟机 API 验收 |
+| DevEco Studio APK | 待具备 HarmonyOS SDK 的开发机生成 |

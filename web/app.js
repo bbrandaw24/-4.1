@@ -1,7 +1,7 @@
 const params = new URLSearchParams(window.location.search);
 const API = params.get("api") || "http://192.168.128.129:8000";
 const AI_API = params.get("ai") || "http://192.168.128.129:8001";
-const state = { device: null, moisture: [] };
+const state = { device: null, moisture: [], samples: [], aiReady: false };
 document.querySelector("#api-url").textContent = API;
 
 const $ = (selector) => document.querySelector(selector);
@@ -35,6 +35,68 @@ function drawTrend() {
   context.stroke();
 }
 
+function drawSeriesChart(canvasId, series, colors) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const context = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  context.clearRect(0, 0, width, height);
+  const values = series.flatMap((item) => item.values.filter(Number.isFinite));
+  if (values.length < 2) return;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = Math.max(max - min, 1);
+  context.strokeStyle = "#e4ebe5";
+  context.lineWidth = 1;
+  for (let line = 1; line < 4; line += 1) {
+    const y = (line / 4) * height;
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+    context.stroke();
+  }
+  series.forEach((item, index) => {
+    if (item.values.length < 2) return;
+    context.strokeStyle = colors[index];
+    context.lineWidth = 3;
+    context.lineJoin = "round";
+    context.beginPath();
+    item.values.forEach((value, point) => {
+      const x = (point / (item.values.length - 1)) * width;
+      const y = height - ((value - min) / span) * (height - 18) - 9;
+      point ? context.lineTo(x, y) : context.moveTo(x, y);
+    });
+    context.stroke();
+  });
+}
+
+function renderTrendPanels() {
+  drawSeriesChart("#moisture-chart", [{ values: state.samples.map((sample) => sample.moisture) }], ["#226b46"]);
+  drawSeriesChart("#climate-chart", [
+    { values: state.samples.map((sample) => sample.temperature) },
+    { values: state.samples.map((sample) => sample.light / 1000) },
+  ], ["#236a80", "#a26716"]);
+  const latest = state.samples[state.samples.length - 1];
+  $("#sample-count").textContent = state.samples.length;
+  $("#trend-moisture-value").textContent = latest ? fmt(latest.moisture, 1, " %") : "--";
+  $("#trend-temperature-value").textContent = latest ? fmt(latest.temperature, 1, " °C") : "--";
+}
+
+function setRoute(route) {
+  const nextRoute = ["overview", "trends", "devices"].includes(route) ? route : "overview";
+  document.querySelectorAll("[data-view]").forEach((panel) => {
+    panel.hidden = panel.dataset.view !== nextRoute;
+  });
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    button.classList.toggle("active", button.dataset.route === nextRoute);
+  });
+  const url = new URL(window.location.href);
+  url.searchParams.set("view", nextRoute);
+  window.history.replaceState({}, "", url);
+  if (nextRoute === "trends") renderTrendPanels();
+}
+
 function renderDevice(device) {
   state.device = device;
   const soil = device.telemetry?.soil?.payload || {};
@@ -51,6 +113,8 @@ function renderDevice(device) {
   setMeter("#light-meter", Number(climate.light_lux) / 500);
   state.moisture.push(moisture);
   if (state.moisture.length > 18) state.moisture.shift();
+  state.samples.push({ moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
+  if (state.samples.length > 18) state.samples.shift();
   const rows = [
     ["土壤温度", fmt(soil.temperature_c, 1, " °C"), "18–28 °C"],
     ["pH", fmt(soil.ph, 2), "5.8–6.8"],
@@ -59,6 +123,15 @@ function renderDevice(device) {
     ["电导率", fmt(soil.conductivity_ms_cm, 2, " mS/cm"), "0.4–1.8"],
   ];
   $("#telemetry-table").innerHTML = rows.map(([name, value, range]) => `<div class="telemetry-row"><span class="name">${name}</span><span class="value">${value}</span><span class="range">${range}</span></div>`).join("");
+  $("#device-page-name").textContent = device.device_id;
+  $("#device-page-id").textContent = device.device_id;
+  $("#device-page-seen").textContent = new Date(device.last_seen).toLocaleString();
+  $("#device-page-api").textContent = API;
+  $("#device-page-status").textContent = "ONLINE";
+  $("#device-page-status").classList.remove("muted");
+  $("#mqtt-contract").textContent = "在线";
+  $("#http-contract").textContent = "在线";
+  renderTrendPanels();
   drawTrend();
 }
 
@@ -83,15 +156,20 @@ async function refreshAiStatus() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     const classes = (data.classes || []).join(" / ");
+    state.aiReady = Boolean(data.ready);
     $("#ai-status-copy").textContent = data.ready
       ? `模型 ${data.model_version} 已就绪 · 类别 ${classes}`
       : `${data.message || "模型尚未就绪"} · 阈值 ${Number(data.confidence_threshold || 0.6).toFixed(2)}`;
     $("#ai-status-badge").textContent = data.ready ? "MODEL READY" : "MODEL PENDING";
     $("#ai-status-badge").classList.toggle("muted", !data.ready);
+    $("#device-page-ai").textContent = data.ready ? data.model_version : "待训练";
+    $("#ai-contract").textContent = data.ready ? "在线" : "未就绪";
   } catch (error) {
     $("#ai-status-copy").textContent = `AI 服务暂不可用：${error.message}`;
     $("#ai-status-badge").textContent = "AI OFFLINE";
     $("#ai-status-badge").classList.add("muted");
+    $("#device-page-ai").textContent = "不可用";
+    $("#ai-contract").textContent = "离线";
   }
 }
 
@@ -125,6 +203,7 @@ async function upload(file) {
 }
 
 $("#refresh-button").addEventListener("click", refresh);
+document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setRoute(button.dataset.route)));
 $("#pump-start").addEventListener("click", () => pump("start"));
 $("#pump-stop").addEventListener("click", () => pump("stop"));
 $("#image-input").addEventListener("change", (event) => upload(event.target.files[0]));
@@ -133,5 +212,6 @@ $("#dropzone").addEventListener("drop", (event) => { event.preventDefault(); upl
 if (window.lucide) window.lucide.createIcons();
 refresh();
 refreshAiStatus();
+setRoute(params.get("view") || "overview");
 setInterval(refresh, 5000);
 setInterval(refreshAiStatus, 15000);

@@ -14,20 +14,26 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">AG</span><div><strong>温室运行台</strong><small>SMART AGRICULTURE / OPERATIONS</small></div></div>
-    <div class="connection"><span class="pulse" id="connection-dot"></span><span id="connection-label">正在连接 API</span><button class="icon-button" id="refresh-button" title="立即刷新"><i data-lucide="refresh-cw"></i></button></div>
+    <div class="topbar-actions"><div class="connection"><span class="pulse" id="connection-dot"></span><span id="connection-label">正在连接 API</span><button class="icon-button" id="refresh-button" title="立即刷新"><i data-lucide="refresh-cw"></i></button></div></div>
   </header>
 
   <main class="shell">
     <section class="intro"><div><p class="eyebrow">GREENHOUSE 01 / LIVE OVERVIEW</p><h1>作物环境，一眼掌握。</h1><p class="subtitle">传感器数据、灌溉控制和图像采集集中在同一个工作面。</p></div><div class="last-update">最后更新 <strong id="last-update">--</strong></div></section>
 
-    <section class="metric-grid" aria-label="关键指标">
+    <nav class="app-nav" aria-label="应用页面">
+      <button class="nav-item active" data-route="overview"><i data-lucide="layout-dashboard"></i><span>概览</span></button>
+      <button class="nav-item" data-route="trends"><i data-lucide="chart-spline"></i><span>趋势</span></button>
+      <button class="nav-item" data-route="devices"><i data-lucide="cpu"></i><span>设备</span></button>
+    </nav>
+
+    <section class="metric-grid route-panel" data-view="overview" aria-label="关键指标">
       <article class="metric metric-green"><div class="metric-label"><i data-lucide="droplets"></i> 土壤湿度</div><strong id="soil-moisture">--</strong><span>目标区间 40–65 %</span><div class="meter"><b id="soil-meter"></b></div></article>
       <article class="metric metric-sky"><div class="metric-label"><i data-lucide="thermometer"></i> 空气温度</div><strong id="air-temperature">--</strong><span>舒适区间 18–28 °C</span><div class="meter"><b id="temperature-meter"></b></div></article>
       <article class="metric metric-amber"><div class="metric-label"><i data-lucide="sun-medium"></i> 光照</div><strong id="light-level">--</strong><span>当前采样值 / lux</span><div class="meter"><b id="light-meter"></b></div></article>
       <article class="metric metric-violet"><div class="metric-label"><i data-lucide="radio"></i> 设备状态</div><strong id="device-count">--</strong><span id="device-status">等待设备上报</span><div class="device-state"><span class="pulse"></span> MQTT 在线</div></article>
     </section>
 
-    <section class="workspace">
+    <section class="workspace route-panel" data-view="overview">
       <article class="panel telemetry-panel"><div class="panel-heading"><div><p class="eyebrow">SENSOR FEED</p><h2>环境遥测</h2></div><span class="badge" id="device-id">未发现设备</span></div><div class="telemetry-table" id="telemetry-table"><div class="empty-state">正在等待传感器数据...</div></div><div class="chart-wrap"><div class="chart-head"><span>土壤湿度趋势</span><small>最近采样</small></div><canvas id="trend-chart" width="800" height="180"></canvas></div></article>
       <aside class="side-stack">
         <article class="panel control-panel"><div class="panel-heading"><div><p class="eyebrow">REMOTE CONTROL</p><h2>灌溉控制</h2></div><i data-lucide="sprout" class="heading-icon"></i></div><p class="control-copy">向当前设备发布水泵指令，设备会通过 MQTT 回传状态。</p><div class="pump-state"><span class="state-light" id="pump-light"></span><div><strong id="pump-label">待机</strong><small>模拟执行器状态</small></div></div><div class="control-actions"><button class="action primary" id="pump-start"><i data-lucide="play"></i>启动水泵</button><button class="action secondary" id="pump-stop"><i data-lucide="square"></i>停止水泵</button></div><p class="action-result" id="action-result">--</p></article>
@@ -35,7 +41,22 @@
       </aside>
     </section>
 
-    <section class="notice"><i data-lucide="scan-line"></i><div><strong>AI 识别准备区</strong><p id="ai-status-copy">正在查询模型状态...</p></div><span class="badge muted" id="ai-status-badge">CHECKING</span></section>
+    <section class="notice route-panel" data-view="overview"><i data-lucide="scan-line"></i><div><strong>AI 识别准备区</strong><p id="ai-status-copy">正在查询模型状态...</p></div><span class="badge muted" id="ai-status-badge">CHECKING</span></section>
+
+    <section class="route-panel" data-view="trends">
+      <div class="trend-grid">
+        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">SOIL MOISTURE</p><h2>土壤湿度趋势</h2></div><span class="badge" id="trend-moisture-value">--</span></div><canvas id="moisture-chart" width="900" height="260"></canvas></article>
+        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">CLIMATE</p><h2>温度与光照</h2></div><span class="badge" id="trend-temperature-value">--</span></div><canvas id="climate-chart" width="900" height="260"></canvas></article>
+      </div>
+      <div class="panel trend-summary"><div><span class="eyebrow">SAMPLES</span><strong id="sample-count">0</strong><small>最近缓存样本</small></div><div><span class="eyebrow">WINDOW</span><strong>90 s</strong><small>滚动观察窗口</small></div><div><span class="eyebrow">REFRESH</span><strong>5 s</strong><small>数据刷新周期</small></div></div>
+    </section>
+
+    <section class="route-panel" data-view="devices">
+      <div class="device-layout">
+        <article class="panel device-card"><div class="panel-heading"><div><p class="eyebrow">DEVICE REGISTRY</p><h2 id="device-page-name">等待设备</h2></div><span class="badge" id="device-page-status">OFFLINE</span></div><dl class="device-details"><div><dt>设备 ID</dt><dd id="device-page-id">--</dd></div><div><dt>最近上报</dt><dd id="device-page-seen">--</dd></div><div><dt>API 地址</dt><dd id="device-page-api">--</dd></div><div><dt>AI 状态</dt><dd id="device-page-ai">--</dd></div></dl></article>
+        <article class="panel device-card"><div class="panel-heading"><div><p class="eyebrow">DATA CONTRACT</p><h2>端云连接</h2></div><i data-lucide="network" class="heading-icon"></i></div><div class="connection-list"><div><span class="pulse"></span><span>MQTT 传感器上报</span><b id="mqtt-contract">等待</b></div><div><span class="pulse"></span><span>HTTP API 查询</span><b id="http-contract">等待</b></div><div><span class="pulse off"></span><span>模型推理</span><b id="ai-contract">未就绪</b></div></div></article>
+      </div>
+    </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="app.js"></script>
