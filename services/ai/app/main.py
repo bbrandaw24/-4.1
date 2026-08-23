@@ -1,12 +1,23 @@
 import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
 MODEL_VERSION = os.getenv("AI_MODEL_VERSION", "strawberry-resnet18-v1")
 CONFIDENCE_THRESHOLD = float(os.getenv("AI_CONFIDENCE_THRESHOLD", "0.60"))
 CLASSES = ["germination", "flowering", "fruit_set", "ripening"]
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = os.getenv("CORS_ORIGIN", "*")
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    if request.method == "OPTIONS":
+        response.status_code = 204
+    return response
 
 
 @app.get("/healthz")
