@@ -45,3 +45,19 @@
 | MQTT Broker | 使用虚拟机已有 EMQX（宿主机 1883 已被占用）；未停止或删除原容器 |
 
 备注：由于项目目录含中文，Compose 命令需显式指定项目名，例如 `docker compose -p smartagri ...`。
+
+## 2026-08-23 - Day 3 Flask 服务端与设备管理
+
+- API 增加 MQTT 监听器，订阅 `farm/+/sensor/+` 并校验 JSON 信封。
+- 增加设备列表、最新遥测和水泵控制 API。
+- API 改为单 Gunicorn worker，避免重复订阅 MQTT。
+- 当前设备注册表为进程内状态，MySQL 持久化留待后续阶段真实接入。
+- 新增 `docs/day03-api.md` API 文档。
+
+### Day 3 验证记录
+
+| 检查项 | 结果 |
+| --- | --- |
+| Python 静态编译 | 待执行 |
+| Flask API 测试 | 已通过静态测试；水泵发布修复后待容器复测 |
+| API 容器与模拟器联动 | 待在虚拟机执行 |
