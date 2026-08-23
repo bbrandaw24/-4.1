@@ -1,6 +1,7 @@
 const params = new URLSearchParams(window.location.search);
-const API = params.get("api") || "http://192.168.128.129:8010";
-const AI_API = params.get("ai") || "http://192.168.128.129:8001";
+const isGatewayPage = window.location.protocol.startsWith("http") && window.location.hostname !== "bbrandaw24.github.io";
+const API = params.get("api") || (isGatewayPage ? window.location.origin : "http://192.168.128.129:8010");
+const AI_API = params.get("ai") || (isGatewayPage ? window.location.origin : "http://192.168.128.129:8001");
 const DEVICE_ID = params.get("device") || "sim-greenhouse-day08";
 const HISTORY_LIMIT = 7200;
 const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null };
