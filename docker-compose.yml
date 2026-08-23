@@ -28,6 +28,18 @@ services:
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
 
+  simulator:
+    build: ./services/simulator
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      DEVICE_ID: ${DEVICE_ID:-sim-greenhouse-001}
+      PUBLISH_INTERVAL_SECONDS: ${PUBLISH_INTERVAL_SECONDS:-5}
+    depends_on:
+      mosquitto:
+        condition: service_started
+
   api:
     build: ./services/api
     restart: unless-stopped

@@ -17,3 +17,18 @@
 | API `/healthz` | 待容器启动后执行 |
 | AI `/healthz` | 待容器启动后执行 |
 | Git 工作区无敏感文件 | 已通过忽略规则检查 |
+
+## 2026-08-23 - Day 2 设备与 MQTT
+
+- 增加可运行的 Python 虚拟设备模拟器，默认每 5 秒发布土壤、气候数据。
+- 固化 MQTT 主题、QoS、JSON 信封和传感器字段规格。
+- 实现水泵 `start`/`stop` 控制指令及状态回传。
+- Compose 增加 `simulator` 服务；Docker 实机验收仍待执行。
+
+### Day 2 验证记录
+
+| 检查项 | 结果 |
+| --- | --- |
+| Python 模块静态编译 | 待执行 |
+| `docker compose config` | 待在 Docker 环境执行 |
+| MQTT 发布/订阅 | 待容器启动后执行 |
