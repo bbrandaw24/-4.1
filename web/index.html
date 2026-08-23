@@ -46,8 +46,8 @@
 
     <section class="route-panel" data-view="trends">
       <div class="trend-grid">
-        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">SOIL MOISTURE</p><h2>土壤湿度趋势</h2></div><span class="badge" id="trend-moisture-value">--</span></div><canvas id="moisture-chart" width="900" height="260"></canvas></article>
-        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">CLIMATE</p><h2>温度与光照</h2></div><span class="badge" id="trend-temperature-value">--</span></div><canvas id="climate-chart" width="900" height="260"></canvas></article>
+        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">SOIL MOISTURE</p><h2>土壤湿度趋势</h2></div><span class="badge" id="trend-moisture-value">--</span></div><canvas id="moisture-chart" width="900" height="260" role="img" aria-label="土壤湿度趋势图，纵轴为百分比，横轴为采样时间"></canvas></article>
+        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">CLIMATE</p><h2>温度与光照</h2></div><span class="badge" id="trend-temperature-value">--</span></div><canvas id="climate-chart" width="900" height="260" role="img" aria-label="温度与光照趋势图，左纵轴为摄氏度，右纵轴为千光照，横轴为采样时间"></canvas></article>
       </div>
       <div class="panel trend-summary"><div><span class="eyebrow">SAMPLES</span><strong id="sample-count">0</strong><small>最近 10 小时样本</small></div><div><span class="eyebrow">WINDOW</span><strong>10 h</strong><small>滚动观察窗口</small></div><div><span class="eyebrow">REFRESH</span><strong>5 s</strong><small>数据刷新周期</small></div></div>
     </section>
@@ -60,6 +60,6 @@
     </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
-  <script src="app.js"></script>
+  <script src="app.js?v=day08-axes"></script>
 </body>
 </html>

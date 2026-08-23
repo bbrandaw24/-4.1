@@ -16,69 +16,156 @@ function setConnection(ok, message) {
 
 function setMeter(id, value) { $(id).style.width = `${Math.max(0, Math.min(100, value))}%`; }
 
-function drawTrend() {
-  const canvas = $("#trend-chart");
-  const context = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-  context.clearRect(0, 0, width, height);
-  if (state.moisture.length < 2) return;
-  const min = Math.min(...state.moisture) - 2;
-  const max = Math.max(...state.moisture) + 2;
-  context.strokeStyle = "#226b46";
-  context.lineWidth = 3;
-  context.lineJoin = "round";
-  context.beginPath();
-  state.moisture.forEach((value, index) => {
-    const x = (index / (state.moisture.length - 1)) * width;
-    const y = height - ((value - min) / (max - min)) * (height - 20) - 10;
-    index ? context.lineTo(x, y) : context.moveTo(x, y);
-  });
-  context.stroke();
+function formatChartTime(timestamp) {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return "--:--";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function drawSeriesChart(canvasId, series, colors) {
+function chartDomain(values) {
+  const finite = values.filter(Number.isFinite);
+  if (!finite.length) return [0, 1];
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  const span = Math.max(max - min, Math.abs(max) * 0.05, 1);
+  return [min - span * 0.08, max + span * 0.08];
+}
+
+function drawSeriesChart(canvasId, series, options = {}) {
   const canvas = $(canvasId);
   if (!canvas) return;
   const context = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
   context.clearRect(0, 0, width, height);
-  const values = series.flatMap((item) => item.values.filter(Number.isFinite));
-  if (values.length < 2) return;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = Math.max(max - min, 1);
-  context.strokeStyle = "#e4ebe5";
+
+  const samples = options.samples || state.samples;
+  const plot = { left: 68, right: options.rightAxis ? width - 68 : width - 18, top: 16, bottom: height - 39 };
+  const leftSeries = series.filter((item) => (item.axis || "left") === "left");
+  const rightSeries = series.filter((item) => item.axis === "right");
+  const leftDomain = chartDomain(leftSeries.flatMap((item) => item.values));
+  const rightDomain = chartDomain(rightSeries.flatMap((item) => item.values));
+  const xCount = Math.max(...series.map((item) => item.values.length), 0);
+  const hasData = xCount >= 2 && series.some((item) => item.values.some(Number.isFinite));
+  const yFor = (value, axis) => {
+    const domain = axis === "right" ? rightDomain : leftDomain;
+    return plot.bottom - ((value - domain[0]) / (domain[1] - domain[0])) * (plot.bottom - plot.top);
+  };
+  const xFor = (index) => plot.left + (index / Math.max(xCount - 1, 1)) * (plot.right - plot.left);
+
+  context.font = "12px DM Sans, Noto Sans SC, sans-serif";
   context.lineWidth = 1;
-  for (let line = 1; line < 4; line += 1) {
-    const y = (line / 4) * height;
+  context.strokeStyle = "#e4ebe5";
+  context.fillStyle = "#6d776f";
+  context.textBaseline = "middle";
+  context.strokeStyle = "#e4ebe5";
+  for (let line = 0; line <= 4; line += 1) {
+    const y = plot.top + (line / 4) * (plot.bottom - plot.top);
     context.beginPath();
-    context.moveTo(0, y);
-    context.lineTo(width, y);
+    context.moveTo(plot.left, y);
+    context.lineTo(plot.right, y);
     context.stroke();
+    const value = leftDomain[1] - (line / 4) * (leftDomain[1] - leftDomain[0]);
+    context.textAlign = "right";
+    context.fillText(options.leftFormat ? options.leftFormat(value) : value.toFixed(1), plot.left - 9, y);
+    if (options.rightAxis) {
+      const rightValue = rightDomain[1] - (line / 4) * (rightDomain[1] - rightDomain[0]);
+      context.textAlign = "left";
+      context.fillText(options.rightFormat ? options.rightFormat(rightValue) : rightValue.toFixed(1), plot.right + 9, y);
+    }
   }
+
+  context.strokeStyle = "#9aa89e";
+  context.beginPath();
+  context.moveTo(plot.left, plot.top);
+  context.lineTo(plot.left, plot.bottom);
+  context.lineTo(plot.right, plot.bottom);
+  if (options.rightAxis) {
+    context.moveTo(plot.right, plot.top);
+    context.lineTo(plot.right, plot.bottom);
+  }
+  context.stroke();
+
+  const tickCount = width < 600 ? 4 : 6;
+  context.textAlign = "center";
+  context.textBaseline = "top";
+  for (let tick = 0; tick < tickCount; tick += 1) {
+    const index = Math.round((tick / (tickCount - 1)) * Math.max(xCount - 1, 0));
+    const x = xFor(index);
+    context.strokeStyle = "#9aa89e";
+    context.beginPath();
+    context.moveTo(x, plot.bottom);
+    context.lineTo(x, plot.bottom + 5);
+    context.stroke();
+    const sample = samples[index];
+    context.fillStyle = "#6d776f";
+    context.fillText(sample?.timestamp ? formatChartTime(sample.timestamp) : "--:--", x, plot.bottom + 9);
+  }
+  context.fillText("时间", (plot.left + plot.right) / 2, height - 16);
+  context.save();
+  context.translate(15, (plot.top + plot.bottom) / 2);
+  context.rotate(-Math.PI / 2);
+  context.textBaseline = "middle";
+  context.fillText(options.leftLabel || "数值", 0, 0);
+  context.restore();
+  if (options.rightAxis) {
+    context.save();
+    context.translate(width - 15, (plot.top + plot.bottom) / 2);
+    context.rotate(Math.PI / 2);
+    context.fillText(options.rightLabel || "数值", 0, 0);
+    context.restore();
+  }
+  if (!hasData) return;
+
+  context.save();
+  context.beginPath();
+  context.rect(plot.left, plot.top, plot.right - plot.left, plot.bottom - plot.top);
+  context.clip();
   series.forEach((item, index) => {
     if (item.values.length < 2) return;
-    context.strokeStyle = colors[index];
+    const axis = item.axis || "left";
+    context.strokeStyle = item.color || ["#226b46", "#236a80", "#a26716"][index % 3];
     context.lineWidth = 3;
     context.lineJoin = "round";
+    context.lineCap = "round";
     context.beginPath();
+    let started = false;
     item.values.forEach((value, point) => {
-      const x = (point / (item.values.length - 1)) * width;
-      const y = height - ((value - min) / span) * (height - 18) - 9;
-      point ? context.lineTo(x, y) : context.moveTo(x, y);
+      if (!Number.isFinite(value)) { started = false; return; }
+      const x = xFor(point);
+      const y = yFor(value, axis);
+      started ? context.lineTo(x, y) : context.moveTo(x, y);
+      started = true;
     });
     context.stroke();
+  });
+  context.restore();
+}
+
+function drawTrend() {
+  drawSeriesChart("#trend-chart", [{ values: state.moisture, color: "#226b46" }], {
+    leftLabel: "土壤湿度 (%)",
+    leftFormat: (value) => `${value.toFixed(0)}%`,
   });
 }
 
 function renderTrendPanels() {
-  drawSeriesChart("#moisture-chart", [{ values: state.samples.map((sample) => sample.moisture) }], ["#226b46"]);
+  drawSeriesChart("#moisture-chart", [{ values: state.samples.map((sample) => sample.moisture), color: "#226b46" }], {
+    samples: state.samples,
+    leftLabel: "土壤湿度 (%)",
+    leftFormat: (value) => `${value.toFixed(0)}%`,
+  });
   drawSeriesChart("#climate-chart", [
-    { values: state.samples.map((sample) => sample.temperature) },
-    { values: state.samples.map((sample) => sample.light / 1000) },
-  ], ["#236a80", "#a26716"]);
+    { values: state.samples.map((sample) => sample.temperature), color: "#236a80", axis: "left" },
+    { values: state.samples.map((sample) => sample.light / 1000), color: "#a26716", axis: "right" },
+  ], {
+    samples: state.samples,
+    rightAxis: true,
+    leftLabel: "温度 (°C)",
+    rightLabel: "光照 (kLux)",
+    leftFormat: (value) => `${value.toFixed(1)}°`,
+    rightFormat: (value) => `${value.toFixed(1)}`,
+  });
   const latest = state.samples[state.samples.length - 1];
   $("#sample-count").textContent = state.samples.length;
   $("#trend-moisture-value").textContent = latest ? fmt(latest.moisture, 1, " %") : "--";
@@ -115,7 +202,7 @@ function renderDevice(device) {
   setMeter("#light-meter", Number(climate.light_lux) / 500);
   state.moisture.push(moisture);
   if (state.moisture.length > HISTORY_LIMIT) state.moisture.shift();
-  state.samples.push({ moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
+  state.samples.push({ timestamp: device.telemetry?.soil?.timestamp || device.telemetry?.climate?.timestamp || new Date().toISOString(), moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
   if (state.samples.length > HISTORY_LIMIT) state.samples.shift();
   const rows = [
     ["土壤温度", fmt(soil.temperature_c, 1, " °C"), "18–28 °C"],
@@ -150,9 +237,9 @@ async function refreshHistory(deviceId) {
       const parsed = Date.parse(item.timestamp);
       if (!Number.isFinite(parsed)) return;
       const bucketKey = Math.round(parsed / 5000) * 5000;
-      const bucket = buckets.get(bucketKey) || {};
+      const bucket = buckets.get(bucketKey) || { timestamp: item.timestamp };
       const payload = item.payload || {};
-      if (item.kind === "soil") bucket.moisture = Number(payload.moisture_pct);
+      if (item.kind === "soil") { bucket.moisture = Number(payload.moisture_pct); bucket.timestamp = bucket.timestamp || item.timestamp; }
       if (item.kind === "climate") { bucket.temperature = Number(payload.air_temperature_c); bucket.light = Number(payload.light_lux); }
       buckets.set(bucketKey, bucket);
     });
