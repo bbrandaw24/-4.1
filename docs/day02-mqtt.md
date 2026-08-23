@@ -9,6 +9,8 @@ docker compose up -d --build mosquitto simulator
 docker compose logs -f simulator
 ```
 
+如果虚拟机已有 EMQX 或其他 MQTT 服务占用宿主机 `1883`，可在 `.env` 中将 `MQTT_PORT_HOST` 改为未占用端口（例如 `1884`）。Compose 网络内的模拟器仍使用 `mosquitto:1883`，不需要修改 `MQTT_PORT`。
+
 模拟器默认设备 ID 为 `sim-greenhouse-001`，每 5 秒发布一次土壤和气候数据。可通过 `DEVICE_ID`、`PUBLISH_INTERVAL_SECONDS` 调整。
 
 ## 消息格式
@@ -49,4 +51,3 @@ mosquitto_pub -h 127.0.0.1 -t farm/sim-greenhouse-001/control/pump -m '{"payload
 ```
 
 第 2 天只验证协议和模拟设备；消息持久化与 API 路由安排在第 3 天。
-

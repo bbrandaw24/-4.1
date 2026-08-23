@@ -32,3 +32,16 @@
 | Python 模块静态编译 | 待执行 |
 | `docker compose config` | 待在 Docker 环境执行 |
 | MQTT 发布/订阅 | 待容器启动后执行 |
+
+### Day 2 虚拟机实测（2026-08-23）
+
+| 检查项 | 结果 |
+| --- | --- |
+| SSH 公钥免密连接 | 通过，主机 `bearpi-virtual-machine` |
+| Docker / Compose 版本 | Docker 24.0.2 / Compose v2.18.1 |
+| 模拟器构建 | 通过，镜像 `smartagri-simulator` |
+| 土壤 MQTT 上报 | 通过，收到 `farm/sim-greenhouse-001/sensor/soil` JSON |
+| 水泵 start 控制 | 通过，收到 `status/pump` 且 `running=true` |
+| MQTT Broker | 使用虚拟机已有 EMQX（宿主机 1883 已被占用）；未停止或删除原容器 |
+
+备注：由于项目目录含中文，Compose 命令需显式指定项目名，例如 `docker compose -p smartagri ...`。
