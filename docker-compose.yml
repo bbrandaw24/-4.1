@@ -8,7 +8,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
     ports:
-      - "3306:3306"
+      - "127.0.0.1:${MYSQL_PORT_HOST:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -21,8 +21,8 @@ services:
     image: eclipse-mosquitto:2
     restart: unless-stopped
     ports:
-      - "${MQTT_PORT_HOST:-1883}:1883"
-      - "${MQTT_WS_PORT_HOST:-9001}:9001"
+      - "127.0.0.1:${MQTT_PORT_HOST:-1883}:1883"
+      - "127.0.0.1:${MQTT_WS_PORT_HOST:-9001}:9001"
     volumes:
       - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto_data:/mosquitto/data
@@ -55,7 +55,7 @@ services:
       UPLOAD_DIR: /data/uploads
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-5242880}
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
       - ./data/uploads:/data/uploads
     depends_on:
@@ -68,7 +68,7 @@ services:
     build: ./services/ai
     restart: unless-stopped
     ports:
-      - "${AI_PORT:-8001}:8001"
+      - "127.0.0.1:${AI_PORT:-8001}:8001"
 
   web:
     build: ./web
