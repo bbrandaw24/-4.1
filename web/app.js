@@ -1,7 +1,8 @@
 const params = new URLSearchParams(window.location.search);
-const API = params.get("api") || "http://192.168.128.129:8000";
+const API = params.get("api") || "http://192.168.128.129:8010";
 const AI_API = params.get("ai") || "http://192.168.128.129:8001";
-const state = { device: null, moisture: [], samples: [], aiReady: false };
+const DEVICE_ID = params.get("device") || "sim-greenhouse-day08";
+const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "" };
 document.querySelector("#api-url").textContent = API;
 
 const $ = (selector) => document.querySelector(selector);
@@ -133,6 +134,8 @@ function renderDevice(device) {
   $("#http-contract").textContent = "在线";
   renderTrendPanels();
   drawTrend();
+  refreshPumpStatus();
+  refreshAlerts();
 }
 
 async function refresh() {
@@ -141,7 +144,7 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (!data.items?.length) throw new Error("暂无设备");
-    renderDevice(data.items[0]);
+    renderDevice(data.items.find((item) => item.device_id === DEVICE_ID) || data.items[0]);
     setConnection(true, "API 已连接");
     $("#last-update").textContent = new Date().toLocaleTimeString();
   } catch (error) {
@@ -181,11 +184,52 @@ async function pump(action) {
     const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/pump`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-    $("#pump-label").textContent = action === "start" ? "运行中" : "待机";
-    $("#pump-light").classList.toggle("running", action === "start");
-    $("#action-result").textContent = `已发布 ${action === "start" ? "启动" : "停止"} 指令 · ${new Date().toLocaleTimeString()}`;
+    $("#pump-label").textContent = action === "start" ? "启动中" : "停止中";
+    $("#pump-light").classList.remove("running");
+    $("#pump-detail").textContent = `等待设备回执 · 命令 ${data.command_id.slice(0, 8)}`;
+    $("#action-result").textContent = `已发布 ${action === "start" ? "启动" : "停止"} 指令，等待 MQTT 确认`;
+    await refreshPumpStatus();
   } catch (error) { $("#action-result").textContent = `指令失败：${error.message}`; }
   buttons.forEach((button) => { button.disabled = false; });
+}
+
+function renderPump(data) {
+  state.pump = data;
+  const pump = data?.pump || {};
+  const command = data?.command;
+  const status = pump.status || "standby";
+  const labels = { running: "运行中", standby: "待机", pending: pump.action === "start" ? "启动中" : "停止中", timeout: "确认超时", failed: "发送失败" };
+  $("#pump-label").textContent = labels[status] || status;
+  $("#pump-light").classList.toggle("running", status === "running");
+  const latency = command?.latency_ms != null ? ` · ${command.latency_ms} ms` : "";
+  $("#pump-detail").textContent = command ? `${command.status === "confirmed" ? "MQTT 已确认" : command.status === "timeout" ? "未收到设备回执" : "等待设备回执"}${latency}` : "等待设备状态";
+  if (command?.status === "confirmed") $("#action-result").textContent = `指令已确认 · ${new Date(command.confirmed_at).toLocaleTimeString()}`;
+  if (command?.status === "timeout") $("#action-result").textContent = "指令超时：请检查 MQTT 或设备连接";
+}
+
+async function refreshPumpStatus() {
+  if (!state.device) return;
+  try {
+    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/pump`, { cache: "no-store" });
+    if (response.ok) renderPump(await response.json());
+  } catch (_) { /* keep last known actuator state */ }
+}
+
+async function refreshAlerts() {
+  if (!state.device) return;
+  try {
+    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/alerts`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    $("#alert-list").innerHTML = data.items?.length
+      ? data.items.map((item) => `<div class="alert-item">${item.message}</div>`).join("")
+      : '<span class="alert-empty">当前无告警，环境在目标范围内</span>';
+    const signature = (data.items || []).map((item) => item.code).join(",");
+    if (signature && signature !== state.lastAlertSignature && state.notifications && "Notification" in window && Notification.permission === "granted") {
+      data.items.forEach((item) => new Notification("智慧农业告警", { body: item.message }));
+    }
+    state.lastAlertSignature = signature;
+  } catch (_) { $("#alert-list").innerHTML = '<span class="alert-empty">告警服务暂不可用</span>'; }
 }
 
 async function upload(file) {
@@ -206,6 +250,18 @@ $("#refresh-button").addEventListener("click", refresh);
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => setRoute(button.dataset.route)));
 $("#pump-start").addEventListener("click", () => pump("start"));
 $("#pump-stop").addEventListener("click", () => pump("stop"));
+document.querySelectorAll(".mode-button").forEach((button) => button.addEventListener("click", () => {
+  state.mode = button.dataset.mode;
+  document.querySelectorAll(".mode-button").forEach((item) => item.classList.toggle("active", item === button));
+  $("#action-result").textContent = state.mode === "auto" ? "自动模式已选择，低湿度时将提示灌溉" : "手动模式已选择";
+}));
+$("#schedule-enabled").addEventListener("change", (event) => { $("#schedule-time").disabled = !event.target.checked; });
+$("#notify-button").addEventListener("click", async () => {
+  if (!("Notification" in window)) { $("#action-result").textContent = "当前浏览器不支持通知"; return; }
+  const permission = await Notification.requestPermission();
+  state.notifications = permission === "granted";
+  $("#notify-button").textContent = state.notifications ? "通知已启用" : "启用通知";
+});
 $("#image-input").addEventListener("change", (event) => upload(event.target.files[0]));
 $("#dropzone").addEventListener("dragover", (event) => event.preventDefault());
 $("#dropzone").addEventListener("drop", (event) => { event.preventDefault(); upload(event.dataTransfer.files[0]); });
@@ -214,4 +270,6 @@ refresh();
 refreshAiStatus();
 setRoute(params.get("view") || "overview");
 setInterval(refresh, 5000);
+setInterval(refreshPumpStatus, 1000);
+setInterval(refreshAlerts, 5000);
 setInterval(refreshAiStatus, 15000);

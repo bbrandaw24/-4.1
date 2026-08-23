@@ -11,7 +11,7 @@
 - [x] 第 5 天：AI 图像分类需求、数据集结构与标注规范
 - [ ] 第 6 天：模型导出与业务集成（推理接口契约已完成，待真实数据训练）
 - [x] 第 7 天：APP 页面结构、路由与数据可视化基线（Web/ArkTS 映射）
-- [ ] 第 8 天：鸿蒙 APP 灌溉控制与 MQTT
+- [x] 第 8 天：鸿蒙 APP 灌溉控制与 MQTT（Web/ArkTS 映射基线，已实现指令确认与告警）
 - [ ] 第 9-10 天：端云 APP 联调与自动化规则
 - [ ] 第 11 天：安全、性能与运维
 - [ ] 第 12 天：工程文档、代码规范与交付检查
@@ -25,6 +25,8 @@
 Flask API 会订阅 MQTT 传感器消息并提供设备查询、最新遥测和水泵控制接口，详见 [`docs/day03-api.md`](docs/day03-api.md)。
 
 Day 4 图片接口、存储约定和验收命令见 [`docs/day04-images.md`](docs/day04-images.md)。
+
+Day 8 灌溉指令确认、泵状态和告警验收命令见 [`docs/day08-mqtt-control.md`](docs/day08-mqtt-control.md)。
 
 ## Web 可视化看板
 

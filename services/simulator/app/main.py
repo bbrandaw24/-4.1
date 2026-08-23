@@ -62,7 +62,8 @@ def on_message(client: mqtt.Client, _userdata: object, message: mqtt.MQTTMessage
         if payload.get("action") not in {"start", "stop"}:
             LOGGER.warning("ignored unknown pump action: %s", payload)
             return
-        state = {"action": payload["action"], "running": payload["action"] == "start"}
+        command_id = command.get("command_id") or payload.get("command_id")
+        state = {"action": payload["action"], "running": payload["action"] == "start", "command_id": command_id}
         client.publish(topic("status/pump"), envelope(state), qos=1)
         LOGGER.info("pump state changed: %s", state["running"])
     except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
