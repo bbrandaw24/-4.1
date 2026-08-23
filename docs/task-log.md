@@ -111,3 +111,19 @@
 | 水泵启动 | 通过，API 返回 202，模拟器日志确认 `pump state changed: True` |
 | 水泵停止 | 通过，API 返回 202，模拟器日志确认 `pump state changed: False` |
 | 截图留档 | `C:\Users\DELL\Desktop\测试实习\smartagri-dashboard.png` |
+
+## 2026-08-23 - Day 5/6 AI 基线
+
+- 完成草莓萌芽、开花、坐果、成熟四分类定义和 `train/val/test/reject` 数据集目录。
+- 固化 `labels.json`、标注审核规则、数据划分原则和 ResNet18 训练契约。
+- 增加 `GET /api/v1/model/status`，明确返回模型未就绪、版本、类别和置信度阈值。
+- 保留 `POST /api/v1/predict` 的 501 响应，直到真实图片完成审核、训练并生成权重。
+
+### Day 5/6 验证记录
+
+| 检查项 | 结果 |
+| --- | --- |
+| 数据集目录和标签 JSON | 已完成 |
+| AI 模块静态编译 | 待执行 |
+| 模型状态接口 | 已实现，待容器验收 |
+| 真实模型训练 | 待收集并审核真实图片 |

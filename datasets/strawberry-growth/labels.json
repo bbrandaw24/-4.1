@@ -1,0 +1,14 @@
+{
+  "task": "single_label_image_classification",
+  "dataset_version": "v0.1",
+  "classes": [
+    {"id": "germination", "name_zh": "萌芽"},
+    {"id": "flowering", "name_zh": "开花"},
+    {"id": "fruit_set", "name_zh": "坐果"},
+    {"id": "ripening", "name_zh": "成熟"}
+  ],
+  "reject_label": "reject",
+  "split": {"train": 0.7, "val": 0.15, "test": 0.15},
+  "input_size": [224, 224],
+  "confidence_threshold": 0.6
+}
