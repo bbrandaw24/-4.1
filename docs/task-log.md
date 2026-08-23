@@ -60,4 +60,14 @@
 | --- | --- |
 | Python 静态编译 | 待执行 |
 | Flask API 测试 | 已通过静态测试；水泵发布修复后待容器复测 |
+
+### Day 3 虚拟机实测（2026-08-23）
+
+| 检查项 | 结果 |
+| --- | --- |
+| API 镜像构建 | 通过，`smartagri-api:day03` |
+| API 健康检查 | 通过，`GET /healthz` 返回 200 |
+| MQTT -> Flask 消息路由 | 通过，`GET /api/v1/devices` 返回 `sim-greenhouse-001` 最新 soil/climate 数据 |
+| Flask -> MQTT 水泵控制 | 通过，`POST /api/v1/devices/sim-greenhouse-001/pump` 返回 202；模拟器日志确认 `pump state changed: True` |
+| 运行容器 | `smartagri-api-vm`、`smartagri-simulator-vm` 正常运行 |
 | API 容器与模拟器联动 | 待在虚拟机执行 |
