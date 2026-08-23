@@ -104,8 +104,7 @@ def pump(device_id):
             json.dumps({"device_id": device_id, "timestamp": utc_now(), "payload": {"action": action}}),
             qos=1,
         )
-        if not info.wait_for_publish(timeout=5):
-            return jsonify({"error": "mqtt_publish_timeout"}), 503
+        info.wait_for_publish(timeout=5)
         client.loop_stop()
         client.disconnect()
     except Exception as exc:
