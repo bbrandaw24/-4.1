@@ -70,4 +70,19 @@
 | MQTT -> Flask 消息路由 | 通过，`GET /api/v1/devices` 返回 `sim-greenhouse-001` 最新 soil/climate 数据 |
 | Flask -> MQTT 水泵控制 | 通过，`POST /api/v1/devices/sim-greenhouse-001/pump` 返回 202；模拟器日志确认 `pump state changed: True` |
 | 运行容器 | `smartagri-api-vm`、`smartagri-simulator-vm` 正常运行 |
+
+## 2026-08-23 - Day 4 图片上传与存储
+
+- 增加 multipart 图片上传接口和图片元数据查询接口。
+- 增加 JPEG/PNG 内容校验、5 MiB 默认大小限制和 Pillow 解码。
+- 上传图片统一转换为 JPEG，并生成 512px 内缩略图。
+- Compose 将 `/data/uploads` 映射到项目 `data/uploads/`，不保存原始文件名。
+
+### Day 4 验证记录
+
+| 检查项 | 结果 |
+| --- | --- |
+| Python 静态编译 | 待执行 |
+| 图片上传与缩略图生成 | 待在虚拟机执行 |
+| 非图片/超大文件拒绝 | 待执行 |
 | API 容器与模拟器联动 | 待在虚拟机执行 |

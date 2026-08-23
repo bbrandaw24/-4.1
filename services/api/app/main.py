@@ -1,10 +1,14 @@
 from datetime import datetime, timezone
+from io import BytesIO
 import json
 import logging
 import os
+from pathlib import Path
 from threading import Lock, Thread
+from uuid import uuid4
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, send_file
+from PIL import Image, UnidentifiedImageError
 import paho.mqtt.client as mqtt
 
 app = Flask(__name__)
@@ -13,8 +17,13 @@ LOGGER = logging.getLogger("smart-agriculture-api")
 
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads"))
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 registry = {}
 registry_lock = Lock()
+image_registry = {}
+image_registry_lock = Lock()
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def utc_now():
@@ -90,8 +99,6 @@ def latest_telemetry(device_id):
 
 @app.post("/api/v1/devices/<device_id>/pump")
 def pump(device_id):
-    from flask import request
-
     action = (request.get_json(silent=True) or {}).get("action")
     if action not in {"start", "stop"}:
         return jsonify({"error": "action_must_be_start_or_stop"}), 400
@@ -111,3 +118,76 @@ def pump(device_id):
         LOGGER.warning("pump command failed: %s", exc)
         return jsonify({"error": "mqtt_unavailable"}), 503
     return jsonify({"device_id": device_id, "action": action, "status": "published"}), 202
+
+
+def _image_record(image_id):
+    with image_registry_lock:
+        return image_registry.get(image_id)
+
+
+@app.post("/api/v1/images")
+def upload_image():
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "file_field_required"}), 400
+    if request.content_length and request.content_length > MAX_UPLOAD_BYTES + 1024 * 256:
+        return jsonify({"error": "file_too_large", "max_bytes": MAX_UPLOAD_BYTES}), 413
+    data = upload.stream.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        return jsonify({"error": "file_too_large", "max_bytes": MAX_UPLOAD_BYTES}), 413
+    if not data:
+        return jsonify({"error": "empty_file"}), 400
+    try:
+        with Image.open(BytesIO(data)) as source:
+            source.verify()
+        with Image.open(BytesIO(data)) as source:
+            image = source.convert("RGB")
+            width, height = image.size
+            image_id = uuid4().hex
+            image_path = UPLOAD_DIR / f"{image_id}.jpg"
+            thumb_path = UPLOAD_DIR / f"{image_id}_thumb.jpg"
+            image.save(image_path, format="JPEG", quality=90, optimize=True)
+            thumbnail = image.copy()
+            thumbnail.thumbnail((512, 512))
+            thumbnail.save(thumb_path, format="JPEG", quality=85, optimize=True)
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        LOGGER.info("rejected invalid image %s: %s", upload.filename, exc)
+        return jsonify({"error": "invalid_image"}), 415
+    record = {
+        "image_id": image_id,
+        "device_id": request.form.get("device_id"),
+        "width": width,
+        "height": height,
+        "content_type": "image/jpeg",
+        "size_bytes": image_path.stat().st_size,
+        "file_url": f"/api/v1/images/{image_id}/file",
+        "thumbnail_url": f"/api/v1/images/{image_id}/thumbnail",
+        "created_at": utc_now(),
+    }
+    with image_registry_lock:
+        image_registry[image_id] = record
+    return jsonify(record), 201
+
+
+@app.get("/api/v1/images/<image_id>")
+def image_metadata(image_id):
+    record = _image_record(image_id)
+    if record is None:
+        return jsonify({"error": "image_not_found", "image_id": image_id}), 404
+    return jsonify(record)
+
+
+@app.get("/api/v1/images/<image_id>/file")
+def image_file(image_id):
+    record = _image_record(image_id)
+    if record is None:
+        return jsonify({"error": "image_not_found", "image_id": image_id}), 404
+    return send_file(UPLOAD_DIR / f"{image_id}.jpg", mimetype="image/jpeg", max_age=3600)
+
+
+@app.get("/api/v1/images/<image_id>/thumbnail")
+def image_thumbnail(image_id):
+    record = _image_record(image_id)
+    if record is None:
+        return jsonify({"error": "image_not_found", "image_id": image_id}), 404
+    return send_file(UPLOAD_DIR / f"{image_id}_thumb.jpg", mimetype="image/jpeg", max_age=3600)

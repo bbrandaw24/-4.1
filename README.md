@@ -7,7 +7,7 @@
 - [x] 第 1 天：需求基线、架构基线、Docker Compose 骨架、Git 规范
 - [x] 第 2 天：设备模拟器与 MQTT 对接
 - [x] 第 3 天：Flask 服务端与设备管理
-- [ ] 第 4 天：图片上传与存储
+- [x] 第 4 天：图片上传与存储
 - [ ] 第 5-6 天：AI 训练、导出与推理服务
 - [ ] 第 7-8 天：鸿蒙 APP 与灌溉控制
 - [ ] 第 9-10 天：端云 APP 联调与自动化规则
@@ -21,6 +21,8 @@
 ## Day 3 验证
 
 Flask API 会订阅 MQTT 传感器消息并提供设备查询、最新遥测和水泵控制接口，详见 [`docs/day03-api.md`](docs/day03-api.md)。
+
+Day 4 图片接口、存储约定和验收命令见 [`docs/day04-images.md`](docs/day04-images.md)。
 
 ## 启动 Day 1 环境
 

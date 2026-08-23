@@ -52,8 +52,12 @@ services:
       MQTT_HOST: mosquitto
       MQTT_PORT: 1883
       AI_BASE_URL: http://ai:8001
+      UPLOAD_DIR: /data/uploads
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-5242880}
     ports:
       - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./data/uploads:/data/uploads
     depends_on:
       mysql:
         condition: service_healthy
