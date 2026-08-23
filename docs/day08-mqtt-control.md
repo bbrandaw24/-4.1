@@ -7,6 +7,7 @@
 - API 订阅传感器和水泵状态主题，缓存当前状态、确认时间和响应耗时。
 - `GET /api/v1/devices/{device_id}/pump` 返回 `pending`、`confirmed` 或 `timeout` 状态；默认确认窗口为 5 秒。
 - `GET /api/v1/devices/{device_id}/alerts` 根据低湿度（<40%）和高温（>30°C）生成告警。
+- `GET /api/v1/devices/{device_id}/telemetry/history?hours=10` 提供 10 小时滚动观察数据。
 - Web/ArkTS 映射基线增加手动/自动模式、低湿度阈值、定时灌溉设置、告警区和浏览器通知/振动入口。
 
 ## 控制闭环

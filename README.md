@@ -28,6 +28,8 @@ Day 4 图片接口、存储约定和验收命令见 [`docs/day04-images.md`](doc
 
 Day 8 灌溉指令确认、泵状态和告警验收命令见 [`docs/day08-mqtt-control.md`](docs/day08-mqtt-control.md)。
 
+虚拟机用途、10 小时趋势历史和鸿蒙 APK 缺口见 [`docs/runtime-and-apk.md`](docs/runtime-and-apk.md)。
+
 ## Web 可视化看板
 
 已提供无需构建的静态看板，展示实时遥测、土壤湿度趋势、灌溉控制和现场图片上传。运行 `python3 -m http.server 8080 --bind 0.0.0.0 --directory web` 后访问 `http://<虚拟机 IP>:8080/`。详细说明和验收记录见 [`docs/web-dashboard.md`](docs/web-dashboard.md)。

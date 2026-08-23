@@ -2,7 +2,8 @@ const params = new URLSearchParams(window.location.search);
 const API = params.get("api") || "http://192.168.128.129:8010";
 const AI_API = params.get("ai") || "http://192.168.128.129:8001";
 const DEVICE_ID = params.get("device") || "sim-greenhouse-day08";
-const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "" };
+const HISTORY_LIMIT = 7200;
+const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null };
 document.querySelector("#api-url").textContent = API;
 
 const $ = (selector) => document.querySelector(selector);
@@ -113,9 +114,9 @@ function renderDevice(device) {
   setMeter("#temperature-meter", Number(climate.air_temperature_c) * 3.2);
   setMeter("#light-meter", Number(climate.light_lux) / 500);
   state.moisture.push(moisture);
-  if (state.moisture.length > 18) state.moisture.shift();
+  if (state.moisture.length > HISTORY_LIMIT) state.moisture.shift();
   state.samples.push({ moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
-  if (state.samples.length > 18) state.samples.shift();
+  if (state.samples.length > HISTORY_LIMIT) state.samples.shift();
   const rows = [
     ["土壤温度", fmt(soil.temperature_c, 1, " °C"), "18–28 °C"],
     ["pH", fmt(soil.ph, 2), "5.8–6.8"],
@@ -136,6 +137,29 @@ function renderDevice(device) {
   drawTrend();
   refreshPumpStatus();
   refreshAlerts();
+  if (state.historyLoadedDevice !== device.device_id) refreshHistory(device.device_id);
+}
+
+async function refreshHistory(deviceId) {
+  try {
+    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(deviceId)}/telemetry/history?hours=10`, { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    const buckets = new Map();
+    (data.items || []).forEach((item) => {
+      const parsed = Date.parse(item.timestamp);
+      if (!Number.isFinite(parsed)) return;
+      const bucketKey = Math.round(parsed / 5000) * 5000;
+      const bucket = buckets.get(bucketKey) || {};
+      const payload = item.payload || {};
+      if (item.kind === "soil") bucket.moisture = Number(payload.moisture_pct);
+      if (item.kind === "climate") { bucket.temperature = Number(payload.air_temperature_c); bucket.light = Number(payload.light_lux); }
+      buckets.set(bucketKey, bucket);
+    });
+    const samples = [...buckets.values()].filter((item) => Number.isFinite(item.moisture) && Number.isFinite(item.temperature) && Number.isFinite(item.light));
+    if (samples.length >= 2) { state.samples = samples.slice(-HISTORY_LIMIT); state.moisture = state.samples.map((item) => item.moisture); renderTrendPanels(); drawTrend(); }
+    state.historyLoadedDevice = deviceId;
+  } catch (_) { /* live samples remain available when history is unavailable */ }
 }
 
 async function refresh() {

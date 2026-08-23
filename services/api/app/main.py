@@ -32,6 +32,7 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 registry = {}
 registry_lock = Lock()
 PUMP_CONFIRM_TIMEOUT_SECONDS = float(os.getenv("PUMP_CONFIRM_TIMEOUT_SECONDS", "5"))
+HISTORY_LIMIT = int(os.getenv("TELEMETRY_HISTORY_LIMIT", "7200"))
 pending_commands = {}
 image_registry = {}
 image_registry_lock = Lock()
@@ -88,6 +89,10 @@ def on_mqtt_message(_client, _userdata, message):
         if parts[2] == "sensor":
             device["last_seen"] = timestamp
             device["telemetry"][parts[3]] = {"timestamp": timestamp, "payload": payload}
+            history = device.setdefault("history", [])
+            history.append({"timestamp": timestamp, "kind": parts[3], "payload": payload})
+            if len(history) > HISTORY_LIMIT * 2:
+                del history[:-HISTORY_LIMIT * 2]
             return
         if parts[2] != "status" or parts[3] != "pump":
             return
@@ -158,6 +163,24 @@ def latest_telemetry(device_id):
 @app.get("/api/v1/devices/<device_id>/pump")
 def pump_status(device_id):
     return jsonify(_pump_snapshot(device_id))
+
+
+@app.get("/api/v1/devices/<device_id>/telemetry/history")
+def telemetry_history(device_id):
+    try:
+        hours = min(max(float(request.args.get("hours", "10")), 0.25), 24)
+    except ValueError:
+        return jsonify({"error": "hours_must_be_number"}), 400
+    cutoff = datetime.now(timezone.utc).timestamp() - hours * 3600
+    with registry_lock:
+        device = registry.get(device_id)
+        history = list((device or {}).get("history", []))
+    items = []
+    for item in history:
+        parsed = _parse_timestamp(item.get("timestamp"))
+        if parsed and parsed.timestamp() >= cutoff:
+            items.append(item)
+    return jsonify({"device_id": device_id, "hours": hours, "count": len(items), "items": items})
 
 
 @app.get("/api/v1/devices/<device_id>/alerts")
