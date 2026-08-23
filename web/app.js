@@ -1,5 +1,6 @@
 const params = new URLSearchParams(window.location.search);
 const API = params.get("api") || "http://192.168.128.129:8000";
+const AI_API = params.get("ai") || "http://192.168.128.129:8001";
 const state = { device: null, moisture: [] };
 document.querySelector("#api-url").textContent = API;
 
@@ -76,6 +77,24 @@ async function refresh() {
   }
 }
 
+async function refreshAiStatus() {
+  try {
+    const response = await fetch(`${AI_API}/api/v1/model/status`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const classes = (data.classes || []).join(" / ");
+    $("#ai-status-copy").textContent = data.ready
+      ? `模型 ${data.model_version} 已就绪 · 类别 ${classes}`
+      : `${data.message || "模型尚未就绪"} · 阈值 ${Number(data.confidence_threshold || 0.6).toFixed(2)}`;
+    $("#ai-status-badge").textContent = data.ready ? "MODEL READY" : "MODEL PENDING";
+    $("#ai-status-badge").classList.toggle("muted", !data.ready);
+  } catch (error) {
+    $("#ai-status-copy").textContent = `AI 服务暂不可用：${error.message}`;
+    $("#ai-status-badge").textContent = "AI OFFLINE";
+    $("#ai-status-badge").classList.add("muted");
+  }
+}
+
 async function pump(action) {
   if (!state.device) return;
   const buttons = [$("#pump-start"), $("#pump-stop")];
@@ -113,4 +132,6 @@ $("#dropzone").addEventListener("dragover", (event) => event.preventDefault());
 $("#dropzone").addEventListener("drop", (event) => { event.preventDefault(); upload(event.dataTransfer.files[0]); });
 if (window.lucide) window.lucide.createIcons();
 refresh();
+refreshAiStatus();
 setInterval(refresh, 5000);
+setInterval(refreshAiStatus, 15000);
