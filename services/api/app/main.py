@@ -15,6 +15,15 @@ app = Flask(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger("smart-agriculture-api")
 
+
+@app.after_request
+def add_cors_headers(response):
+    """Allow the read-only dashboard and local development hosts to call the API."""
+    response.headers["Access-Control-Allow-Origin"] = os.getenv("CORS_ORIGIN", "*")
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads"))

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智慧农业 · 温室运行台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">AG</span><div><strong>温室运行台</strong><small>SMART AGRICULTURE / OPERATIONS</small></div></div>
+    <div class="connection"><span class="pulse" id="connection-dot"></span><span id="connection-label">正在连接 API</span><button class="icon-button" id="refresh-button" title="立即刷新"><i data-lucide="refresh-cw"></i></button></div>
+  </header>
+
+  <main class="shell">
+    <section class="intro"><div><p class="eyebrow">GREENHOUSE 01 / LIVE OVERVIEW</p><h1>作物环境，一眼掌握。</h1><p class="subtitle">传感器数据、灌溉控制和图像采集集中在同一个工作面。</p></div><div class="last-update">最后更新 <strong id="last-update">--</strong></div></section>
+
+    <section class="metric-grid" aria-label="关键指标">
+      <article class="metric metric-green"><div class="metric-label"><i data-lucide="droplets"></i> 土壤湿度</div><strong id="soil-moisture">--</strong><span>目标区间 40–65 %</span><div class="meter"><b id="soil-meter"></b></div></article>
+      <article class="metric metric-sky"><div class="metric-label"><i data-lucide="thermometer"></i> 空气温度</div><strong id="air-temperature">--</strong><span>舒适区间 18–28 °C</span><div class="meter"><b id="temperature-meter"></b></div></article>
+      <article class="metric metric-amber"><div class="metric-label"><i data-lucide="sun-medium"></i> 光照</div><strong id="light-level">--</strong><span>当前采样值 / lux</span><div class="meter"><b id="light-meter"></b></div></article>
+      <article class="metric metric-violet"><div class="metric-label"><i data-lucide="radio"></i> 设备状态</div><strong id="device-count">--</strong><span id="device-status">等待设备上报</span><div class="device-state"><span class="pulse"></span> MQTT 在线</div></article>
+    </section>
+
+    <section class="workspace">
+      <article class="panel telemetry-panel"><div class="panel-heading"><div><p class="eyebrow">SENSOR FEED</p><h2>环境遥测</h2></div><span class="badge" id="device-id">未发现设备</span></div><div class="telemetry-table" id="telemetry-table"><div class="empty-state">正在等待传感器数据...</div></div><div class="chart-wrap"><div class="chart-head"><span>土壤湿度趋势</span><small>最近采样</small></div><canvas id="trend-chart" width="800" height="180"></canvas></div></article>
+      <aside class="side-stack">
+        <article class="panel control-panel"><div class="panel-heading"><div><p class="eyebrow">REMOTE CONTROL</p><h2>灌溉控制</h2></div><i data-lucide="sprout" class="heading-icon"></i></div><p class="control-copy">向当前设备发布水泵指令，设备会通过 MQTT 回传状态。</p><div class="pump-state"><span class="state-light" id="pump-light"></span><div><strong id="pump-label">待机</strong><small>模拟执行器状态</small></div></div><div class="control-actions"><button class="action primary" id="pump-start"><i data-lucide="play"></i>启动水泵</button><button class="action secondary" id="pump-stop"><i data-lucide="square"></i>停止水泵</button></div><p class="action-result" id="action-result">--</p></article>
+        <article class="panel upload-panel"><div class="panel-heading"><div><p class="eyebrow">FIELD IMAGE</p><h2>现场图像</h2></div><i data-lucide="camera" class="heading-icon"></i></div><label class="dropzone" id="dropzone"><input type="file" id="image-input" accept="image/jpeg,image/png"><i data-lucide="upload-cloud"></i><strong>上传一张作物照片</strong><span>JPEG / PNG，最大 5 MiB</span></label><div class="image-result" id="image-result"><span>暂无图像记录</span></div></article>
+      </aside>
+    </section>
+
+    <section class="notice"><i data-lucide="scan-line"></i><div><strong>AI 识别准备区</strong><p>图片采集链路已可用，模型推理将在第 5–6 天接入。当前不会虚构识别结果。</p></div><span class="badge muted">MODEL PENDING</span></section>
+  </main>
+  <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
+  <script src="app.js"></script>
+</body>
+</html>

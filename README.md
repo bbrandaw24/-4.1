@@ -24,6 +24,10 @@ Flask API 会订阅 MQTT 传感器消息并提供设备查询、最新遥测和�
 
 Day 4 图片接口、存储约定和验收命令见 [`docs/day04-images.md`](docs/day04-images.md)。
 
+## Web 可视化看板
+
+已提供无需构建的静态看板，展示实时遥测、土壤湿度趋势、灌溉控制和现场图片上传。运行 `python3 -m http.server 8080 --bind 0.0.0.0 --directory web` 后访问 `http://<虚拟机 IP>:8080/`。详细说明和验收记录见 [`docs/web-dashboard.md`](docs/web-dashboard.md)。
+
 ## 启动 Day 1 环境
 
 1. 复制 `.env.example` 为 `.env`，修改本机密码。
