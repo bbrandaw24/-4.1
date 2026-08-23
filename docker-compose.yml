@@ -1,0 +1,60 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-smart_agriculture}
+      MYSQL_USER: ${MYSQL_USER:-agri_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  api:
+    build: ./services/api
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-smart_agriculture}
+      MYSQL_USER: ${MYSQL_USER:-agri_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change-me}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      AI_BASE_URL: http://ai:8001
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+  ai:
+    build: ./services/ai
+    restart: unless-stopped
+    ports:
+      - "${AI_PORT:-8001}:8001"
+
+volumes:
+  mysql_data:
+  mosquitto_data:
+  mosquitto_log:

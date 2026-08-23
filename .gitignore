@@ -1,0 +1,28 @@
+# Local secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+**/*token*.txt
+**/*secret*.txt
+**/*password*.txt
+
+# Runtime data
+data/
+logs/
+uploads/
+models/*.pt
+models/*.onnx
+
+# Python and Node tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
