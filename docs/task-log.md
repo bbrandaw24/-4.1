@@ -127,3 +127,14 @@
 | AI 模块静态编译 | 待执行 |
 | 模型状态接口 | 已实现，待容器验收 |
 | 真实模型训练 | 待收集并审核真实图片 |
+
+### Day 6 虚拟机实测（2026-08-23）
+
+| 检查项 | 结果 |
+| --- | --- |
+| AI 镜像构建 | 通过，`smartagri-ai:day06` |
+| AI 容器 | `smartagri-ai-vm` 正常运行，端口 `8001` |
+| `GET /healthz` | 通过，返回 200 |
+| `GET /api/v1/model/status` | 通过，返回 `not_ready`、四分类和阈值 `0.60` |
+| Web 看板 AI 状态 | 通过，显示 `MODEL PENDING`，不虚构预测结果 |
+| 截图留档 | `C:\Users\DELL\Desktop\测试实习\smartagri-dashboard-day06-ai.png` |
