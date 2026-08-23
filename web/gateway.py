@@ -6,12 +6,13 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import shutil
+import os
 
 
 ROOT = Path(__file__).resolve().parent
 UPSTREAMS = {
-    "/api": "http://127.0.0.1:8010",
-    "/ai": "http://127.0.0.1:8001",
+    "/api": os.getenv("API_UPSTREAM", "http://127.0.0.1:8010"),
+    "/ai": os.getenv("AI_UPSTREAM", "http://127.0.0.1:8001"),
 }
 
 
@@ -73,6 +74,7 @@ class GatewayHandler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("0.0.0.0", 8080), GatewayHandler)
-    print("SmartAgri gateway listening on 0.0.0.0:8080", flush=True)
+    port = int(os.getenv("GATEWAY_PORT", "8080"))
+    server = ThreadingHTTPServer(("0.0.0.0", port), GatewayHandler)
+    print(f"SmartAgri gateway listening on 0.0.0.0:{port}", flush=True)
     server.serve_forever()
