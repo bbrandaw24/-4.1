@@ -1,0 +1,35 @@
+LOCAL VM DATABASE VERIFICATION
+Date: 2026-08-24
+VM host: bearpi-virtual-machine
+VM IPv4: 192.168.128.130
+MySQL container: mysql8 (mysql:8.1.0)
+Database: yinsiyuan
+Table: yinsiyuan_data
+
+SHOW DATABASES LIKE 'yinsiyuan';
++----------------------+
+| Database (yinsiyuan) |
++----------------------+
+| yinsiyuan            |
++----------------------+
+
+SHOW COLUMNS FROM yinsiyuan_data;
++---------------+---------------+------+-----+---------+----------------+
+| Field         | Type          | Null | Key | Default | Extra          |
++---------------+---------------+------+-----+---------+----------------+
+| record_id     | int unsigned  | NO   | PRI | NULL    | auto_increment |
+| display_name  | varchar(64)   | NO   |     | NULL    |                |
+| reading_value | decimal(10,2) | NO   |     | NULL    |                |
+| event_time    | datetime      | NO   |     | NULL    |                |
+| enabled       | tinyint(1)    | NO   |     | 1       |                |
++---------------+---------------+------+-----+---------+----------------+
+
+SELECT record_id, display_name, reading_value, event_time, enabled
+FROM yinsiyuan_data ORDER BY record_id DESC LIMIT 1;
++-----------+----------------------+---------------+---------------------+---------+
+| record_id | display_name         | reading_value | event_time          | enabled |
++-----------+----------------------+---------------+---------------------+---------+
+|         1 | yinsiyuan local demo |         88.50 | 2026-08-24 11:41:26 |       1 |
++-----------+----------------------+---------------+---------------------+---------+
+
+Result: database, table, five distinct data types, and one verification row are present in the local VM.

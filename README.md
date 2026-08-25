@@ -1,40 +1,65 @@
 # 智慧农业大棚监控系统
 
-本仓库按《中国地质大学 12 天实训计划》推进，目标是完成“设备模拟器 -> MQTT -> Flask -> MySQL -> AI -> 鸿蒙 APP”的端云智端闭环。
+本仓库是《中国地质大学 12 天实训计划》的智慧农业项目实现，主线为“设备模拟器 -> MQTT -> Flask API -> 数据库 -> Web 看板 -> 云端部署”。过时的“堵桥”任务不属于本项目。
 
-## 当前进度
+## 项目当前状态
 
-- [x] 第 1 天：需求基线、架构基线、Docker Compose 骨架、Git 规范
-- [x] 第 2 天：设备模拟器与 MQTT 对接
-- [x] 第 3 天：Flask 服务端与设备管理
-- [x] 第 4 天：图片上传与存储
-- [ ] 第 5-6 天：AI 训练、导出与推理服务
-- [ ] 第 7-8 天：鸿蒙 APP 与灌溉控制
-- [ ] 第 9-10 天：端云 APP 联调与自动化规则
-- [ ] 第 11 天：安全、性能与运维
-- [ ] 第 12 天：工程文档、代码规范与交付检查
+当前已经形成可运行、可验证的 Web 端云演示系统：本地 VMware Linux 虚拟机用于开发和联调，腾讯云用于公网部署，GitHub 用于源码、文档和非敏感证据管理。
 
-## Day 2 验证
+- 已完成：本地 Docker 环境、设备模拟器、MQTT 消息链路、Flask API、图片上传与缩略图、Web 看板、10 小时趋势、水泵控制闭环、腾讯云部署。
+- 已验证：本地虚拟机和云端 MQTT 发布/订阅、设备遥测、控制确认、数据库建表、网页访问和主要 API。
+- 待继续：真实 AI 权重和推理、自动灌溉规则、HTTPS/MQTT TLS/认证、备份监控、原生鸿蒙 APK/HAP、真实 BearPi-HM Nano 硬件接入。
 
-设备模拟器会通过 MQTT 发布土壤和气候数据，并接收水泵控制指令。协议、字段和验收命令见 [`docs/day02-mqtt.md`](docs/day02-mqtt.md)。
+完整的阶段交付说明见 [`docs/project-completion.md`](docs/project-completion.md)，按天记录见 [`docs/plan-12-day.md`](docs/plan-12-day.md) 和 [`docs/task-log.md`](docs/task-log.md)。
 
-## Day 3 验证
+## 系统组成
 
-Flask API 会订阅 MQTT 传感器消息并提供设备查询、最新遥测和水泵控制接口，详见 [`docs/day03-api.md`](docs/day03-api.md)。
+```text
+设备模拟器或真实设备
+        | MQTT sensor/control/status
+        v
+Mosquitto -> Flask API -> MySQL
+                |             |
+                v             v
+            Web 看板      图片/AI 接口
+```
 
-Day 4 图片接口、存储约定和验收命令见 [`docs/day04-images.md`](docs/day04-images.md)。
+本地虚拟机是 Linux/Docker/MQTT/API 的开发环境，不是 BearPi 硬件本身，也不是公网服务器。Windows 端主要用于 MobaXterm SSH、浏览器、截图和 GitHub 操作。
 
-## 启动 Day 1 环境
+## 地址与环境
 
-1. 复制 `.env.example` 为 `.env`，修改本机密码。
-2. 执行 `docker compose config` 检查配置。
-3. 执行 `docker compose up -d --build` 启动服务。
-4. 验证 `http://127.0.0.1:8000/healthz` 和 `http://127.0.0.1:8001/healthz`。
+| 环境 | 地址/入口 | 用途 |
+| --- | --- | --- |
+| 本地虚拟机 | `192.168.128.130` | Docker、模拟器、联调 |
+| 本地网页 | 以虚拟机服务实际端口为准 | 局域网验证 |
+| 腾讯云公网网页 | [http://43.156.230.129:8080/](http://43.156.230.129:8080/) | 对外演示 |
+| GitHub 仓库 | [bbrandaw24/-4.1](https://github.com/bbrandaw24/-4.1) | 源码与文档 |
 
-默认端口：API `8000`、AI `8001`、MySQL `3306`、MQTT `1883`、MQTT WebSocket `9001`。
+公网入口目前是 HTTP IP 地址，不代表已经配置 HTTPS 域名。GitHub Pages 只适合静态页面，动态 API、MQTT、MySQL 和模拟器仍运行在云服务器 Docker 中。
+
+## 快速启动
+
+1. 复制 `.env.example` 为 VM 内部的 `.env`，只在本地填写密码等配置，不要提交 `.env`。
+2. 执行 `docker compose config` 检查 Compose 配置。
+3. 执行 `docker compose -p smartagri up -d --build` 启动服务；如果已有同端口项目，请使用项目专用名称并先确认端口占用。
+4. 检查 API 和 AI 的 `/healthz`，再检查设备列表、最新遥测和水泵控制。
+
+主要协议与验收命令见 [`docs/day02-mqtt.md`](docs/day02-mqtt.md)、[`docs/day03-api.md`](docs/day03-api.md) 和 [`docs/day04-images.md`](docs/day04-images.md)。非敏感截图和原始文本见 [`evidence/README.md`](evidence/README.md)。
+
+## MQTT 主题
+
+| 主题 | 方向 | 说明 |
+| --- | --- | --- |
+| `farm/{device_id}/sensor/soil` | 设备 -> 服务端 | 土壤湿度、温度、pH、氮磷钾、电导率、盐度 |
+| `farm/{device_id}/sensor/climate` | 设备 -> 服务端 | 光照、空气温度、空气湿度 |
+| `farm/{device_id}/control/pump` | 服务端 -> 设备 | 水泵 `start`/`stop` |
+| `farm/{device_id}/status/pump` | 设备 -> 服务端 | 水泵执行确认 |
+
+默认模拟设备为 `sim-greenhouse-001`，约每 5 秒发布一次数据。灌溉状态使用连续状态模型，启动后湿度逐步上升，停止后逐步回落，温度和光照围绕基线小幅波动。
 
 ## 安全边界
 
-- `.env`、token、密码文件不会提交。
-- MQTT 的匿名监听仅用于 Day 1 本地开发，进入第 11 天必须改为账号认证和 TLS。
-- AI 接口当前是明确的 501 占位实现，不伪装成已完成模型能力。
+- 不提交 Token、密码、私钥、`.env` 或含凭据的日志。
+- 本地开发阶段可使用匿名 MQTT；上线前应启用账号认证、TLS 和最小权限。
+- MySQL、MQTT、API、AI 不直接公网暴露，公网只开放 Web 网关端口。
+- 当前 AI 501 返回值是未完成模型能力的明确占位，不伪装成已训练模型。

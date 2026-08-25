@@ -1,0 +1,17 @@
+$ sudo -n docker exec smartagri-cloud-mosquitto-1 mosquitto_pub --help | head -n 2
+mosquitto_pub is a simple mqtt client that will publish a message on a single topic and exit.
+mosquitto_pub version 2.1.2 running on libmosquitto 2.1.0.
+$ sudo -n docker exec smartagri-cloud-mosquitto-1 mosquitto_sub --help | head -n 2
+mosquitto_sub is a simple mqtt client that will subscribe to a set of topics and print all messages it receives.
+mosquitto_sub version 2.1.2 running on libmosquitto 2.1.0.
+$ sudo -n docker exec -d smartagri-cloud-mosquitto-1 sh -c mosquitto_sub -h 127.0.0.1 -t farm/+/sensor/# -q 1 -v
+$ sudo -n docker exec smartagri-cloud-mosquitto-1 mosquitto_pub -h 127.0.0.1 -t farm/cloud-demo-001/sensor/climate -q 1 -m JSON
+--- subscriber output ---
+farm/sim-greenhouse-001/sensor/soil {"device_id":"sim-greenhouse-001","timestamp":"2026-08-25T00:31:23.062197+00:00","payload":{"moisture_pct":25.0,"temperature_c":18.04,"ph":6.38,"nitrogen_mg_kg":142.03,"phosphorus_mg_kg":50.15,"potassium_mg_kg":176.99,"conductivity_ms_cm":1.01,"salinity_g_l":0.424}}
+farm/sim-greenhouse-001/sensor/climate {"device_id":"sim-greenhouse-001","timestamp":"2026-08-25T00:31:23.064172+00:00","payload":{"light_lux":25519.9,"air_temperature_c":24.9,"air_humidity_pct":57.32}}
+farm/cloud-demo-001/sensor/climate {"device_id":"cloud-demo-001","timestamp":"2026-08-25T08:30:00+08:00","payload":{"light_lux":12500,"air_temperature_c":24.6,"air_humidity_pct":68.2}}
+$ sudo -n docker exec -d smartagri-cloud-mosquitto-1 sh -c mosquitto_sub -h 127.0.0.1 -t farm/cloud-demo-001/control/pump -q 1 -v
+$ sudo -n docker exec smartagri-cloud-mosquitto-1 mosquitto_pub -h 127.0.0.1 -t farm/cloud-demo-001/control/pump -q 1 -m JSON
+--- control subscriber output ---
+farm/cloud-demo-001/control/pump {"device_id":"cloud-demo-001","payload":{"action":"start"}}
+MQTT_RESULT=PASS

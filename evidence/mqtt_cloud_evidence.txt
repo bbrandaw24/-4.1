@@ -1,0 +1,26 @@
+CLOUD MQTT INSTALL / PUBLISH / SUBSCRIBE VERIFICATION
+Date: 2026-08-24
+Cloud host: 43.156.230.129 (Ubuntu)
+Compose service: smartagri-cloud-mosquitto-1
+Image: eclipse-mosquitto:2
+Container status: running
+Internal broker: 127.0.0.1:1883 (host mapping 127.0.0.1:11883)
+
+=== MQTT CLIENT INSTALL / AVAILABILITY ===
+mosquitto_pub version 2.1.2 running on libmosquitto 2.1.0.
+mosquitto_sub version 2.1.2 running on libmosquitto 2.1.0.
+
+=== SENSOR MESSAGE PUBLISH / SUBSCRIBE ===
+Published topic: farm/cloud-demo-001/sensor/climate
+Published QoS: 1
+Published payload: {"device_id":"cloud-demo-001","timestamp":"2026-08-24T12:00:00+08:00","payload":{"light_lux":12500,"air_temperature_c":24.6,"air_humidity_pct":68.2}}
+Subscriber received:
+farm/cloud-demo-001/sensor/climate {"device_id":"cloud-demo-001","timestamp":"2026-08-24T12:00:00+08:00","payload":{"light_lux":12500,"air_temperature_c":24.6,"air_humidity_pct":68.2}}
+
+=== CONTROL MESSAGE PUBLISH / SUBSCRIBE ===
+Control published: farm/cloud-demo-001/control/pump
+Control payload: {"device_id":"cloud-demo-001","payload":{"action":"start"}}
+Control subscriber received:
+farm/cloud-demo-001/control/pump {"device_id":"cloud-demo-001","payload":{"action":"start"}}
+
+Result: PASS. Cloud Mosquitto service is running, clients are available, QoS 1 sensor data was delivered, and the pump control message was delivered on the required topic.

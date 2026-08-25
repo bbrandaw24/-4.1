@@ -95,3 +95,25 @@
 | 文件存储 | 通过，`data/uploads/` 生成原图 JPEG 和 `_thumb.jpg` |
 | 非法图片拒绝 | 通过，返回 HTTP 415 |
 | API 容器与模拟器联动 | 待在虚拟机执行 |
+
+## 2026-08-23 至 2026-08-25 - Day 5 至 Day 12 阶段同步
+
+- 完成 Web 可视化看板，包含 Overview、Trends、Devices 和 Control 页面；趋势页支持最长 10 小时窗口以及时间横坐标、数值纵坐标。
+- 调整模拟器为连续状态模型：灌溉启动后土壤湿度逐步上升，停止后逐步回落；温度、光照围绕基线小幅波动，避免不合理的大范围随机跳变。
+- 完成水泵 Web 控制链路：页面请求 API，API 产生 `command_id` 并发布 `control/pump`，模拟器回传 `status/pump`，页面显示 `confirmed` 和 `latency_ms`。
+- 部署同一套服务到腾讯云 Ubuntu 24.04，Compose 项目名为 `smartagri-cloud`；Web 网关通过 `http://43.156.230.129:8080/` 对外提供演示入口。
+- 云端仅对外提供 Web 网关；API、AI、Mosquitto 和 MySQL 保持在服务器本机或 Docker 内部网络，未作为公网数据库或消息代理开放。
+- 在本地虚拟机 MySQL 容器 `mysql8` 中创建 `yinsiyuan.yinsiyuan_data`，验证 `INT UNSIGNED`、`VARCHAR(64)`、`DECIMAL(10,2)`、`DATETIME`、`BOOLEAN` 五种字段类型。
+- 在云端 Mosquitto 容器完成实际 `mosquitto_sub`/`mosquitto_pub` 验证，包含气候主题、水泵控制主题和模拟器遥测；最终输出为 `MQTT_RESULT=PASS`。
+- 整理阶段交付说明、12 天计划实际状态和证据索引，明确 AI 真实模型、原生鸿蒙 HAP/APK、真实 BearPi 硬件和安全加固仍为后续任务。
+
+### 阶段验证记录
+
+| 检查项 | 结果 | 证据 |
+| --- | --- | --- |
+| Web 看板和 10 小时趋势 | 通过页面截图核对 | `evidence/smartagri-dashboard-day08-10h.png` |
+| 水泵控制、确认和延迟显示 | 通过页面截图核对 | `evidence/smartagri-dashboard-day08-pump-control.png` |
+| 本地虚拟机数据库建表 | 通过 | `evidence/yinsiyuan_local_db_evidence.png` |
+| 云端 MQTT 发布/订阅 | 通过，`MQTT_RESULT=PASS` | `evidence/mqtt_cloud_evidence.png`、`evidence/mqtt_cloud_raw_terminal.txt` |
+| AI 真实模型推理 | 未完成，不作为已验收功能 | 见 `docs/project-completion.md` |
+| 原生 HarmonyOS HAP/APK | 未完成，不作为已验收功能 | 见 `docs/project-completion.md` |
