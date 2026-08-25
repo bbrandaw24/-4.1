@@ -10,7 +10,7 @@
 - 已验证：本地虚拟机和云端 MQTT 发布/订阅、设备遥测、控制确认、数据库建表、网页访问和主要 API。
 - 待继续：真实 AI 权重和推理、自动灌溉规则、HTTPS/MQTT TLS/认证、备份监控、原生鸿蒙 APK/HAP、真实 BearPi-HM Nano 硬件接入。
 
-完整的阶段交付说明见 [`docs/project-completion.md`](docs/project-completion.md)，按天记录见 [`docs/plan-12-day.md`](docs/plan-12-day.md) 和 [`docs/task-log.md`](docs/task-log.md)。
+完整阶段交付说明见 [`docs/project-completion.md`](docs/project-completion.md)，按天记录见 [`docs/plan-12-day.md`](docs/plan-12-day.md) 和 [`docs/task-log.md`](docs/task-log.md)。远程部署和 Web 运行说明见 [`docs/cloud-deployment.md`](docs/cloud-deployment.md)、[`docs/web-dashboard.md`](docs/web-dashboard.md) 和 [`docs/runtime-and-apk.md`](docs/runtime-and-apk.md)。
 
 ## 系统组成
 
@@ -31,7 +31,7 @@ Mosquitto -> Flask API -> MySQL
 | 环境 | 地址/入口 | 用途 |
 | --- | --- | --- |
 | 本地虚拟机 | `192.168.128.130` | Docker、模拟器、联调 |
-| 本地网页 | 以虚拟机服务实际端口为准 | 局域网验证 |
+| 本地网页 | `http://192.168.128.129:8080/`（历史验证地址） | 局域网验证 |
 | 腾讯云公网网页 | [http://43.156.230.129:8080/](http://43.156.230.129:8080/) | 对外演示 |
 | GitHub 仓库 | [bbrandaw24/-4.1](https://github.com/bbrandaw24/-4.1) | 源码与文档 |
 
@@ -44,7 +44,7 @@ Mosquitto -> Flask API -> MySQL
 3. 执行 `docker compose -p smartagri up -d --build` 启动服务；如果已有同端口项目，请使用项目专用名称并先确认端口占用。
 4. 检查 API 和 AI 的 `/healthz`，再检查设备列表、最新遥测和水泵控制。
 
-主要协议与验收命令见 [`docs/day02-mqtt.md`](docs/day02-mqtt.md)、[`docs/day03-api.md`](docs/day03-api.md) 和 [`docs/day04-images.md`](docs/day04-images.md)。非敏感截图和原始文本见 [`evidence/README.md`](evidence/README.md)。
+也可以只启动静态页面进行接口联调：`python3 -m http.server 8080 --bind 0.0.0.0 --directory web`。主要协议与验收命令见 [`docs/day02-mqtt.md`](docs/day02-mqtt.md)、[`docs/day03-api.md`](docs/day03-api.md)、[`docs/day04-images.md`](docs/day04-images.md) 和 [`docs/day08-mqtt-control.md`](docs/day08-mqtt-control.md)。非敏感截图和原始文本见 [`evidence/README.md`](evidence/README.md)。
 
 ## MQTT 主题
 

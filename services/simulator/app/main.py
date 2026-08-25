@@ -19,6 +19,17 @@ MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 DEVICE_ID = os.getenv("DEVICE_ID", "sim-greenhouse-001")
 PUBLISH_INTERVAL = float(os.getenv("PUBLISH_INTERVAL_SECONDS", "5"))
+MOISTURE_GAIN_PER_TICK = float(os.getenv("MOISTURE_GAIN_PER_TICK", "1.8"))
+MOISTURE_DECAY_PER_TICK = float(os.getenv("MOISTURE_DECAY_PER_TICK", "0.12"))
+
+SIM_STATE = {
+    "moisture_pct": 50.0,
+    "temperature_c": 23.0,
+    "air_temperature_c": 24.0,
+    "air_humidity_pct": 68.0,
+    "light_lux": 30000.0,
+    "pump_running": False,
+}
 
 
 def now() -> str:
@@ -34,20 +45,26 @@ def envelope(payload: dict) -> str:
 
 
 def publish_sensor(client: mqtt.Client) -> None:
+    SIM_STATE["moisture_pct"] += (MOISTURE_GAIN_PER_TICK if SIM_STATE["pump_running"] else -MOISTURE_DECAY_PER_TICK) + random.gauss(0, 0.08)
+    SIM_STATE["moisture_pct"] = max(25.0, min(75.0, SIM_STATE["moisture_pct"]))
+    SIM_STATE["temperature_c"] = max(18.0, min(28.0, SIM_STATE["temperature_c"] + random.gauss(0, 0.12)))
+    SIM_STATE["air_temperature_c"] = max(18.0, min(30.0, SIM_STATE["air_temperature_c"] + random.gauss(0, 0.16)))
+    SIM_STATE["air_humidity_pct"] = max(55.0, min(80.0, SIM_STATE["air_humidity_pct"] + random.gauss(0, 0.35)))
+    SIM_STATE["light_lux"] = max(18000.0, min(42000.0, SIM_STATE["light_lux"] + random.gauss(0, 900)))
     soil = {
-        "moisture_pct": round(random.uniform(38, 62), 2),
-        "temperature_c": round(random.uniform(18, 28), 2),
-        "ph": round(random.uniform(5.8, 6.8), 2),
-        "nitrogen_mg_kg": round(random.uniform(80, 180), 2),
-        "phosphorus_mg_kg": round(random.uniform(25, 80), 2),
-        "potassium_mg_kg": round(random.uniform(100, 240), 2),
-        "conductivity_ms_cm": round(random.uniform(0.4, 1.8), 3),
-        "salinity_g_l": round(random.uniform(0.1, 0.8), 3),
+        "moisture_pct": round(SIM_STATE["moisture_pct"], 2),
+        "temperature_c": round(SIM_STATE["temperature_c"], 2),
+        "ph": round(6.35 + random.gauss(0, 0.03), 2),
+        "nitrogen_mg_kg": round(135 + random.gauss(0, 3), 2),
+        "phosphorus_mg_kg": round(52 + random.gauss(0, 2), 2),
+        "potassium_mg_kg": round(180 + random.gauss(0, 4), 2),
+        "conductivity_ms_cm": round(1.05 + random.gauss(0, 0.025), 3),
+        "salinity_g_l": round(0.42 + random.gauss(0, 0.012), 3),
     }
     climate = {
-        "light_lux": round(random.uniform(9000, 42000), 1),
-        "air_temperature_c": round(random.uniform(16, 31), 2),
-        "air_humidity_pct": round(random.uniform(45, 90), 2),
+        "light_lux": round(SIM_STATE["light_lux"], 1),
+        "air_temperature_c": round(SIM_STATE["air_temperature_c"], 2),
+        "air_humidity_pct": round(SIM_STATE["air_humidity_pct"], 2),
     }
     for kind, payload in (("sensor/soil", soil), ("sensor/climate", climate)):
         info = client.publish(topic(kind), envelope(payload), qos=1, retain=False)
@@ -62,7 +79,9 @@ def on_message(client: mqtt.Client, _userdata: object, message: mqtt.MQTTMessage
         if payload.get("action") not in {"start", "stop"}:
             LOGGER.warning("ignored unknown pump action: %s", payload)
             return
-        state = {"action": payload["action"], "running": payload["action"] == "start"}
+        command_id = command.get("command_id") or payload.get("command_id")
+        state = {"action": payload["action"], "running": payload["action"] == "start", "command_id": command_id}
+        SIM_STATE["pump_running"] = state["running"]
         client.publish(topic("status/pump"), envelope(state), qos=1)
         LOGGER.info("pump state changed: %s", state["running"])
     except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
