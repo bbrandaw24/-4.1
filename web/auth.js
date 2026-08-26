@@ -26,6 +26,28 @@ const Auth = (() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   }
+  async function logout() {
+    // 1. Clear app session state (token + user)
+    clear();
+    // 2. Clear session storage
+    try { sessionStorage.clear(); } catch (_) { /* ignore */ }
+    // 3. Clear Cache Storage API caches (service-worker / Cache API entries)
+    try {
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+    } catch (_) { /* ignore */ }
+    // 4. Clear cookies for this origin
+    try {
+      document.cookie.split(";").forEach((cookie) => {
+        const name = cookie.split("=")[0].trim();
+        if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+      });
+    } catch (_) { /* ignore */ }
+    // 5. Back to the login page
+    redirectToLogin();
+  }
   function hasPermission(permission) {
     const user = getUser();
     return !!(user && Array.isArray(user.permissions) && user.permissions.includes(permission));
@@ -53,5 +75,5 @@ const Auth = (() => {
     return fetch(aiBase() + path, { ...options, headers });
   }
 
-  return { apiBase, aiBase, getToken, getUser, setSession, clear, hasPermission, redirectToLogin, request, requestAI };
+  return { apiBase, aiBase, getToken, getUser, setSession, clear, logout, hasPermission, redirectToLogin, request, requestAI };
 })();

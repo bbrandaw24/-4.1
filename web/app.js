@@ -438,7 +438,7 @@ function applyRole() {
   const logout = $("#logout-button");
   if (logout && !logout.dataset.bound) {
     logout.dataset.bound = "1";
-    logout.addEventListener("click", () => { Auth.clear(); Auth.redirectToLogin(); });
+    logout.addEventListener("click", () => { Auth.logout(); });
   }
 }
 
