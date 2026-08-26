@@ -1,0 +1,207 @@
+/* Day 13b: multi-plot overview, plot switcher, alert log window */
+.intro-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.plot-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plot-switcher label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.plot-switcher select {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+.plot-switcher select:focus {
+  border-color: var(--green);
+}
+.plots-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.plots-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.plots-head .badge {
+  margin-left: auto;
+}
+.plots-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.plot-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.plot-card:hover {
+  border-color: var(--green);
+  box-shadow: var(--shadow);
+}
+.plot-card.active {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px var(--green-soft);
+}
+.plot-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.plot-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+.plot-crop {
+  font-size: 11px;
+  color: var(--green);
+  background: var(--green-soft);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.plot-card-head .badge {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 2px 8px;
+  background: var(--green-soft);
+  color: var(--green);
+}
+.plot-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.plot-card-metrics div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.plot-card-metrics span {
+  font-size: 10px;
+  color: var(--muted);
+}
+.plot-card-metrics b {
+  font-size: 16px;
+  font-weight: 700;
+}
+.plot-card-metrics b.ok {
+  color: var(--green);
+}
+.plot-card-metrics b.warn {
+  color: var(--amber);
+}
+.plot-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.plot-card-foot small {
+  margin-left: auto;
+}
+.plot-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.plot-status.on {
+  background: #55c67b;
+}
+.plot-status.off {
+  background: #d07a59;
+}
+/* alert log window */
+.alert-log-panel {
+  margin-bottom: 14px;
+}
+.alert-log-list {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.alert-log-item {
+  display: grid;
+  grid-template-columns: 150px 90px 120px 1fr 56px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.alert-log-item .alert-log-time {
+  color: var(--muted);
+  font-size: 11px;
+}
+.alert-log-item .alert-log-device {
+  font-weight: 600;
+}
+.alert-log-item .alert-log-code {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+.alert-log-item .alert-log-msg {
+  overflow-wrap: anywhere;
+}
+.alert-log-status {
+  text-align: center;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.alert-log-status.active {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.alert-log-status.cleared {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.alert-log-item.warning .alert-log-device {
+  color: var(--amber);
+}
+.alert-log-item.critical .alert-log-device {
+  color: #b3402e;
+}
+@media (max-width: 850px) {
+  .plots-strip {
+    grid-template-columns: 1fr;
+  }
+  .alert-log-item {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+@media (max-width: 620px) {
+  .intro-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}

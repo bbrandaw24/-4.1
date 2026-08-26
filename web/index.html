@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="day08.css">
   <link rel="stylesheet" href="auth.css">
   <link rel="stylesheet" href="agent.css">
+  <link rel="stylesheet" href="day13.css">
 </head>
 <body>
   <header class="topbar">
@@ -21,7 +22,12 @@
   </header>
 
   <main class="shell">
-    <section class="intro"><div><p class="eyebrow">GREENHOUSE 01 / LIVE OVERVIEW</p><h1>作物环境，一眼掌握。</h1><p class="subtitle">传感器数据、灌溉控制和图像采集集中在同一个工作面。</p></div><div class="last-update">最后更新 <strong id="last-update">--</strong></div></section>
+    <section class="intro"><div><p class="eyebrow">GREENHOUSE 01 / LIVE OVERVIEW</p><h1>作物环境，一眼掌握。</h1><p class="subtitle">多地块传感器数据、灌溉控制和图像采集集中在同一个工作面。</p></div><div class="intro-actions"><div class="plot-switcher"><label for="plot-select">当前地块</label><select id="plot-select" aria-label="切换地块"><option value="">加载中...</option></select></div><div class="last-update">最后更新 <strong id="last-update">--</strong></div></div></section>
+
+    <section class="route-panel" data-view="overview" aria-label="地块总览">
+      <div class="plots-head"><p class="eyebrow">ALL PLOTS</p><h2>地块总览</h2><span class="badge" id="plots-count">--</span></div>
+      <div class="plots-strip" id="plots-strip"><div class="empty-state">正在加载地块数据...</div></div>
+    </section>
 
     <nav class="app-nav" aria-label="应用页面">
       <button class="nav-item active" data-route="overview"><i data-lucide="layout-dashboard"></i><span>概览</span></button>
@@ -43,6 +49,13 @@
         <article class="panel control-panel"><div class="panel-heading"><div><p class="eyebrow">REMOTE CONTROL</p><h2>灌溉控制</h2></div><i data-lucide="sprout" class="heading-icon"></i></div><p class="control-copy">通过 MQTT 发布指令，等待模拟执行器回传确认后更新状态。</p><div class="pump-state"><span class="state-light" id="pump-light"></span><div><strong id="pump-label">待机</strong><small id="pump-detail">等待设备状态</small></div></div><div class="control-actions"><button class="action primary" id="pump-start"><i data-lucide="play"></i>启动水泵</button><button class="action secondary" id="pump-stop"><i data-lucide="square"></i>停止水泵</button></div><p class="action-result" id="action-result">--</p><div class="mode-row"><span>控制模式</span><div class="mode-switch" role="group" aria-label="控制模式"><button class="mode-button active" data-mode="manual">手动</button><button class="mode-button" data-mode="auto">自动</button></div></div><div class="automation-fields"><label>低湿度阈值 <input id="moisture-threshold" type="number" min="10" max="90" step="1" value="40"><span>%</span></label><label class="schedule-toggle"><input id="schedule-enabled" type="checkbox"><span>定时灌溉</span><input id="schedule-time" type="time" value="06:00" disabled></label><p class="rule-status" id="rule-status">正在读取灌溉规则...</p></div><div class="alert-box"><div class="alert-heading"><span><i data-lucide="bell-ring"></i> 告警与建议</span><button class="notify-button" id="notify-button" type="button">启用通知</button></div><div id="alert-list" class="alert-list"><span class="alert-empty">当前无告警</span></div></div></article>
         <article class="panel upload-panel"><div class="panel-heading"><div><p class="eyebrow">FIELD IMAGE</p><h2>现场图像</h2></div><i data-lucide="camera" class="heading-icon"></i></div><label class="dropzone" id="dropzone"><input type="file" id="image-input" accept="image/jpeg,image/png"><i data-lucide="upload-cloud"></i><strong>上传一张作物照片</strong><span>JPEG / PNG，最大 5 MiB</span></label><div class="image-result" id="image-result"><span>暂无图像记录</span></div></article>
       </aside>
+    </section>
+
+    <section class="route-panel" data-view="overview">
+      <article class="panel alert-log-panel">
+        <div class="panel-heading"><div><p class="eyebrow">ALERT LOG</p><h2>告警记录</h2><p class="agent-sub">系统告警历史（云端 SQLite 持久化），可追溯问题。</p></div><button class="notify-button" id="alert-log-refresh" type="button">刷新</button></div>
+        <div class="alert-log-list" id="alert-log-list"><span class="alert-empty">暂无告警记录</span></div>
+      </article>
     </section>
 
     <section class="notice route-panel" data-view="overview"><i data-lucide="scan-line"></i><div><strong>AI 识别准备区</strong><p id="ai-status-copy">正在查询模型状态...</p></div><span class="badge muted" id="ai-status-badge">CHECKING</span></section>
@@ -78,8 +91,8 @@
     </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
-  <script src="auth.js?v=day12-logout"></script>
-  <script src="app.js?v=day12-logout"></script>
+  <script src="auth.js?v=day13-plots"></script>
+  <script src="app.js?v=day13-plots"></script>
   <script src="agent.js?v=day13-agent"></script>
 </body>
 </html>

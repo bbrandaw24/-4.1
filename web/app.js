@@ -2,7 +2,9 @@ const params = new URLSearchParams(window.location.search);
 if (!Auth.getToken()) Auth.redirectToLogin();
 const API = Auth.apiBase();
 const AI_API = Auth.aiBase();
-const DEVICE_ID = params.get("device") || null; // resolved to first available device on first refresh
+let DEVICE_ID = params.get("device") || null; // resolved to first available device on first refresh
+let selectedDeviceId = DEVICE_ID; // follows the plot switcher; drives metrics/trends/agent
+const PLOT_NAMES = { "sim-plot-apple": "苹果园", "sim-plot-pear": "梨园", "sim-plot-orange": "橘园" };
 const HISTORY_LIMIT = 7200;
 const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", rule: null, user: Auth.getUser() };
 document.querySelector("#api-url").textContent = API;
@@ -325,13 +327,96 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (!data.items?.length) throw new Error("暂无设备");
-    renderDevice(data.items.find((item) => item.device_id === DEVICE_ID) || data.items[0]);
+    populatePlotSwitcher(data.items);
+    renderPlotsStrip(data.items);
+    if (!selectedDeviceId || !data.items.some((item) => item.device_id === selectedDeviceId)) {
+      selectedDeviceId = data.items[0].device_id;
+      DEVICE_ID = selectedDeviceId;
+    }
+    renderDevice(data.items.find((item) => item.device_id === selectedDeviceId) || data.items[0]);
     setConnection(true, "API 已连接");
     $("#last-update").textContent = new Date().toLocaleTimeString();
   } catch (error) {
     setConnection(false, "API 暂不可用");
     $("#device-status").textContent = error.message;
   }
+}
+
+function populatePlotSwitcher(items) {
+  const select = $("#plot-select");
+  if (!select || select.dataset.bound) return;
+  select.dataset.bound = "1";
+  select.innerHTML = items.map((item) => {
+    const plot = item.plot || {};
+    const label = plot.name ? `${plot.name}（${plot.crop || item.device_id}）` : item.device_id;
+    return `<option value="${item.device_id}">${label}</option>`;
+  }).join("");
+  select.addEventListener("change", () => { selectDevice(select.value); });
+}
+
+function selectDevice(deviceId) {
+  if (!deviceId || deviceId === selectedDeviceId) return;
+  selectedDeviceId = deviceId;
+  DEVICE_ID = deviceId;
+  const url = new URL(window.location.href);
+  url.searchParams.set("device", deviceId);
+  window.history.replaceState({}, "", url);
+  const select = $("#plot-select");
+  if (select && select.value !== deviceId) select.value = deviceId;
+  // re-render the dashboard for the new plot and reset the history window
+  state.samples = [];
+  state.moisture = [];
+  lastHistoryFetchAt = 0;
+  refresh();
+  refreshHistory(deviceId, true);
+}
+
+function renderPlotsStrip(items) {
+  const strip = $("#plots-strip");
+  if (!strip) return;
+  $("#plots-count").textContent = `${items.length} 个地块`;
+  strip.innerHTML = items.map((item) => {
+    const soil = item.telemetry?.soil?.payload || {};
+    const climate = item.telemetry?.climate?.payload || {};
+    const plot = item.plot || {};
+    const online = Boolean(item.last_seen);
+    const active = item.device_id === selectedDeviceId;
+    const moisture = Number(soil.moisture_pct);
+    const moistureOk = moisture >= 40 && moisture <= 70;
+    const temp = Number(climate.air_temperature_c);
+    const tempOk = temp <= 30;
+    return `<article class="plot-card ${active ? "active" : ""}" data-device="${item.device_id}">
+      <div class="plot-card-head"><span class="plot-name">${plot.name || item.device_id}</span><span class="plot-crop">${plot.crop || "—"}</span>${active ? '<span class="badge">当前</span>' : ""}</div>
+      <div class="plot-card-metrics">
+        <div><span>湿度</span><b class="${moistureOk ? "ok" : "warn"}">${fmt(moisture, 1, "%")}</b></div>
+        <div><span>温度</span><b class="${tempOk ? "ok" : "warn"}">${fmt(temp, 1, "°C")}</b></div>
+        <div><span>光照</span><b>${fmt(climate.light_lux, 0, "")}</b></div>
+      </div>
+      <div class="plot-card-foot"><span class="plot-status ${online ? "on" : "off"}"></span><span>${online ? "在线" : "离线"}</span><small>${online ? new Date(item.last_seen).toLocaleTimeString() : "—"}</small></div>
+    </article>`;
+  }).join("");
+  strip.querySelectorAll(".plot-card").forEach((card) => {
+    card.addEventListener("click", () => selectDevice(card.dataset.device));
+  });
+}
+
+async function refreshAlertLog() {
+  const list = $("#alert-log-list");
+  if (!list) return;
+  try {
+    const response = await Auth.request("/api/v1/alerts/logs?limit=30", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (!data.items?.length) {
+      list.innerHTML = '<span class="alert-empty">暂无告警记录</span>';
+      return;
+    }
+    list.innerHTML = data.items.map((item) => {
+      const plot = PLOT_NAMES[item.device_id] || item.device_id;
+      const cls = item.level === "critical" ? "critical" : "warning";
+      return `<div class="alert-log-item ${cls}"><span class="alert-log-time">${new Date(item.timestamp).toLocaleString()}</span><span class="alert-log-device">${plot}</span><span class="alert-log-code">${item.code}</span><span class="alert-log-msg">${item.message}</span><span class="alert-log-status ${item.status}">${item.status === "active" ? "触发" : "恢复"}</span></div>`;
+    }).join("");
+  } catch (_) { /* keep last state */ }
 }
 
 async function refreshAiStatus() {
@@ -479,12 +564,16 @@ $("#notify-button").addEventListener("click", async () => {
 $("#image-input").addEventListener("change", (event) => upload(event.target.files[0]));
 $("#dropzone").addEventListener("dragover", (event) => event.preventDefault());
 $("#dropzone").addEventListener("drop", (event) => { event.preventDefault(); upload(event.dataTransfer.files[0]); });
+const alertLogRefresh = $("#alert-log-refresh");
+if (alertLogRefresh) alertLogRefresh.addEventListener("click", refreshAlertLog);
 if (window.lucide) window.lucide.createIcons();
 refresh();
 refreshAiStatus();
+refreshAlertLog();
 setRoute(params.get("view") || "overview");
 setInterval(refresh, 5000);
 setInterval(() => { if (state.device) refreshHistory(state.device.device_id); }, 60000);
 setInterval(refreshPumpStatus, 1000);
 setInterval(refreshAlerts, 5000);
 setInterval(refreshAiStatus, 15000);
+setInterval(refreshAlertLog, 30000);

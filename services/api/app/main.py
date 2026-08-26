@@ -57,6 +57,16 @@ image_registry = {}
 image_registry_lock = Lock()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# --- Plot metadata (multi-plot deployment: apple / pear / orange orchards) ----
+PLOT_META = {
+    "sim-plot-apple": {"name": "苹果园", "crop": "苹果"},
+    "sim-plot-pear": {"name": "梨园", "crop": "梨"},
+    "sim-plot-orange": {"name": "橘园", "crop": "橘子"},
+}
+ALERT_LOG_LIMIT = int(os.getenv("ALERT_LOG_LIMIT", "500"))  # keep newest N alert records
+ALERT_EVAL_INTERVAL_SECONDS = float(os.getenv("ALERT_EVAL_INTERVAL", "5"))
+ALERT_LOGGING_ENABLED = os.getenv("ALERT_LOGGING_ENABLED", "true").lower() == "true"
+
 # --- Persistent telemetry history (survives API restarts) -------------------
 # The last ~10h of sensor samples are stored in SQLite under the /data volume so
 # the trends view always reflects the cloud server's history, not data observed
@@ -90,6 +100,20 @@ def init_telemetry_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_th_device_ts ON telemetry_history(device_id, ts)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alert_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                level TEXT NOT NULL,
+                code TEXT NOT NULL,
+                message TEXT NOT NULL,
+                status TEXT NOT NULL,
+                ts TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_al_device_ts ON alert_log(device_id, ts)")
         conn.commit()
     finally:
         conn.close()
@@ -123,6 +147,102 @@ def _store_telemetry(device_id, kind, payload, timestamp):
     finally:
         conn.close()
     _prune_telemetry_if_due()
+
+
+# --- Persistent alert log (trace historical alerts) -------------------------
+def _insert_alert(device_id, level, code, message, status, timestamp):
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "INSERT INTO alert_log (device_id, level, code, message, status, ts) VALUES (?,?,?,?,?,?)",
+            (device_id, level, code, message, status, timestamp),
+        )
+        conn.execute(
+            "DELETE FROM alert_log WHERE id NOT IN (SELECT id FROM alert_log ORDER BY id DESC LIMIT ?)",
+            (ALERT_LOG_LIMIT,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_alerts(device_id=None, level=None, limit=50):
+    conn = _telemetry_connect()
+    try:
+        where = []
+        params = []
+        if device_id:
+            where.append("device_id = ?")
+            params.append(device_id)
+        if level:
+            where.append("level = ?")
+            params.append(level)
+        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+        params.append(max(1, min(int(limit), 500)))
+        rows = conn.execute(
+            f"SELECT device_id, level, code, message, status, ts FROM alert_log{where_sql} "
+            "ORDER BY id DESC LIMIT ?",
+            params,
+        ).fetchall()
+        return [
+            {"device_id": r[0], "level": r[1], "code": r[2], "message": r[3], "status": r[4], "timestamp": r[5]}
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def _evaluate_alert_conditions(device):
+    """Return list of (code, level, message, active) for one device snapshot."""
+    soil = (device.get("telemetry", {}).get("soil", {}).get("payload", {}) or {})
+    climate = (device.get("telemetry", {}).get("climate", {}).get("payload", {}) or {})
+    moisture = soil.get("moisture_pct")
+    temperature = climate.get("air_temperature_c")
+    conditions = []
+    if isinstance(moisture, (int, float)):
+        if moisture < 40:
+            conditions.append(("low_moisture", "warning", f"土壤湿度 {moisture:.1f}% 低于 40%，建议灌溉", True))
+        else:
+            conditions.append(("low_moisture", "warning", f"土壤湿度 {moisture:.1f}% 已恢复至 40% 以上", False))
+        if moisture > 70:
+            conditions.append(("high_moisture", "warning", f"土壤湿度 {moisture:.1f}% 高于 70%，注意排水", True))
+        else:
+            conditions.append(("high_moisture", "warning", f"土壤湿度 {moisture:.1f}% 已回落至 70% 以下", False))
+    if isinstance(temperature, (int, float)):
+        if temperature > 30:
+            conditions.append(("high_temperature", "warning", f"空气温度 {temperature:.1f}°C 偏高，建议通风遮阳", True))
+        else:
+            conditions.append(("high_temperature", "warning", f"空气温度 {temperature:.1f}°C 已回落至 30°C 以下", False))
+    return conditions
+
+
+def alert_evaluator_loop():
+    while True:
+        try:
+            with registry_lock:
+                devices = {device_id: dict(device) for device_id, device in registry.items()}
+            now_ts = utc_now()
+            for device_id, device in devices.items():
+                for code, level, message, active in _evaluate_alert_conditions(device):
+                    key = (device_id, code)
+                    previous = alert_states.get(key)
+                    if previous is None:
+                        # first observation: only log if currently active, to avoid
+                        # flooding the log with "cleared" rows on startup
+                        if active:
+                            _insert_alert(device_id, level, code, message, "active", now_ts)
+                        alert_states[key] = active
+                    elif previous != active:
+                        _insert_alert(device_id, level, code, message, "active" if active else "cleared", now_ts)
+                        alert_states[key] = active
+        except Exception as exc:
+            LOGGER.warning("alert evaluation pass failed: %s", exc)
+        time.sleep(ALERT_EVAL_INTERVAL_SECONDS)
+
+
+alert_states = {}
+if ALERT_LOGGING_ENABLED:
+    Thread(target=alert_evaluator_loop, name="alert-evaluator", daemon=True).start()
 
 
 init_telemetry_db()
@@ -375,7 +495,13 @@ def system_status():
 @require_auth()
 def devices():
     with registry_lock:
-        return jsonify({"items": list(registry.values()), "count": len(registry)})
+        items = list(registry.values())
+    enriched = []
+    for device in items:
+        item = dict(device)
+        item["plot"] = PLOT_META.get(device.get("device_id"), {})
+        enriched.append(item)
+    return jsonify({"items": enriched, "count": len(enriched)})
 
 
 @app.get("/api/v1/devices/<device_id>/telemetry/latest")
@@ -439,6 +565,25 @@ def device_alerts(device_id):
     if isinstance(temperature, (int, float)) and temperature > 30:
         items.append({"level": "warning", "code": "high_temperature", "message": f"空气温度 {temperature:.1f}°C 偏高，请检查通风"})
     return jsonify({"device_id": device_id, "items": items, "count": len(items)})
+
+
+@app.get("/api/v1/alerts/logs")
+@require_auth()
+def alerts_logs():
+    """Historical alert records (persisted in SQLite) for traceability.
+    Optional filters: ?device_id= & ?level= & ?limit= (default 50, max 500)."""
+    device_id = request.args.get("device_id") or None
+    level = request.args.get("level") or None
+    try:
+        limit = min(max(int(request.args.get("limit", "50")), 1), 500)
+    except ValueError:
+        return jsonify({"error": "limit_must_be_integer"}), 400
+    try:
+        items = list_alerts(device_id=device_id, level=level, limit=limit)
+    except Exception as exc:
+        LOGGER.warning("alert log read failed: %s", exc)
+        return jsonify({"error": "alert_log_unavailable", "message": str(exc)}), 503
+    return jsonify({"items": items, "count": len(items), "filters": {"device_id": device_id, "level": level}})
 
 
 @app.post("/api/v1/devices/<device_id>/pump")

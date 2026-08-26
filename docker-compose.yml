@@ -34,7 +34,9 @@ services:
     environment:
       MQTT_HOST: mosquitto
       MQTT_PORT: 1883
-      DEVICE_ID: ${DEVICE_ID:-sim-greenhouse-001}
+      # Multi-plot simulation (apple / pear / orange orchards). Override with a
+      # JSON list of profiles via SIM_DEVICES if different plots are needed.
+      SIM_DEVICES: ${SIM_DEVICES:-}
       PUBLISH_INTERVAL_SECONDS: ${PUBLISH_INTERVAL_SECONDS:-5}
     depends_on:
       mosquitto:

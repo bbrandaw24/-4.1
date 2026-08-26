@@ -11,6 +11,7 @@ os.environ["AUTH_SECRET"] = "test-secret"
 os.environ["AUTH_TOKEN_MAX_AGE"] = "43200"
 os.environ["MQTT_LISTENER_ENABLED"] = "false"
 os.environ["IRRIGATION_RULES_ENABLED"] = "false"
+os.environ["ALERT_LOGGING_ENABLED"] = "false"
 
 SERVICES_API_APP = str(Path(__file__).resolve().parents[1] / "app")
 if SERVICES_API_APP not in sys.path:
