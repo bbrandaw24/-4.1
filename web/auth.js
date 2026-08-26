@@ -8,10 +8,10 @@ const Auth = (() => {
     return window.location.protocol.startsWith("http") && window.location.hostname !== "bbrandaw24.github.io";
   }
   function apiBase() {
-    return params().get("api") || (isGateway() ? window.location.origin : "http://192.168.128.129:8010");
+    return params().get("api") || (isGateway() ? window.location.origin : "http://43.156.230.129:8010");
   }
   function aiBase() {
-    return params().get("ai") || (isGateway() ? window.location.origin : "http://192.168.128.129:8001");
+    return params().get("ai") || (isGateway() ? window.location.origin : "http://43.156.230.129:8001");
   }
 
   function getToken() { return localStorage.getItem(TOKEN_KEY); }
