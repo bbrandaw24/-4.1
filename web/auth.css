@@ -1,0 +1,25 @@
+/* Auth-related chrome: role chip, logout, and locked (no-permission) states. */
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #d5e6d9;
+  margin-left: 6px;
+}
+.user-chip #role-badge {
+  background: rgba(149, 194, 165, .18);
+  border: 1px solid rgba(149, 194, 165, .35);
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.user-chip .icon-button:hover { color: #fff; }
+.control-panel.locked .automation-fields,
+.control-panel.locked .control-actions { opacity: .5; pointer-events: none; }
+.panel.locked .dropzone { opacity: .5; pointer-events: none; }
+.lock-note {
+  font-size: 11px;
+  color: var(--amber, #a26716);
+  margin-top: 8px;
+}

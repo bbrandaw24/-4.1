@@ -20,6 +20,15 @@ def client():
         yield test_client
 
 
+@pytest.fixture()
+def manager_headers(client):
+    client.post("/api/v1/auth/register",
+                json={"username": "mgr_irr", "password": "secret1", "role": "manager"})
+    token = client.post("/api/v1/auth/login",
+                        json={"username": "mgr_irr", "password": "secret1"}).get_json()["token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 BASE_RULE = {"auto_enabled": True, "start_threshold_pct": 40.0, "stop_threshold_pct": 55.0}
 
 
@@ -57,8 +66,8 @@ def test_non_numeric_moisture_is_ignored():
     assert main.evaluate_irrigation_rule(_rule(), True, False, None) is None
 
 
-def test_get_rules_returns_defaults(client):
-    response = client.get("/api/v1/devices/fresh-device/irrigation-rules")
+def test_get_rules_returns_defaults(client, manager_headers):
+    response = client.get("/api/v1/devices/fresh-device/irrigation-rules", headers=manager_headers)
     assert response.status_code == 200
     body = response.get_json()
     assert body["auto_enabled"] is False
@@ -66,53 +75,53 @@ def test_get_rules_returns_defaults(client):
     assert body["stop_threshold_pct"] == 55.0
 
 
-def test_put_rejects_non_object_body(client):
-    assert client.put("/api/v1/devices/d10/irrigation-rules", json=None).status_code == 400
-    assert client.put("/api/v1/devices/d10/irrigation-rules", json=[1]).status_code == 400
+def test_put_rejects_non_object_body(client, manager_headers):
+    assert client.put("/api/v1/devices/d10/irrigation-rules", json=None, headers=manager_headers).status_code == 400
+    assert client.put("/api/v1/devices/d10/irrigation-rules", json=[1], headers=manager_headers).status_code == 400
 
 
-def test_put_rejects_boolean_auto_enabled(client):
-    response = client.put("/api/v1/devices/d10/irrigation-rules", json={"auto_enabled": "yes"})
+def test_put_rejects_boolean_auto_enabled(client, manager_headers):
+    response = client.put("/api/v1/devices/d10/irrigation-rules", json={"auto_enabled": "yes"}, headers=manager_headers)
     assert response.status_code == 400
     assert response.get_json()["error"] == "auto_enabled_must_be_boolean"
 
 
-def test_put_rejects_threshold_out_of_range(client):
+def test_put_rejects_threshold_out_of_range(client, manager_headers):
     for key in ("start_threshold_pct", "stop_threshold_pct"):
-        response = client.put("/api/v1/devices/d10/irrigation-rules", json={key: 120})
+        response = client.put("/api/v1/devices/d10/irrigation-rules", json={key: 120}, headers=manager_headers)
         assert response.status_code == 400
         assert response.get_json()["error"] == f"{key}_out_of_range"
-        response = client.put("/api/v1/devices/d10/irrigation-rules", json={key: "40"})
+        response = client.put("/api/v1/devices/d10/irrigation-rules", json={key: "40"}, headers=manager_headers)
         assert response.status_code == 400
 
 
-def test_put_rejects_negative_cooldown(client):
-    response = client.put("/api/v1/devices/d10/irrigation-rules", json={"cooldown_seconds": -5})
+def test_put_rejects_negative_cooldown(client, manager_headers):
+    response = client.put("/api/v1/devices/d10/irrigation-rules", json={"cooldown_seconds": -5}, headers=manager_headers)
     assert response.status_code == 400
 
 
-def test_put_rejects_stop_not_above_start(client):
+def test_put_rejects_stop_not_above_start(client, manager_headers):
     response = client.put("/api/v1/devices/d10/irrigation-rules",
-                          json={"start_threshold_pct": 60, "stop_threshold_pct": 55})
+                          json={"start_threshold_pct": 60, "stop_threshold_pct": 55}, headers=manager_headers)
     assert response.status_code == 400
     assert response.get_json()["error"] == "stop_threshold_must_exceed_start_threshold"
     response = client.put("/api/v1/devices/d10/irrigation-rules",
-                          json={"start_threshold_pct": 55, "stop_threshold_pct": 55})
+                          json={"start_threshold_pct": 55, "stop_threshold_pct": 55}, headers=manager_headers)
     assert response.status_code == 400
 
 
-def test_put_valid_rule_persists(client):
+def test_put_valid_rule_persists(client, manager_headers):
     device_id = "d10-persist"
     response = client.put(f"/api/v1/devices/{device_id}/irrigation-rules",
                           json={"auto_enabled": True, "start_threshold_pct": 38, "stop_threshold_pct": 52,
-                                "cooldown_seconds": 90})
+                                "cooldown_seconds": 90}, headers=manager_headers)
     assert response.status_code == 200
     body = response.get_json()
     assert body["auto_enabled"] is True
     assert body["start_threshold_pct"] == 38.0
     assert body["cooldown_seconds"] == 90.0
     assert body["updated_at"]
-    follow_up = client.get(f"/api/v1/devices/{device_id}/irrigation-rules")
+    follow_up = client.get(f"/api/v1/devices/{device_id}/irrigation-rules", headers=manager_headers)
     assert follow_up.get_json()["start_threshold_pct"] == 38.0
 
 

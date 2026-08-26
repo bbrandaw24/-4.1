@@ -12,16 +12,23 @@ from flask import Flask, jsonify, request, send_file
 from PIL import Image, UnidentifiedImageError
 import paho.mqtt.client as mqtt
 
+try:
+    from .auth import init_db, register_auth_routes, require_auth
+except ImportError:  # allow running main.py directly without the package context
+    from auth import init_db, register_auth_routes, require_auth
+
 app = Flask(__name__)
+init_db()
+register_auth_routes(app)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger("smart-agriculture-api")
 
 
 @app.after_request
 def add_cors_headers(response):
-    """Allow the read-only dashboard and local development hosts to call the API."""
+    """Allow the dashboard and local development hosts to call the API."""
     response.headers["Access-Control-Allow-Origin"] = os.getenv("CORS_ORIGIN", "*")
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
     return response
 
@@ -280,12 +287,14 @@ def system_status():
 
 
 @app.get("/api/v1/devices")
+@require_auth()
 def devices():
     with registry_lock:
         return jsonify({"items": list(registry.values()), "count": len(registry)})
 
 
 @app.get("/api/v1/devices/<device_id>/telemetry/latest")
+@require_auth()
 def latest_telemetry(device_id):
     with registry_lock:
         device = registry.get(device_id)
@@ -295,11 +304,13 @@ def latest_telemetry(device_id):
 
 
 @app.get("/api/v1/devices/<device_id>/pump")
+@require_auth()
 def pump_status(device_id):
     return jsonify(_pump_snapshot(device_id))
 
 
 @app.get("/api/v1/devices/<device_id>/telemetry/history")
+@require_auth()
 def telemetry_history(device_id):
     try:
         hours = min(max(float(request.args.get("hours", "10")), 0.25), 24)
@@ -318,6 +329,7 @@ def telemetry_history(device_id):
 
 
 @app.get("/api/v1/devices/<device_id>/alerts")
+@require_auth()
 def device_alerts(device_id):
     with registry_lock:
         device = registry.get(device_id)
@@ -336,6 +348,7 @@ def device_alerts(device_id):
 
 
 @app.post("/api/v1/devices/<device_id>/pump")
+@require_auth("control_pump")
 def pump(device_id):
     action = (request.get_json(silent=True) or {}).get("action")
     if action not in {"start", "stop"}:
@@ -357,11 +370,13 @@ def _get_irrigation_rule(device_id):
 
 
 @app.get("/api/v1/devices/<device_id>/irrigation-rules")
+@require_auth()
 def get_irrigation_rule(device_id):
     return jsonify(_get_irrigation_rule(device_id))
 
 
 @app.put("/api/v1/devices/<device_id>/irrigation-rules")
+@require_auth("manage_rules")
 def put_irrigation_rule(device_id):
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
@@ -396,6 +411,7 @@ def put_irrigation_rule(device_id):
 
 
 @app.get("/api/v1/devices/<device_id>/irrigation-events")
+@require_auth()
 def irrigation_event_history(device_id):
     try:
         limit = min(max(int(request.args.get("limit", "20")), 1), 200)
@@ -412,6 +428,7 @@ def _image_record(image_id):
 
 
 @app.post("/api/v1/images")
+@require_auth("upload_image")
 def upload_image():
     upload = request.files.get("file")
     if upload is None or not upload.filename:

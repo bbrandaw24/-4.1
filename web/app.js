@@ -1,11 +1,12 @@
 const params = new URLSearchParams(window.location.search);
-const isGatewayPage = window.location.protocol.startsWith("http") && window.location.hostname !== "bbrandaw24.github.io";
-const API = params.get("api") || (isGatewayPage ? window.location.origin : "http://192.168.128.129:8010");
-const AI_API = params.get("ai") || (isGatewayPage ? window.location.origin : "http://192.168.128.129:8001");
+if (!Auth.getToken()) Auth.redirectToLogin();
+const API = Auth.apiBase();
+const AI_API = Auth.aiBase();
 const DEVICE_ID = params.get("device") || "sim-greenhouse-day08";
 const HISTORY_LIMIT = 7200;
-const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null, rule: null };
+const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null, rule: null, user: Auth.getUser() };
 document.querySelector("#api-url").textContent = API;
+applyRole();
 
 const $ = (selector) => document.querySelector(selector);
 const fmt = (value, digits = 1, suffix = "") => value === undefined || value === null ? "--" : `${Number(value).toFixed(digits)}${suffix}`;
@@ -231,7 +232,7 @@ function renderDevice(device) {
 
 async function fetchLastAutoEvent(deviceId) {
   try {
-    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(deviceId)}/irrigation-events?limit=1`, { cache: "no-store" });
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(deviceId)}/irrigation-events?limit=1`, { cache: "no-store" });
     if (!response.ok) return null;
     const data = await response.json();
     return data.items?.length ? data.items[data.items.length - 1] : null;
@@ -242,7 +243,7 @@ async function refreshRules() {
   if (!state.device) return;
   const deviceId = encodeURIComponent(state.device.device_id);
   try {
-    const response = await fetch(`${API}/api/v1/devices/${deviceId}/irrigation-rules`, { cache: "no-store" });
+    const response = await Auth.request(`/api/v1/devices/${deviceId}/irrigation-rules`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const rule = await response.json();
     state.rule = rule;
@@ -267,10 +268,10 @@ async function refreshRules() {
 
 async function updateRules(payload, successMessage) {
   if (!state.device) return;
+  if (!Auth.hasPermission("manage_rules")) { $("#action-result").textContent = "当前身份无规则配置权限"; return; }
   try {
-    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/irrigation-rules`, {
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(state.device.device_id)}/irrigation-rules`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const data = await response.json();
@@ -289,7 +290,7 @@ async function updateRules(payload, successMessage) {
 
 async function refreshHistory(deviceId) {
   try {
-    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(deviceId)}/telemetry/history?hours=10`, { cache: "no-store" });
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(deviceId)}/telemetry/history?hours=10`, { cache: "no-store" });
     if (!response.ok) return;
     const data = await response.json();
     const buckets = new Map();
@@ -311,7 +312,7 @@ async function refreshHistory(deviceId) {
 
 async function refresh() {
   try {
-    const response = await fetch(`${API}/api/v1/devices`, { cache: "no-store" });
+    const response = await Auth.request(`/api/v1/devices`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (!data.items?.length) throw new Error("暂无设备");
@@ -326,7 +327,7 @@ async function refresh() {
 
 async function refreshAiStatus() {
   try {
-    const response = await fetch(`${AI_API}/api/v1/model/status`, { cache: "no-store" });
+    const response = await Auth.requestAI(`/api/v1/model/status`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     const classes = (data.classes || []).join(" / ");
@@ -349,10 +350,11 @@ async function refreshAiStatus() {
 
 async function pump(action) {
   if (!state.device) return;
+  if (!Auth.hasPermission("control_pump")) { $("#action-result").textContent = "当前身份无灌溉控制权限"; return; }
   const buttons = [$("#pump-start"), $("#pump-stop")];
   buttons.forEach((button) => { button.disabled = true; });
   try {
-    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/pump`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(state.device.device_id)}/pump`, { method: "POST", body: JSON.stringify({ action }) });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     $("#pump-label").textContent = action === "start" ? "启动中" : "停止中";
@@ -381,7 +383,7 @@ function renderPump(data) {
 async function refreshPumpStatus() {
   if (!state.device) return;
   try {
-    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/pump`, { cache: "no-store" });
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(state.device.device_id)}/pump`, { cache: "no-store" });
     if (response.ok) renderPump(await response.json());
   } catch (_) { /* keep last known actuator state */ }
 }
@@ -389,7 +391,7 @@ async function refreshPumpStatus() {
 async function refreshAlerts() {
   if (!state.device) return;
   try {
-    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/alerts`, { cache: "no-store" });
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(state.device.device_id)}/alerts`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     $("#alert-list").innerHTML = data.items?.length
@@ -405,16 +407,39 @@ async function refreshAlerts() {
 
 async function upload(file) {
   if (!file) return;
+  if (!Auth.hasPermission("upload_image")) { $("#image-result").textContent = "当前身份无图像上传权限"; return; }
   const form = new FormData();
   form.append("file", file);
   if (state.device) form.append("device_id", state.device.device_id);
   $("#image-result").textContent = "正在上传...";
   try {
-    const response = await fetch(`${API}/api/v1/images`, { method: "POST", body: form });
+    const response = await Auth.request(`/api/v1/images`, { method: "POST", body: form });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     $("#image-result").innerHTML = `<img src="${API}${data.thumbnail_url}" alt="最新作物图像"><p>${data.width} × ${data.height} · 已生成缩略图</p>`;
   } catch (error) { $("#image-result").textContent = `上传失败：${error.message}`; }
+}
+
+function applyRole() {
+  const user = state.user;
+  const badge = $("#role-badge");
+  if (badge) badge.textContent = user ? `${user.role_label || user.role} · ${user.display_name || user.username}` : "未登录";
+  const canPump = Auth.hasPermission("control_pump");
+  const canRules = Auth.hasPermission("manage_rules");
+  const canUpload = Auth.hasPermission("upload_image");
+  [$("#pump-start"), $("#pump-stop")].forEach((button) => { if (button) button.disabled = !canPump; });
+  const controlPanel = document.querySelector(".control-panel");
+  if (controlPanel) controlPanel.classList.toggle("locked", !canRules);
+  document.querySelectorAll(".mode-button").forEach((button) => { button.disabled = !canRules; });
+  const threshold = $("#moisture-threshold"); if (threshold) threshold.disabled = !canRules;
+  const schedule = $("#schedule-enabled"); if (schedule) schedule.disabled = !canRules;
+  const uploadPanel = document.querySelector(".upload-panel");
+  if (uploadPanel) uploadPanel.classList.toggle("locked", !canUpload);
+  const logout = $("#logout-button");
+  if (logout && !logout.dataset.bound) {
+    logout.dataset.bound = "1";
+    logout.addEventListener("click", () => { Auth.clear(); Auth.redirectToLogin(); });
+  }
 }
 
 $("#refresh-button").addEventListener("click", refresh);

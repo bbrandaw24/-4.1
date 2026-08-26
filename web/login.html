@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智慧农业 · 登录</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="login.css">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-card">
+      <div class="brand"><span class="brand-mark">AG</span><div><strong>温室运行台</strong><small>SMART AGRICULTURE</small></div></div>
+      <h1>选择身份登录</h1>
+      <p class="lead">不同身份拥有不同操作权限，注册信息保存在云端服务器。</p>
+
+      <div class="role-grid" id="role-grid">
+        <button class="role-card" data-role="farmer" type="button">
+          <i data-lucide="tractor"></i><span class="role-name">农户</span><small>查看数据 · 控制灌溉</small>
+        </button>
+        <button class="role-card" data-role="manager" type="button">
+          <i data-lucide="shield-check"></i><span class="role-name">管理者</span><small>全部权限 · 规则配置 · 用户管理</small>
+        </button>
+        <button class="role-card guest" data-role="guest" type="button">
+          <i data-lucide="eye"></i><span class="role-name">游客</span><small>仅查看 · 无需注册</small>
+        </button>
+      </div>
+
+      <form class="auth-form" id="auth-form" hidden>
+        <div class="form-head">
+          <strong id="form-title">农户登录</strong>
+          <button type="button" class="link" id="switch-mode">没有账号？注册</button>
+        </div>
+        <label id="display-field" hidden>显示名称<input id="display-name" type="text" autocomplete="name" placeholder="如：张三的温室"></label>
+        <label>账号<input id="username" type="text" autocomplete="username" placeholder="3–32 位字母数字或下划线"></label>
+        <label>密码<input id="password" type="password" autocomplete="current-password" placeholder="至少 6 位"></label>
+        <p class="form-error" id="form-error" hidden></p>
+        <button class="submit primary" id="submit-btn" type="submit">登录</button>
+        <button class="submit ghost" id="back-btn" type="button">返回身份选择</button>
+      </form>
+
+      <button class="submit guest-enter" id="guest-enter" hidden><i data-lucide="log-in"></i> 以游客身份进入</button>
+      <p class="hint" id="demo-hint">演示账号：admin / admin123（管理者），farmer / farmer123（农户）</p>
+    </section>
+  </main>
+  <script src="auth.js"></script>
+  <script src="login.js"></script>
+</body>
+</html>

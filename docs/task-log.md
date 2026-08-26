@@ -235,3 +235,32 @@
 | 自动灌溉规则 pytest | 已通过，16 passed |
 | 规则服务端逻辑联调 | 待在虚拟机/云端容器复测（需 API 与 MQTT 在线） |
 | 自动动作在模拟器上的端到端确认 | 待在虚拟机/云端复测 |
+
+### Day 11 登录与多角色权限（认证模块）
+
+需求：登录页支持身份选择（农户 / 管理者 / 游客），注册数据保存在后端，不同身份有不同操作权限。
+
+交付：
+
+- 后端 `services/api/app/auth.py`（新增）：
+  - 用户持久化到 SQLite（`DB_PATH`，云端默认 `/data/users.db`，随 `./data` 卷持久化），密码使用 werkzeug 哈希。
+  - Token 为 itsdangerous 签名的无状态 Bearer（默认 12 小时，可配 `AUTH_TOKEN_MAX_AGE`），密钥来自 `AUTH_SECRET`。
+  - 角色权限矩阵：`guest`（仅查看）、`farmer`（查看 + 灌溉控制）、`manager`（全部 + 规则配置 + 图像上传 + 用户管理）。
+  - 接口：`POST /api/v1/auth/register`、`/login`、`/guest`，`GET /auth/me`、`/auth/users`。
+  - 可选演示账号种子（`AUTH_SEED_DEMO`，默认开启）：`admin/admin123`（管理者）、`farmer/farmer123`（农户）。
+- `services/api/app/main.py`：启动时 `init_db()` 并注册鉴权路由；读接口要求有效 token，写操作按权限分级（`control_pump` / `manage_rules` / `upload_image` / `list_users`）；CORS 允许 `Authorization` 头。
+- 前端：
+  - `web/login.html` + `login.css` + `login.js` + 共享 `auth.js`：身份选择、登录/注册切换、游客一键进入，注册落库。
+  - `web/index.html` / `app.js`：加载即校验 token（无则跳登录），所有请求走 `Auth.request` 注入 token，按角色禁用/隐藏水泵控制（control_pump）、规则编辑（manage_rules）、图像上传（upload_image）；顶部显示角色徽标与登出。
+  - `web/auth.css`：角色徽标、锁定态样式。
+- 部署：`requirements.txt` 增加 werkzeug/itsdangerous；`docker-compose.yml` 的 api 挂载 `./data:/data` 并加 `DB_PATH`/`AUTH_SECRET` 等环境变量；`.env.example` 补充认证相关变量。
+
+### Day 11 验证记录
+
+| 检查项 | 结果 |
+| --- | --- |
+| API/认证 Python 静态编译 | 已通过 |
+| Web 脚本 `app.js`/`login.js`/`auth.js` 语法 | 已通过 `node --check` |
+| 鉴权与权限 pytest（test_auth.py，9 项） | 已通过，9 passed |
+| 既有灌溉规则测试（test_irrigation.py，16 项，已补 token） | 已通过，16 passed |
+| 登录页与看板联调 | 待在云端容器复测（需 API 在线） |

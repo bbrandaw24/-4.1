@@ -54,10 +54,14 @@ services:
       AI_BASE_URL: http://ai:8001
       UPLOAD_DIR: /data/uploads
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-5242880}
+      DB_PATH: /data/users.db
+      AUTH_SECRET: ${AUTH_SECRET:-change-me-auth-secret}
+      AUTH_TOKEN_MAX_AGE: ${AUTH_TOKEN_MAX_AGE:-43200}
+      AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-1}
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
-      - ./data/uploads:/data/uploads
+      - ./data:/data
     depends_on:
       mysql:
         condition: service_healthy
