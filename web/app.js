@@ -4,7 +4,7 @@ const API = Auth.apiBase();
 const AI_API = Auth.aiBase();
 const DEVICE_ID = params.get("device") || null; // resolved to first available device on first refresh
 const HISTORY_LIMIT = 7200;
-const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null, rule: null, user: Auth.getUser() };
+const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", rule: null, user: Auth.getUser() };
 document.querySelector("#api-url").textContent = API;
 const $ = (selector) => document.querySelector(selector);
 applyRole();
@@ -185,7 +185,10 @@ function setRoute(route) {
   const url = new URL(window.location.href);
   url.searchParams.set("view", nextRoute);
   window.history.replaceState({}, "", url);
-  if (nextRoute === "trends") renderTrendPanels();
+  if (nextRoute === "trends") {
+    if (state.device) refreshHistory(state.device.device_id, true);
+    renderTrendPanels();
+  }
 }
 
 function renderDevice(device) {
@@ -227,7 +230,7 @@ function renderDevice(device) {
   refreshPumpStatus();
   refreshAlerts();
   refreshRules();
-  if (state.historyLoadedDevice !== device.device_id) refreshHistory(device.device_id);
+  refreshHistory(device.device_id);
 }
 
 async function fetchLastAutoEvent(deviceId) {
@@ -288,7 +291,14 @@ async function updateRules(payload, successMessage) {
   await refreshRules();
 }
 
-async function refreshHistory(deviceId) {
+let lastHistoryFetchAt = 0;
+async function refreshHistory(deviceId, force = false) {
+  // Trends data always comes from the cloud server's stored history (last 10h),
+  // not from samples accumulated since the page was opened. Throttle background
+  // refreshes to once per minute; force=true on page/trends open.
+  const now = Date.now();
+  if (!force && now - lastHistoryFetchAt < 60000) return;
+  lastHistoryFetchAt = now;
   try {
     const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(deviceId)}/telemetry/history?hours=10`, { cache: "no-store" });
     if (!response.ok) return;
@@ -306,7 +316,6 @@ async function refreshHistory(deviceId) {
     });
     const samples = [...buckets.values()].filter((item) => Number.isFinite(item.moisture) && Number.isFinite(item.temperature) && Number.isFinite(item.light));
     if (samples.length >= 2) { state.samples = samples.slice(-HISTORY_LIMIT); state.moisture = state.samples.map((item) => item.moisture); renderTrendPanels(); drawTrend(); }
-    state.historyLoadedDevice = deviceId;
   } catch (_) { /* live samples remain available when history is unavailable */ }
 }
 
@@ -475,6 +484,7 @@ refresh();
 refreshAiStatus();
 setRoute(params.get("view") || "overview");
 setInterval(refresh, 5000);
+setInterval(() => { if (state.device) refreshHistory(state.device.device_id); }, 60000);
 setInterval(refreshPumpStatus, 1000);
 setInterval(refreshAlerts, 5000);
 setInterval(refreshAiStatus, 15000);

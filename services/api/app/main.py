@@ -3,6 +3,7 @@ from io import BytesIO
 import json
 import logging
 import os
+import sqlite3
 import time
 from pathlib import Path
 from threading import Lock, Thread
@@ -52,6 +53,76 @@ pending_commands = {}
 image_registry = {}
 image_registry_lock = Lock()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# --- Persistent telemetry history (survives API restarts) -------------------
+# The last ~10h of sensor samples are stored in SQLite under the /data volume so
+# the trends view always reflects the cloud server's history, not data observed
+# since a user logged in or since the last restart.
+TELEMETRY_DB = os.getenv("TELEMETRY_DB", "/data/telemetry.db")
+TELEMETRY_RETENTION_SECONDS = int(os.getenv("TELEMETRY_RETENTION_SECONDS", str(12 * 3600)))
+_last_prune_at = {"at": 0.0}
+
+
+def _telemetry_connect():
+    conn = sqlite3.connect(TELEMETRY_DB, timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def init_telemetry_db():
+    Path(TELEMETRY_DB).parent.mkdir(parents=True, exist_ok=True)
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS telemetry_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                ts TEXT NOT NULL,
+                received_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_th_device_ts ON telemetry_history(device_id, ts)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _prune_telemetry_if_due():
+    now = time.time()
+    if now - _last_prune_at["at"] < 60:
+        return
+    _last_prune_at["at"] = now
+    try:
+        cutoff = datetime.fromtimestamp(now - TELEMETRY_RETENTION_SECONDS, tz=timezone.utc).isoformat()
+        conn = _telemetry_connect()
+        try:
+            conn.execute("DELETE FROM telemetry_history WHERE ts < ?", (cutoff,))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:  # never let pruning break the ingest path
+        LOGGER.warning("telemetry prune failed: %s", exc)
+
+
+def _store_telemetry(device_id, kind, payload, timestamp):
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "INSERT INTO telemetry_history (device_id, kind, payload_json, ts, received_at) VALUES (?,?,?,?,?)",
+            (device_id, kind, json.dumps(payload, ensure_ascii=False), timestamp, utc_now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    _prune_telemetry_if_due()
+
+
+init_telemetry_db()
 
 # --- Day 10: automatic irrigation rules -------------------------------------
 IRRIGATION_RULE_LIMITS = {"min_pct": 5.0, "max_pct": 95.0}
@@ -241,6 +312,10 @@ def on_mqtt_message(_client, _userdata, message):
             history.append({"timestamp": timestamp, "kind": parts[3], "payload": payload})
             if len(history) > HISTORY_LIMIT * 2:
                 del history[:-HISTORY_LIMIT * 2]
+            try:
+                _store_telemetry(device_id, parts[3], payload, timestamp)
+            except Exception as exc:
+                LOGGER.warning("telemetry persist failed: %s", exc)
             return
         if parts[2] != "status" or parts[3] != "pump":
             return
@@ -323,15 +398,24 @@ def telemetry_history(device_id):
         hours = min(max(float(request.args.get("hours", "10")), 0.25), 24)
     except ValueError:
         return jsonify({"error": "hours_must_be_number"}), 400
-    cutoff = datetime.now(timezone.utc).timestamp() - hours * 3600
-    with registry_lock:
-        device = registry.get(device_id)
-        history = list((device or {}).get("history", []))
+    cutoff = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - hours * 3600, tz=timezone.utc).isoformat()
     items = []
-    for item in history:
-        parsed = _parse_timestamp(item.get("timestamp"))
-        if parsed and parsed.timestamp() >= cutoff:
-            items.append(item)
+    try:
+        conn = _telemetry_connect()
+        try:
+            rows = conn.execute(
+                "SELECT kind, payload_json, ts FROM telemetry_history "
+                "WHERE device_id=? AND ts >= ? ORDER BY id DESC LIMIT ?",
+                (device_id, cutoff, HISTORY_LIMIT * 2),
+            ).fetchall()
+        finally:
+            conn.close()
+        items = [
+            {"timestamp": row[2], "kind": row[0], "payload": json.loads(row[1])}
+            for row in reversed(rows)
+        ]
+    except Exception as exc:
+        LOGGER.warning("history read failed: %s", exc)
     return jsonify({"device_id": device_id, "hours": hours, "count": len(items), "items": items})
 
 

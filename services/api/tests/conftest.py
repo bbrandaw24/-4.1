@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 os.environ["DB_PATH"] = os.path.join(tempfile.gettempdir(), "smartagri_test_users.db")
+os.environ["TELEMETRY_DB"] = os.path.join(tempfile.gettempdir(), "smartagri_test_telemetry.db")
 os.environ["AUTH_SEED_DEMO"] = "0"
 os.environ["AUTH_SECRET"] = "test-secret"
 os.environ["AUTH_TOKEN_MAX_AGE"] = "43200"

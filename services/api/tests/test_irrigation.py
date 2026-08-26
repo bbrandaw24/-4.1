@@ -1,8 +1,11 @@
 """Day 10 automatic irrigation rule tests (no MQTT broker required)."""
 
+import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 os.environ.setdefault("MQTT_LISTENER_ENABLED", "false")
 os.environ.setdefault("IRRIGATION_RULES_ENABLED", "false")
@@ -178,3 +181,28 @@ def test_cooldown_suppresses_repeat_actions():
             main.registry.pop(device_id, None)
             main.irrigation_rules.pop(device_id, None)
         main.last_auto_action_at.pop(device_id, None)
+
+
+def test_telemetry_history_persists_to_sqlite(client):
+    """Sensor MQTT messages are persisted to SQLite and served back via history."""
+    device_id = "sim-test-persist"
+    token = client.post("/api/v1/auth/guest").get_json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    envelope = {
+        "device_id": device_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "payload": {"moisture_pct": 41.5},
+    }
+    message = SimpleNamespace(
+        topic=f"farm/{device_id}/sensor/soil",
+        payload=json.dumps(envelope).encode("utf-8"),
+    )
+    main.on_mqtt_message(None, None, message)
+    response = client.get(f"/api/v1/devices/{device_id}/telemetry/history?hours=10", headers=headers)
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["count"] >= 1
+    assert data["items"][0]["kind"] == "soil"
+    assert data["items"][0]["payload"]["moisture_pct"] == 41.5
+    with main.registry_lock:
+        main.registry.pop(device_id, None)
