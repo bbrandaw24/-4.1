@@ -210,3 +210,28 @@
 | 云端 MQTT 发布/订阅 | 通过，`MQTT_RESULT=PASS` | `evidence/mqtt_cloud_evidence.png`、`evidence/mqtt_cloud_raw_terminal.txt` |
 | AI 真实模型推理 | 未完成，不作为已验收功能 | 见 `docs/project-completion.md` |
 | 原生 HarmonyOS HAP/APK | 未完成，不作为已验收功能 | 见 `docs/project-completion.md` |
+
+## 2026-08-26 - Day 10 自动灌溉规则引擎
+
+- 修复 `services/api/app/main.py` 中重复的两个 CORS `after_request` 处理器，统一为单个函数并支持 `PUT` 预检。
+- 新增服务端自动灌溉规则引擎（此前 Web 页面的“自动模式”仅是前端提示，无后端逻辑）：
+  - 纯函数 `evaluate_irrigation_rule(rule, moisture, pump_running, pending)`：低湿度（`< start_threshold`）触发启动，回差到 `>= stop_threshold` 触发停止；非法湿度、未启用或存在待确认指令时不触发。
+  - 后台评估线程 `irrigation_rule_loop`，每 5 秒（可配 `IRRIGATION_RULE_INTERVAL`）对开启自动的设备做一次规则评估，复用统一指令发布函数 `_publish_pump_command`，指令来源标记为 `auto`，并写入事件日志 `irrigation_events`（最多 200 条）。
+  - 冷却时间 `cooldown_seconds` 防止短时间内重复下发。
+  - 接口：`GET/PUT /api/v1/devices/<id>/irrigation-rules`、`GET /api/v1/devices/<id>/irrigation-events`。
+  - 校验：阈值范围 5–95%、停止阈值必须高于启动阈值、冷却时间非负、类型严格校验，全部返回明确错误码。
+- Web 看板（`web/app.js`、`index.html`、`day08.css`）：
+  - 模式按钮和阈值输入改为调用真实规则 API（PUT 保存、GET 回显）。
+  - 新增 `#rule-status` 实时显示自动规则状态与最近一次自动动作时间。
+  - 缓存版本号更新为 `app.js?v=day10-rules`。
+- 新增 `services/api/tests/test_irrigation.py`，覆盖决策逻辑、接口校验与评估下发的正常/异常用例，共 16 个用例。
+
+### Day 10 验证记录
+
+| 检查项 | 结果 |
+| --- | --- |
+| API/模拟器/AI Python 静态编译 | 已通过 |
+| Web 脚本 `app.js` 语法 | 已通过 `node --check` |
+| 自动灌溉规则 pytest | 已通过，16 passed |
+| 规则服务端逻辑联调 | 待在虚拟机/云端容器复测（需 API 与 MQTT 在线） |
+| 自动动作在模拟器上的端到端确认 | 待在虚拟机/云端复测 |

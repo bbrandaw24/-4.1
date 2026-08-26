@@ -3,6 +3,7 @@ from io import BytesIO
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from threading import Lock, Thread
 from uuid import uuid4
@@ -21,7 +22,7 @@ def add_cors_headers(response):
     """Allow the read-only dashboard and local development hosts to call the API."""
     response.headers["Access-Control-Allow-Origin"] = os.getenv("CORS_ORIGIN", "*")
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
     return response
 
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
@@ -37,6 +38,139 @@ pending_commands = {}
 image_registry = {}
 image_registry_lock = Lock()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# --- Day 10: automatic irrigation rules -------------------------------------
+IRRIGATION_RULE_LIMITS = {"min_pct": 5.0, "max_pct": 95.0}
+DEFAULT_IRRIGATION_RULE = {
+    "auto_enabled": False,
+    "start_threshold_pct": 40.0,
+    "stop_threshold_pct": 55.0,
+    "cooldown_seconds": 60,
+    "updated_at": None,
+}
+AUTO_EVAL_INTERVAL_SECONDS = float(os.getenv("IRRIGATION_RULE_INTERVAL", "5"))
+irrigation_rules = {}
+irrigation_events = []
+irrigation_rules_lock = Lock()
+last_auto_action_at = {}
+
+
+def evaluate_irrigation_rule(rule, moisture, pump_running, pending_command):
+    """Pure decision function: return "start", "stop" or None.
+
+    Hysteresis: start below start threshold, stop at or above stop threshold.
+    """
+    if not rule.get("auto_enabled"):
+        return None
+    if pending_command:
+        return None
+    if not isinstance(moisture, (int, float)) or isinstance(moisture, bool):
+        return None
+    if pump_running:
+        if moisture >= rule["stop_threshold_pct"]:
+            return "stop"
+        return None
+    if moisture < rule["start_threshold_pct"]:
+        return "start"
+    return None
+
+
+def _record_irrigation_event(device_id, action, rule, moisture):
+    event = {
+        "device_id": device_id,
+        "action": action,
+        "source": "auto",
+        "trigger_moisture_pct": round(moisture, 2) if isinstance(moisture, (int, float)) else None,
+        "start_threshold_pct": rule["start_threshold_pct"],
+        "stop_threshold_pct": rule["stop_threshold_pct"],
+        "timestamp": utc_now(),
+    }
+    with irrigation_rules_lock:
+        irrigation_events.append(event)
+        del irrigation_events[:-200]
+    LOGGER.info("auto irrigation %s on %s (moisture %.1f%%)", action, device_id, moisture)
+    return event
+
+
+def _publish_pump_command(device_id, action, source="manual"):
+    """Create a command record and publish it over MQTT. Returns (command, error_response)."""
+    with registry_lock:
+        previous = pending_commands.get(device_id)
+        if previous and previous["status"] == "pending" and previous["action"] == action:
+            return None, (jsonify({"error": "same_command_pending", "command": previous}), 409)
+    command_id = uuid4().hex
+    requested_at = utc_now()
+    command = {"command_id": command_id, "device_id": device_id, "action": action, "source": source,
+               "status": "pending", "requested_at": requested_at, "confirmed_at": None, "latency_ms": None}
+    with registry_lock:
+        pending_commands[device_id] = command
+        device = registry.setdefault(device_id, {"device_id": device_id, "telemetry": {}, "last_seen": None})
+        device["pump"] = {"action": action, "running": action == "start", "status": "pending",
+                          "timestamp": requested_at, "command_id": command_id}
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"smart-agriculture-api-control-{command_id[:8]}")
+    try:
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        client.loop_start()
+        info = client.publish(
+            f"farm/{device_id}/control/pump",
+            json.dumps({"device_id": device_id, "command_id": command_id, "timestamp": requested_at,
+                        "payload": {"action": action, "command_id": command_id}}),
+            qos=1,
+        )
+        info.wait_for_publish(timeout=5)
+        client.loop_stop()
+        client.disconnect()
+    except Exception as exc:
+        LOGGER.warning("pump command failed: %s", exc)
+        with registry_lock:
+            command["status"] = "failed"
+        return None, (jsonify({"error": "mqtt_unavailable"}), 503)
+    return command, None
+
+
+def evaluate_all_irrigation_rules(publish=None):
+    """One evaluation pass over every auto-enabled device using latest soil moisture."""
+    publish = publish or _publish_pump_command
+    decisions = []
+    now = time.time()
+    with registry_lock:
+        auto_device_ids = [device_id for device_id, rule in irrigation_rules.items() if rule.get("auto_enabled")]
+        for device_id in auto_device_ids:
+            device = registry.get(device_id)
+            if not device or not device.get("last_seen"):
+                continue
+            moisture = (device.get("telemetry", {}).get("soil", {}).get("payload", {}) or {}).get("moisture_pct")
+            pump_state = device.get("pump") or {}
+            pump_running = bool(pump_state.get("running")) and pump_state.get("status") == "running"
+            pending = pending_commands.get(device_id)
+            rule = _get_irrigation_rule(device_id)
+            cooldown = max(float(rule.get("cooldown_seconds") or 0), 0)
+            last_action = last_auto_action_at.get(device_id, 0)
+            if now - last_action < cooldown:
+                continue
+            action = evaluate_irrigation_rule(rule, moisture, pump_running, pending)
+            if action:
+                decisions.append((device_id, action, dict(rule), moisture))
+    for device_id, action, rule, moisture in decisions:
+        command, error = publish(device_id, action, source="auto")
+        if error is None:
+            last_auto_action_at[device_id] = time.time()
+            event = _record_irrigation_event(device_id, action, rule, moisture)
+            event["command_id"] = command["command_id"]
+    return decisions
+
+
+def irrigation_rule_loop():
+    while True:
+        try:
+            evaluate_all_irrigation_rules()
+        except Exception as exc:
+            LOGGER.warning("irrigation rule pass failed: %s", exc)
+        time.sleep(AUTO_EVAL_INTERVAL_SECONDS)
+
+
+if os.getenv("IRRIGATION_RULES_ENABLED", "true").lower() == "true":
+    Thread(target=irrigation_rule_loop, name="irrigation-rules", daemon=True).start()
 
 
 def utc_now():
@@ -206,39 +340,70 @@ def pump(device_id):
     action = (request.get_json(silent=True) or {}).get("action")
     if action not in {"start", "stop"}:
         return jsonify({"error": "action_must_be_start_or_stop"}), 400
-    with registry_lock:
-        previous = pending_commands.get(device_id)
-        if previous and previous["status"] == "pending" and previous["action"] == action:
-            return jsonify({"error": "same_command_pending", "command": previous}), 409
-    command_id = uuid4().hex
-    requested_at = utc_now()
-    command = {"command_id": command_id, "device_id": device_id, "action": action,
-               "status": "pending", "requested_at": requested_at, "confirmed_at": None, "latency_ms": None}
-    with registry_lock:
-        pending_commands[device_id] = command
-        device = registry.setdefault(device_id, {"device_id": device_id, "telemetry": {}, "last_seen": None})
-        device["pump"] = {"action": action, "running": action == "start", "status": "pending",
-                           "timestamp": requested_at, "command_id": command_id}
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"smart-agriculture-api-control-{command_id[:8]}")
+    command, error = _publish_pump_command(device_id, action, source="manual")
+    if error is not None:
+        return error
+    return jsonify({"device_id": device_id, "action": action, "status": "pending", "command_id": command["command_id"],
+                    "requested_at": command["requested_at"], "confirm_timeout_seconds": PUMP_CONFIRM_TIMEOUT_SECONDS}), 202
+
+
+def _get_irrigation_rule(device_id):
+    """Return a merged copy of stored rule and defaults."""
+    with irrigation_rules_lock:
+        rule = dict(DEFAULT_IRRIGATION_RULE)
+        rule.update(irrigation_rules.get(device_id, {}))
+        rule["device_id"] = device_id
+        return rule
+
+
+@app.get("/api/v1/devices/<device_id>/irrigation-rules")
+def get_irrigation_rule(device_id):
+    return jsonify(_get_irrigation_rule(device_id))
+
+
+@app.put("/api/v1/devices/<device_id>/irrigation-rules")
+def put_irrigation_rule(device_id):
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "json_object_required"}), 400
+    updates = {}
+    if "auto_enabled" in body:
+        if not isinstance(body["auto_enabled"], bool):
+            return jsonify({"error": "auto_enabled_must_be_boolean"}), 400
+        updates["auto_enabled"] = body["auto_enabled"]
+    for key in ("start_threshold_pct", "stop_threshold_pct"):
+        if key in body:
+            value = body[key]
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                return jsonify({"error": f"{key}_must_be_number"}), 400
+            if not IRRIGATION_RULE_LIMITS["min_pct"] <= value <= IRRIGATION_RULE_LIMITS["max_pct"]:
+                return jsonify({"error": f"{key}_out_of_range",
+                                "allowed": [IRRIGATION_RULE_LIMITS["min_pct"], IRRIGATION_RULE_LIMITS["max_pct"]]}), 400
+            updates[key] = float(value)
+    if "cooldown_seconds" in body:
+        value = body["cooldown_seconds"]
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            return jsonify({"error": "cooldown_seconds_must_be_non_negative_number"}), 400
+        updates["cooldown_seconds"] = min(float(value), 3600)
+    current = _get_irrigation_rule(device_id)
+    merged = {**current, **updates}
+    if merged["stop_threshold_pct"] <= merged["start_threshold_pct"]:
+        return jsonify({"error": "stop_threshold_must_exceed_start_threshold"}), 400
+    updates["updated_at"] = utc_now()
+    with irrigation_rules_lock:
+        irrigation_rules.setdefault(device_id, {}).update(updates)
+    return jsonify(_get_irrigation_rule(device_id))
+
+
+@app.get("/api/v1/devices/<device_id>/irrigation-events")
+def irrigation_event_history(device_id):
     try:
-        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
-        client.loop_start()
-        info = client.publish(
-            f"farm/{device_id}/control/pump",
-            json.dumps({"device_id": device_id, "command_id": command_id, "timestamp": requested_at,
-                        "payload": {"action": action, "command_id": command_id}}),
-            qos=1,
-        )
-        info.wait_for_publish(timeout=5)
-        client.loop_stop()
-        client.disconnect()
-    except Exception as exc:
-        LOGGER.warning("pump command failed: %s", exc)
-        with registry_lock:
-            command["status"] = "failed"
-        return jsonify({"error": "mqtt_unavailable"}), 503
-    return jsonify({"device_id": device_id, "action": action, "status": "pending", "command_id": command_id,
-                    "requested_at": requested_at, "confirm_timeout_seconds": PUMP_CONFIRM_TIMEOUT_SECONDS}), 202
+        limit = min(max(int(request.args.get("limit", "20")), 1), 200)
+    except ValueError:
+        return jsonify({"error": "limit_must_be_integer"}), 400
+    with irrigation_rules_lock:
+        items = [dict(event) for event in irrigation_events if event["device_id"] == device_id]
+    return jsonify({"device_id": device_id, "count": len(items[-limit:]), "items": items[-limit:]})
 
 
 def _image_record(image_id):

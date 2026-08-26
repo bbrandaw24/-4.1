@@ -3,6 +3,8 @@
 .mode-button{border:0;background:transparent;color:var(--muted);font-size:11px;padding:6px 10px;cursor:pointer}
 .mode-button.active{background:var(--green);color:#fff}
 .automation-fields{display:grid;gap:8px;margin-top:10px}
+.rule-status{margin-top:2px;font-size:11px;line-height:1.5;color:var(--muted)}
+.rule-status.on{color:#226b46;font-weight:600}
 .automation-fields label{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px}
 .automation-fields input[type=number]{width:62px;border:1px solid var(--line);padding:6px 7px;color:var(--ink);background:#fff}
 .automation-fields input[type=time]{margin-left:auto;border:1px solid var(--line);padding:5px 6px;color:var(--ink);background:#fff}

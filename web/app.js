@@ -4,7 +4,7 @@ const API = params.get("api") || (isGatewayPage ? window.location.origin : "http
 const AI_API = params.get("ai") || (isGatewayPage ? window.location.origin : "http://192.168.128.129:8001");
 const DEVICE_ID = params.get("device") || "sim-greenhouse-day08";
 const HISTORY_LIMIT = 7200;
-const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null };
+const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null, rule: null };
 document.querySelector("#api-url").textContent = API;
 
 const $ = (selector) => document.querySelector(selector);
@@ -225,7 +225,66 @@ function renderDevice(device) {
   drawTrend();
   refreshPumpStatus();
   refreshAlerts();
+  refreshRules();
   if (state.historyLoadedDevice !== device.device_id) refreshHistory(device.device_id);
+}
+
+async function fetchLastAutoEvent(deviceId) {
+  try {
+    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(deviceId)}/irrigation-events?limit=1`, { cache: "no-store" });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.items?.length ? data.items[data.items.length - 1] : null;
+  } catch (_) { return null; }
+}
+
+async function refreshRules() {
+  if (!state.device) return;
+  const deviceId = encodeURIComponent(state.device.device_id);
+  try {
+    const response = await fetch(`${API}/api/v1/devices/${deviceId}/irrigation-rules`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const rule = await response.json();
+    state.rule = rule;
+    document.querySelectorAll(".mode-button").forEach((button) => {
+      button.classList.toggle("active", (button.dataset.mode === "auto") === Boolean(rule.auto_enabled));
+    });
+    state.mode = rule.auto_enabled ? "auto" : "manual";
+    const input = $("#moisture-threshold");
+    if (document.activeElement !== input) input.value = Math.round(rule.start_threshold_pct);
+    const lastEvent = await fetchLastAutoEvent(state.device.device_id);
+    const lastAction = lastEvent ? ` · 最近自动动作 ${new Date(lastEvent.timestamp).toLocaleTimeString()} ${lastEvent.action === "start" ? "启动" : "停止"}灌溉` : "";
+    const statusEl = $("#rule-status");
+    if (rule.auto_enabled) {
+      statusEl.textContent = `自动灌溉已启用：湿度 < ${rule.start_threshold_pct}% 启动，≥ ${rule.stop_threshold_pct}% 停止${lastAction}`;
+      statusEl.classList.add("on");
+    } else {
+      statusEl.textContent = `自动模式未启用，使用手动控制${lastAction}`;
+      statusEl.classList.remove("on");
+    }
+  } catch (_) { $("#rule-status").textContent = "灌溉规则服务暂不可用"; }
+}
+
+async function updateRules(payload, successMessage) {
+  if (!state.device) return;
+  try {
+    const response = await fetch(`${API}/api/v1/devices/${encodeURIComponent(state.device.device_id)}/irrigation-rules`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    if (successMessage) $("#action-result").textContent = successMessage;
+  } catch (error) {
+    const messages = {
+      stop_threshold_must_exceed_start_threshold: "停止阈值必须高于启动阈值",
+      start_threshold_pct_out_of_range: "启动阈值需在 5–95% 之间",
+      stop_threshold_pct_out_of_range: "停止阈值需在 5–95% 之间",
+    };
+    $("#action-result").textContent = `规则保存失败：${messages[error.message] || error.message}`;
+  }
+  await refreshRules();
 }
 
 async function refreshHistory(deviceId) {
@@ -363,10 +422,19 @@ document.querySelectorAll(".nav-item").forEach((button) => button.addEventListen
 $("#pump-start").addEventListener("click", () => pump("start"));
 $("#pump-stop").addEventListener("click", () => pump("stop"));
 document.querySelectorAll(".mode-button").forEach((button) => button.addEventListener("click", () => {
-  state.mode = button.dataset.mode;
-  document.querySelectorAll(".mode-button").forEach((item) => item.classList.toggle("active", item === button));
-  $("#action-result").textContent = state.mode === "auto" ? "自动模式已选择，低湿度时将提示灌溉" : "手动模式已选择";
+  const enableAuto = button.dataset.mode === "auto";
+  updateRules({ auto_enabled: enableAuto }, enableAuto ? "已启用自动灌溉，规则由服务端执行" : "已切换为手动模式");
 }));
+$("#moisture-threshold").addEventListener("change", (event) => {
+  const start = Number(event.target.value);
+  if (!Number.isFinite(start) || start < 5 || start > 95) {
+    $("#action-result").textContent = "启动阈值需在 5–95% 之间";
+    return;
+  }
+  const stop = Math.min(start + 15, 95);
+  if (stop <= start) { $("#action-result").textContent = "停止阈值必须高于启动阈值"; return; }
+  updateRules({ start_threshold_pct: start, stop_threshold_pct: stop }, `规则已保存：低于 ${start}% 自动启动灌溉`);
+});
 $("#schedule-enabled").addEventListener("change", (event) => { $("#schedule-time").disabled = !event.target.checked; });
 $("#notify-button").addEventListener("click", async () => {
   if (!("Notification" in window)) { $("#action-result").textContent = "当前浏览器不支持通知"; return; }

@@ -1,0 +1,171 @@
+"""Day 10 automatic irrigation rule tests (no MQTT broker required)."""
+
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("MQTT_LISTENER_ENABLED", "false")
+os.environ.setdefault("IRRIGATION_RULES_ENABLED", "false")
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
+
+import main  # noqa: E402
+import pytest  # noqa: E402
+
+
+@pytest.fixture()
+def client():
+    main.app.config["TESTING"] = True
+    with main.app.test_client() as test_client:
+        yield test_client
+
+
+BASE_RULE = {"auto_enabled": True, "start_threshold_pct": 40.0, "stop_threshold_pct": 55.0}
+
+
+def _rule(**overrides):
+    return {**BASE_RULE, **overrides}
+
+
+def test_rule_disabled_never_triggers():
+    assert main.evaluate_irrigation_rule(_rule(auto_enabled=False), 10.0, False, None) is None
+
+
+def test_low_moisture_triggers_start():
+    assert main.evaluate_irrigation_rule(_rule(), 39.9, False, None) == "start"
+
+
+def test_moisture_at_start_threshold_waits():
+    assert main.evaluate_irrigation_rule(_rule(), 40.0, False, None) is None
+
+
+def test_running_and_dry_enough_stays_on():
+    assert main.evaluate_irrigation_rule(_rule(), 45.0, True, None) is None
+
+
+def test_hysteresis_stop_at_threshold():
+    assert main.evaluate_irrigation_rule(_rule(), 55.0, True, None) == "stop"
+
+
+def test_pending_command_blocks_new_decision():
+    assert main.evaluate_irrigation_rule(_rule(), 30.0, False, {"command_id": "x"}) is None
+
+
+def test_non_numeric_moisture_is_ignored():
+    assert main.evaluate_irrigation_rule(_rule(), None, False, None) is None
+    assert main.evaluate_irrigation_rule(_rule(), "35", False, None) is None
+    assert main.evaluate_irrigation_rule(_rule(), True, False, None) is None
+
+
+def test_get_rules_returns_defaults(client):
+    response = client.get("/api/v1/devices/fresh-device/irrigation-rules")
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["auto_enabled"] is False
+    assert body["start_threshold_pct"] == 40.0
+    assert body["stop_threshold_pct"] == 55.0
+
+
+def test_put_rejects_non_object_body(client):
+    assert client.put("/api/v1/devices/d10/irrigation-rules", json=None).status_code == 400
+    assert client.put("/api/v1/devices/d10/irrigation-rules", json=[1]).status_code == 400
+
+
+def test_put_rejects_boolean_auto_enabled(client):
+    response = client.put("/api/v1/devices/d10/irrigation-rules", json={"auto_enabled": "yes"})
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "auto_enabled_must_be_boolean"
+
+
+def test_put_rejects_threshold_out_of_range(client):
+    for key in ("start_threshold_pct", "stop_threshold_pct"):
+        response = client.put("/api/v1/devices/d10/irrigation-rules", json={key: 120})
+        assert response.status_code == 400
+        assert response.get_json()["error"] == f"{key}_out_of_range"
+        response = client.put("/api/v1/devices/d10/irrigation-rules", json={key: "40"})
+        assert response.status_code == 400
+
+
+def test_put_rejects_negative_cooldown(client):
+    response = client.put("/api/v1/devices/d10/irrigation-rules", json={"cooldown_seconds": -5})
+    assert response.status_code == 400
+
+
+def test_put_rejects_stop_not_above_start(client):
+    response = client.put("/api/v1/devices/d10/irrigation-rules",
+                          json={"start_threshold_pct": 60, "stop_threshold_pct": 55})
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "stop_threshold_must_exceed_start_threshold"
+    response = client.put("/api/v1/devices/d10/irrigation-rules",
+                          json={"start_threshold_pct": 55, "stop_threshold_pct": 55})
+    assert response.status_code == 400
+
+
+def test_put_valid_rule_persists(client):
+    device_id = "d10-persist"
+    response = client.put(f"/api/v1/devices/{device_id}/irrigation-rules",
+                          json={"auto_enabled": True, "start_threshold_pct": 38, "stop_threshold_pct": 52,
+                                "cooldown_seconds": 90})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["auto_enabled"] is True
+    assert body["start_threshold_pct"] == 38.0
+    assert body["cooldown_seconds"] == 90.0
+    assert body["updated_at"]
+    follow_up = client.get(f"/api/v1/devices/{device_id}/irrigation-rules")
+    assert follow_up.get_json()["start_threshold_pct"] == 38.0
+
+
+def test_evaluation_pass_publishes_auto_commands():
+    device_id = "d10-auto"
+    calls = []
+
+    def fake_publish(target_device_id, action, source="manual"):
+        calls.append((target_device_id, action, source))
+        return {"command_id": "abc123"}, None
+
+    with main.registry_lock:
+        main.irrigation_rules[device_id] = {"auto_enabled": True}
+        main.registry[device_id] = {
+            "device_id": device_id,
+            "last_seen": "2026-08-26T06:00:00+00:00",
+            "telemetry": {"soil": {"timestamp": "2026-08-26T06:00:00+00:00", "payload": {"moisture_pct": 31.0}}},
+            "pump": {"running": False, "status": "standby"},
+        }
+    try:
+        decisions = main.evaluate_all_irrigation_rules(publish=fake_publish)
+        assert ("start", ) == tuple(item[1] for item in calls)
+        assert calls[0][2] == "auto"
+        assert len(decisions) == 1
+    finally:
+        with main.registry_lock:
+            main.registry.pop(device_id, None)
+            main.irrigation_rules.pop(device_id, None)
+
+
+def test_cooldown_suppresses_repeat_actions():
+    device_id = "d10-cooldown"
+    calls = []
+
+    def fake_publish(target_device_id, action, source="manual"):
+        calls.append(action)
+        return {"command_id": "abc123"}, None
+
+    with main.registry_lock:
+        main.irrigation_rules[device_id] = {"auto_enabled": True, "cooldown_seconds": 300}
+        main.registry[device_id] = {
+            "device_id": device_id,
+            "last_seen": "2026-08-26T06:00:00+00:00",
+            "telemetry": {"soil": {"timestamp": "2026-08-26T06:00:00+00:00", "payload": {"moisture_pct": 20.0}}},
+            "pump": {"running": False, "status": "standby"},
+        }
+    try:
+        main.evaluate_all_irrigation_rules(publish=fake_publish)
+        main.last_auto_action_at[device_id] = __import__("time").time()  # pretend action just happened
+        main.evaluate_all_irrigation_rules(publish=fake_publish)
+        assert calls.count("start") == 1
+    finally:
+        with main.registry_lock:
+            main.registry.pop(device_id, None)
+            main.irrigation_rules.pop(device_id, None)
+        main.last_auto_action_at.pop(device_id, None)
