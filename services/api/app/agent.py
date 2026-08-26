@@ -324,18 +324,23 @@ def _call_llm(prompt_messages, base_url=None, api_key=None, model=None, reasonin
 
 def _build_llm_messages(question, retrieved, ctx, history=None):
     history = history or []
+    # Luna is the owner's catgirl maid: warm, with verbal tics, but the advice
+    # must stay professional and grounded in the KB + live telemetry.
+    persona = os.getenv(
+        "LUNA_PERSONA",
+        "你是温室灌溉顾问 Luna，是主人的猫儿女仆。语气亲切温柔，像照顾主人的贴心女仆，"
+        "句尾常带口癖（如\"喵~\"\"呐\"\"主人\"），但给出的农事建议必须专业准确。",
+    )
+    system = (
+        f"{persona} 基于【知识库片段】和【实时遥测】用中文回答农户问题，"
+        "给出可执行建议并引用知识来源。回答 2-4 段，先自然回应主人的问题再给建议，避免堆砌术语。"
+    )
     retrieved_block = "\n\n".join(
         f"《{doc.get('title')}》\n{doc.get('content', '')}" for doc, _ in retrieved
     )
     live_block = json.dumps(ctx, ensure_ascii=False)
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "你是温室灌溉顾问。基于【知识库片段】和【实时遥测】用中文回答农户问题，"
-                "给出可执行建议并引用知识来源。回答 2-4 段，避免堆砌术语。"
-            ),
-        },
+        {"role": "system", "content": system},
         {
             "role": "user",
             "content": (
