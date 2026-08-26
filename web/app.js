@@ -2,13 +2,13 @@ const params = new URLSearchParams(window.location.search);
 if (!Auth.getToken()) Auth.redirectToLogin();
 const API = Auth.apiBase();
 const AI_API = Auth.aiBase();
-const DEVICE_ID = params.get("device") || "sim-greenhouse-day08";
+const DEVICE_ID = params.get("device") || null; // resolved to first available device on first refresh
 const HISTORY_LIMIT = 7200;
 const state = { device: null, moisture: [], samples: [], aiReady: false, pump: null, mode: "manual", notifications: false, lastAlertSignature: "", historyLoadedDevice: null, rule: null, user: Auth.getUser() };
 document.querySelector("#api-url").textContent = API;
+const $ = (selector) => document.querySelector(selector);
 applyRole();
 
-const $ = (selector) => document.querySelector(selector);
 const fmt = (value, digits = 1, suffix = "") => value === undefined || value === null ? "--" : `${Number(value).toFixed(digits)}${suffix}`;
 
 function setConnection(ok, message) {

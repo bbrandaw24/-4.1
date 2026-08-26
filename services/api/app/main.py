@@ -32,6 +32,13 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
     return response
 
+
+@app.before_request
+def handle_cors_preflight():
+    """Return 204 for CORS preflight so cross-origin clients (e.g. GitHub Pages) succeed."""
+    if request.method == "OPTIONS":
+        return app.make_default_options_response()
+
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "smart-agriculture-api")

@@ -66,11 +66,24 @@ class GatewayHandler(SimpleHTTPRequestHandler):
         self._proxy("POST")
 
     def do_OPTIONS(self):
+        # For upstream routes, proxy the preflight to the API so cross-origin
+        # callers (e.g. GitHub Pages) get the same CORS headers the API emits.
+        if self._upstream():
+            self._proxy("OPTIONS")
+            return
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
+
+    def end_headers(self):
+        # Prevent the browser from caching HTML/JS so freshly-deployed fixes
+        # are picked up immediately without a hard refresh.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
 
 
 if __name__ == "__main__":
