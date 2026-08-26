@@ -218,6 +218,7 @@ def _evaluate_alert_conditions(device):
 
 def alert_evaluator_loop():
     while True:
+        time.sleep(ALERT_EVAL_INTERVAL_SECONDS)  # sleep first: module fully loads before first pass
         try:
             with registry_lock:
                 devices = {device_id: dict(device) for device_id, device in registry.items()}
@@ -237,7 +238,6 @@ def alert_evaluator_loop():
                         alert_states[key] = active
         except Exception as exc:
             LOGGER.warning("alert evaluation pass failed: %s", exc)
-        time.sleep(ALERT_EVAL_INTERVAL_SECONDS)
 
 
 alert_states = {}

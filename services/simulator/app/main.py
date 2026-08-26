@@ -65,7 +65,7 @@ def publish_sensor(client: mqtt.Client, profile: dict, state: dict) -> None:
     soil = {
         "moisture_pct": round(state["moisture"], 2),
         "temperature_c": round(state["soil_temp"], 2),
-        "ph": round(6.2 + profile["crop"] * 0.0 + random.gauss(0, 0.03), 2),
+        "ph": round(6.2 + random.gauss(0, 0.03), 2),
         "nitrogen_mg_kg": round(130 + random.gauss(0, 3), 2),
         "phosphorus_mg_kg": round(50 + random.gauss(0, 2), 2),
         "potassium_mg_kg": round(178 + random.gauss(0, 4), 2),
