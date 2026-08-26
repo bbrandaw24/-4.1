@@ -29,7 +29,7 @@ LUNA_API_KEY = os.getenv("LUNA_API_KEY")
 LUNA_BASE_URL = os.getenv("LUNA_BASE_URL", "https://wolfai.top/v1")
 LUNA_MODEL = os.getenv("LUNA_MODEL", "gpt-5.6-luna")
 LUNA_REASONING_EFFORT = os.getenv("LUNA_REASONING_EFFORT", "medium")
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))  # medium reasoning can take 20-45s
 
 # CJK Unified Ideographs basic block
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")

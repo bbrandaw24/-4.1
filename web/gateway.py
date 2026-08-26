@@ -42,11 +42,13 @@ class GatewayHandler(SimpleHTTPRequestHandler):
             if name.lower() not in {"host", "content-length", "connection"}:
                 request.add_header(name, value)
         try:
-            response = urlopen(request, timeout=20)
+            # Luna / LLM answers can take 20-45s with medium reasoning, so the
+            # proxy timeout is generous and configurable (default 60s).
+            response = urlopen(request, timeout=int(os.getenv("GATEWAY_PROXY_TIMEOUT", "60")))
         except HTTPError as error:
             response = error
-        except URLError as error:
-            self.send_error(502, f"Upstream unavailable: {error.reason}")
+        except (URLError, TimeoutError) as error:
+            self.send_error(502, f"Upstream unavailable: {getattr(error, 'reason', error)}")
             return
         self.send_response(response.status)
         for name, value in response.headers.items():

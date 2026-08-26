@@ -146,6 +146,9 @@
       }
       appendMessage("agent", renderText(data.answer || "暂无回答。"));
       appendSources(data.sources);
+      if (mode === "luna" && data.answer_via !== "luna") {
+        appendMessage("agent", "（Luna 模型暂时无响应，已自动改用知识库回答）");
+      }
       history[history.length - 1].answer = data.answer || "";
       const via = data.answer_via || "synthesizer";
       if (modeBadge) modeBadge.textContent = via === "luna" ? "LUNA" : "RAG";
