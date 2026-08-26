@@ -116,7 +116,8 @@ def test_agent_ask_endpoint_returns_grounded_answer(client, guest_headers):
         assert response.status_code == 200, response.get_data(as_text=True)
         data = response.get_json()
         assert data["device_id"] == device_id
-        assert data["answer_via"] in {"synthesizer", "llm"}
+        assert data["mode"] == "kb"
+        assert data["answer_via"] == "synthesizer"
         assert "26.0" in data["answer"]
         assert "33.0" in data["answer"]
         assert data["sources"], "expected at least one cited source"
@@ -124,6 +125,52 @@ def test_agent_ask_endpoint_returns_grounded_answer(client, guest_headers):
         assert top["topic"] in {"低湿度", "高温"}
         assert data["context"]["moisture_pct"] == 26.0
         assert data["context"]["air_temperature_c"] == 33.0
+    finally:
+        with main.registry_lock:
+            main.registry.pop(device_id, None)
+        with main.irrigation_rules_lock:
+            main.irrigation_rules.pop(device_id, None)
+
+
+def test_guest_cannot_use_luna_mode(client, guest_headers):
+    response = client.post(
+        "/api/v1/agent/ask",
+        json={"question": "湿度低怎么办", "mode": "luna"},
+        headers=guest_headers,
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "luna_requires_privileged_role"
+
+
+def test_invalid_mode_rejected(client, guest_headers):
+    response = client.post(
+        "/api/v1/agent/ask",
+        json={"question": "湿度低怎么办", "mode": "xxx"},
+        headers=guest_headers,
+    )
+    assert response.status_code == 400
+
+
+def test_farmer_luna_mode_falls_back_to_synthesizer(client):
+    """Without LUNA_API_KEY configured the luna call fails -> synthesizer answer."""
+    client.post("/api/v1/auth/register",
+                json={"username": "farmer_luna", "password": "secret1", "role": "farmer"})
+    token = client.post("/api/v1/auth/login",
+                        json={"username": "farmer_luna", "password": "secret1"}).get_json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    device_id = "sim-agent-luna"
+    _seed_device(device_id, moisture=45.0, temperature=26.0)
+    try:
+        response = client.post(
+            "/api/v1/agent/ask",
+            json={"question": "湿度怎么样？", "device_id": device_id, "mode": "luna"},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.get_data(as_text=True)
+        data = response.get_json()
+        assert data["mode"] == "luna"
+        assert data["answer_via"] == "synthesizer"  # fell back (no LUNA_API_KEY in tests)
+        assert "45.0" in data["answer"]
     finally:
         with main.registry_lock:
             main.registry.pop(device_id, None)

@@ -23,11 +23,13 @@ LOGGER = logging.getLogger("smart-agriculture-api")
 DEFAULT_KB_PATH = Path(__file__).resolve().parent / "knowledge_base.json"
 KB_PATH = os.getenv("KNOWLEDGE_BASE_PATH", str(DEFAULT_KB_PATH))
 
-# Optional LLM (OpenAI-compatible) upgrade
-LLM_API_KEY = os.getenv("LLM_API_KEY")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.deepseek.com/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
-LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "20"))
+# Optional LLM upgrade: "luna" mode uses the user's Luna model (OpenAI-compatible).
+# Thinking effort is FIXED at medium and not exposed to end users.
+LUNA_API_KEY = os.getenv("LUNA_API_KEY")
+LUNA_BASE_URL = os.getenv("LUNA_BASE_URL", "https://wolfai.top/v1")
+LUNA_MODEL = os.getenv("LUNA_MODEL", "gpt-5.6-luna")
+LUNA_REASONING_EFFORT = os.getenv("LUNA_REASONING_EFFORT", "medium")
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))
 
 # CJK Unified Ideographs basic block
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -284,24 +286,30 @@ def synthesize_answer(query, retrieved, ctx, history=None):
 
 
 # --- optional LLM upgrade (OpenAI-compatible) ------------------------------
-def _call_llm(prompt_messages):
+def _call_llm(prompt_messages, base_url=None, api_key=None, model=None, reasoning_effort=None):
     """Call an OpenAI-compatible chat completions endpoint. Returns content string or None."""
-    if not LLM_API_KEY:
+    api_key = api_key or LUNA_API_KEY
+    base_url = base_url or LUNA_BASE_URL
+    model = model or LUNA_MODEL
+    if not api_key:
         return None
-    url = LLM_BASE_URL.rstrip("/") + "/chat/completions"
+    url = base_url.rstrip("/") + "/chat/completions"
     payload = {
-        "model": LLM_MODEL,
+        "model": model,
         "messages": prompt_messages,
         "temperature": 0.3,
-        "max_tokens": 800,
+        "max_tokens": 900,
     }
+    # Thinking effort is FIXED at medium for luna mode; never shown or adjustable.
+    if reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=body,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {LLM_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
         },
         method="POST",
     )
@@ -314,8 +322,36 @@ def _call_llm(prompt_messages):
         return None
 
 
-def answer_question(question, history=None, device_id=None, *, registry=None, history_rows=None, irrigation_rules=None):
-    """Top-level entry: retrieve, then either call LLM or synthesize locally."""
+def _build_llm_messages(question, retrieved, ctx, history=None):
+    history = history or []
+    retrieved_block = "\n\n".join(
+        f"《{doc.get('title')}》\n{doc.get('content', '')}" for doc, _ in retrieved
+    )
+    live_block = json.dumps(ctx, ensure_ascii=False)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是温室灌溉顾问。基于【知识库片段】和【实时遥测】用中文回答农户问题，"
+                "给出可执行建议并引用知识来源。回答 2-4 段，避免堆砌术语。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"问题：{question}\n\n实时遥测：{live_block}\n\n知识库片段：\n{retrieved_block}"
+            ),
+        },
+    ]
+    for turn in history[-3:]:
+        messages.append({"role": "user", "content": turn.get("question", "")})
+    return messages
+
+
+def answer_question(question, history=None, device_id=None, *, registry=None, history_rows=None, irrigation_rules=None, mode="kb"):
+    """Top-level entry: mode="kb" -> knowledge-base synthesizer (always available);
+    mode="luna" -> Luna model via OpenAI-compatible API with medium thinking (requires
+    LUNA_API_KEY; falls back to the synthesizer when the call fails)."""
     docs = load_knowledge_base()
     retrieved = retrieve(question, docs, top_k=3)
     ctx = collect_live_context(
@@ -325,35 +361,20 @@ def answer_question(question, history=None, device_id=None, *, registry=None, hi
         registry=registry,
     )
     base = synthesize_answer(question, retrieved, ctx, history=history)
+    base["answer_via"] = "synthesizer"
 
-    if LLM_API_KEY and retrieved:
-        retrieved_block = "\n\n".join(
-            f"《{doc.get('title')}》\n{doc.get('content', '')}" for doc, _ in retrieved
+    if mode == "luna" and retrieved and LUNA_API_KEY:
+        messages = _build_llm_messages(question, retrieved, ctx, history=history)
+        luna_answer = _call_llm(
+            messages,
+            base_url=LUNA_BASE_URL,
+            api_key=LUNA_API_KEY,
+            model=LUNA_MODEL,
+            reasoning_effort=LUNA_REASONING_EFFORT,
         )
-        live_block = json.dumps(ctx, ensure_ascii=False)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是温室灌溉顾问。基于【知识库片段】和【实时遥测】用中文回答农户问题，"
-                    "给出可执行建议并引用知识来源。回答 2-4 段，避免堆砌术语。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"问题：{question}\n\n实时遥测：{live_block}\n\n知识库片段：\n{retrieved_block}"
-                ),
-            },
-        ]
-        llm_answer = _call_llm(messages)
-        if llm_answer:
-            base["answer"] = llm_answer
-            base["answer_via"] = "llm"
-        else:
-            base["answer_via"] = "synthesizer"
-    else:
-        base["answer_via"] = "synthesizer"
+        if luna_answer:
+            base["answer"] = luna_answer
+            base["answer_via"] = "luna"
 
     base["retrieved_count"] = len(retrieved)
     return base

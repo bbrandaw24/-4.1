@@ -14,10 +14,10 @@ from PIL import Image, UnidentifiedImageError
 import paho.mqtt.client as mqtt
 
 try:
-    from .auth import init_db, register_auth_routes, require_auth
+    from .auth import current_user, init_db, register_auth_routes, require_auth
     from .agent import answer_question, load_knowledge_base
 except ImportError:  # allow running main.py directly without the package context
-    from auth import init_db, register_auth_routes, require_auth
+    from auth import current_user, init_db, register_auth_routes, require_auth
     from agent import answer_question, load_knowledge_base
 
 app = Flask(__name__)
@@ -664,10 +664,10 @@ def irrigation_event_history(device_id):
 @app.post("/api/v1/agent/ask")
 @require_auth()
 def agent_ask():
-    """RAG-powered irrigation advisor. Synthesizes an answer from the knowledge base
-    plus the current device's live state (soil moisture, temperature, irrigation rule).
-    All authenticated roles (guest/farmer/manager) can ask. Optionally backed by an
-    LLM (OpenAI-compatible) when LLM_API_KEY/LLM_BASE_URL/LLM_MODEL are configured.
+    """Irrigation advisor with two modes:
+    - mode="kb":   knowledge-base RAG synthesizer (available to all roles)
+    - mode="luna": Luna model (OpenAI-compatible, fixed medium thinking) - farmer/manager only
+    Guests can only use the knowledge-base mode.
     """
     body = request.get_json(silent=True) or {}
     question = (body.get("question") or "").strip()
@@ -675,6 +675,12 @@ def agent_ask():
         return jsonify({"error": "question_required"}), 400
     if len(question) > 500:
         return jsonify({"error": "question_too_long", "max_chars": 500}), 400
+    mode = body.get("mode") or "kb"
+    if mode not in {"kb", "luna"}:
+        return jsonify({"error": "mode_must_be_kb_or_luna"}), 400
+    role = (current_user() or {}).get("role")
+    if mode == "luna" and role == "guest":
+        return jsonify({"error": "luna_requires_privileged_role", "message": "游客模式仅支持知识库问答"}), 403
     history = body.get("history") or []
     if not isinstance(history, list):
         history = []
@@ -702,6 +708,7 @@ def agent_ask():
             registry=registry,
             history_rows=history_rows,
             irrigation_rules=rules_snapshot,
+            mode=mode,
         )
     except Exception as exc:
         LOGGER.warning("agent ask failed: %s", exc)
@@ -709,6 +716,7 @@ def agent_ask():
 
     result["device_id"] = device_id
     result["question"] = question
+    result["mode"] = mode
     return jsonify(result)
 
 

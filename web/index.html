@@ -77,7 +77,12 @@
 
     <section class="route-panel" data-view="agent">
       <article class="panel agent-panel">
-        <div class="panel-heading"><div><p class="eyebrow">IRRIGATION ADVISOR</p><h2>智能体问答</h2><p class="agent-sub">基于云端知识库（10 篇灌溉/农事文档）+ 实时遥测合成回答；支持大模型升级（环境变量 LLM_API_KEY）。</p></div><span class="badge" id="agent-mode-badge">RAG</span></div>
+        <div class="panel-heading"><div><p class="eyebrow">IRRIGATION ADVISOR</p><h2>智能体问答</h2><p class="agent-sub">知识库问答：云端 10 篇灌溉/农事文档 + 实时遥测合成；Luna 模式：接入 Luna 模型（思考强度固定中等，仅农户/管理者可用）。</p></div><span class="badge" id="agent-mode-badge">RAG</span></div>
+        <div class="agent-mode-row" role="group" aria-label="问答模式">
+          <button class="agent-mode-btn active" data-mode="kb" type="button">知识库问答</button>
+          <button class="agent-mode-btn" data-mode="luna" type="button">Luna 模式</button>
+          <span class="agent-mode-hint" id="agent-mode-hint"></span>
+        </div>
         <div class="agent-context" id="agent-context">加载当前温室数据...</div>
         <div class="agent-messages" id="agent-messages">
           <div class="agent-message agent"><div class="agent-bubble">你好，我是温室灌溉顾问。可以问我：<br>· <button class="agent-suggest" data-q="现在土壤湿度偏低，该怎么处理？">现在土壤湿度偏低，该怎么处理？</button><br>· <button class="agent-suggest" data-q="什么时候灌溉效果最好？">什么时候灌溉效果最好？</button><br>· <button class="agent-suggest" data-q="番茄结果期湿度应该保持在多少？">番茄结果期湿度应该保持在多少？</button><br>· <button class="agent-suggest" data-q="水泵指令显示超时该怎么排查？">水泵指令显示超时该怎么排查？</button></div></div>
@@ -93,6 +98,6 @@
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day13-plots"></script>
   <script src="app.js?v=day13-plots"></script>
-  <script src="agent.js?v=day13-agent"></script>
+  <script src="agent.js?v=day14-luna"></script>
 </body>
 </html>

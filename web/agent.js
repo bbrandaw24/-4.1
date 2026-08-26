@@ -11,11 +11,42 @@
   const contextEl = document.getElementById("agent-context");
   const metaEl = document.getElementById("agent-meta");
   const modeBadge = document.getElementById("agent-mode-badge");
+  const modeHintEl = document.getElementById("agent-mode-hint");
+  const modeBtns = document.querySelectorAll(".agent-mode-btn");
   const history = [];
   const MAX_HISTORY = 6;
   let sending = false;
+  let mode = "kb"; // "kb" = knowledge base | "luna" = Luna model (farmer/manager only)
 
   if (!messagesEl || !formEl || !inputEl) return;
+
+  function isPrivileged() {
+    const user = typeof Auth !== "undefined" ? Auth.getUser() : null;
+    return !!user && user.role !== "guest";
+  }
+
+  function applyModeUI() {
+    modeBtns.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
+    if (mode === "luna") {
+      modeBadge.textContent = "LUNA";
+      modeBadge.classList.remove("muted");
+      if (modeHintEl) modeHintEl.textContent = "Luna 模式 · 思考强度中等（固定）";
+    } else {
+      modeBadge.textContent = "RAG";
+      modeBadge.classList.remove("muted");
+      if (modeHintEl) modeHintEl.textContent = "";
+    }
+    // Guests can only use the knowledge-base mode.
+    if (!isPrivileged()) {
+      modeBtns.forEach((button) => {
+        button.disabled = button.dataset.mode === "luna";
+      });
+      if (modeHintEl) modeHintEl.textContent = "游客仅支持知识库问答";
+      if (mode === "luna") mode = "kb";
+    } else {
+      modeBtns.forEach((button) => { button.disabled = false; });
+    }
+  }
 
   function scrollToBottom() {
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -89,12 +120,13 @@
     appendMessage("user", renderText(text));
     history.push({ question: text, answer: "" });
     if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
-    const pending = appendMessage("agent", '<span class="agent-typing">正在检索知识库与遥测…</span>');
+    const pending = appendMessage("agent", `<span class="agent-typing">${mode === "luna" ? "Luna 思考中（中等强度）…" : "正在检索知识库与遥测…"}</span>`);
     try {
       const response = await Auth.request("/api/v1/agent/ask", {
         method: "POST",
         body: JSON.stringify({
           question: text,
+          mode,
           history: history.slice(0, -1).map((h) => ({ question: h.question })),
           device_id: window.state && window.state.device ? window.state.device.device_id : undefined,
         }),
@@ -104,6 +136,10 @@
       if (!response.ok) {
         const message = (data && (data.error || data.message)) || `HTTP ${response.status}`;
         appendMessage("agent", `请求失败：${renderText(String(message))}`);
+        if (response.status === 403 && mode === "luna") {
+          mode = "kb";
+          applyModeUI();
+        }
         history[history.length - 1].answer = `(error) ${message}`;
         metaEl.textContent = `失败：${message}`;
         return;
@@ -112,12 +148,13 @@
       appendSources(data.sources);
       history[history.length - 1].answer = data.answer || "";
       const via = data.answer_via || "synthesizer";
-      if (modeBadge) modeBadge.textContent = via === "llm" ? "LLM" : "RAG";
+      if (modeBadge) modeBadge.textContent = via === "luna" ? "LUNA" : "RAG";
       if (metaEl) {
         const m = data.context || {};
         const moist = typeof m.moisture_pct === "number" ? `${m.moisture_pct.toFixed(1)}%` : "--";
         const temp = typeof m.air_temperature_c === "number" ? `${m.air_temperature_c.toFixed(1)}°C` : "--";
-        metaEl.textContent = `已回答 · 引用 ${data.retrieved_count || 0} 条 · 引擎 ${via} · 当前湿度 ${moist} · 温度 ${temp}`;
+        const engine = via === "luna" ? "Luna" : "知识库合成";
+        metaEl.textContent = `已回答 · 引用 ${data.retrieved_count || 0} 条 · 引擎 ${engine} · 当前湿度 ${moist} · 温度 ${temp}`;
       }
     } catch (error) {
       pending.remove();
@@ -149,8 +186,20 @@
     button.addEventListener("click", () => send(button.dataset.q));
   });
 
+  modeBtns.forEach((button) => {
+    button.addEventListener("click", () => {
+      const next = button.dataset.mode;
+      if (next === "luna" && !isPrivileged()) return; // guests locked to kb
+      if (mode === next) return;
+      mode = next;
+      applyModeUI();
+      if (metaEl) metaEl.textContent = mode === "luna" ? "已切换 Luna 模式 · 思考强度中等（固定）" : "已切换知识库问答";
+    });
+  });
+
   // Re-render context whenever the device changes (state.device updated by app.js).
   setInterval(renderContext, 5000);
   renderContext();
+  applyModeUI();
   updateSendState();
 })();
