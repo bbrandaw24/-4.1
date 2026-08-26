@@ -175,7 +175,7 @@ function renderTrendPanels() {
 }
 
 function setRoute(route) {
-  const nextRoute = ["overview", "trends", "devices"].includes(route) ? route : "overview";
+  const nextRoute = ["overview", "trends", "devices", "agent"].includes(route) ? route : "overview";
   document.querySelectorAll("[data-view]").forEach((panel) => {
     panel.hidden = panel.dataset.view !== nextRoute;
   });

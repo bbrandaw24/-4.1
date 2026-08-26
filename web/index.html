@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="day08.css">
   <link rel="stylesheet" href="auth.css">
+  <link rel="stylesheet" href="agent.css">
 </head>
 <body>
   <header class="topbar">
@@ -26,6 +27,7 @@
       <button class="nav-item active" data-route="overview"><i data-lucide="layout-dashboard"></i><span>概览</span></button>
       <button class="nav-item" data-route="trends"><i data-lucide="chart-spline"></i><span>趋势</span></button>
       <button class="nav-item" data-route="devices"><i data-lucide="cpu"></i><span>设备</span></button>
+      <button class="nav-item" data-route="agent"><i data-lucide="message-circle"></i><span>智能体问答</span></button>
     </nav>
 
     <section class="metric-grid route-panel" data-view="overview" aria-label="关键指标">
@@ -59,9 +61,25 @@
         <article class="panel device-card"><div class="panel-heading"><div><p class="eyebrow">DATA CONTRACT</p><h2>端云连接</h2></div><i data-lucide="network" class="heading-icon"></i></div><div class="connection-list"><div><span class="pulse"></span><span>MQTT 传感器上报</span><b id="mqtt-contract">等待</b></div><div><span class="pulse"></span><span>HTTP API 查询</span><b id="http-contract">等待</b></div><div><span class="pulse off"></span><span>模型推理</span><b id="ai-contract">未就绪</b></div></div></article>
       </div>
     </section>
+
+    <section class="route-panel" data-view="agent">
+      <article class="panel agent-panel">
+        <div class="panel-heading"><div><p class="eyebrow">IRRIGATION ADVISOR</p><h2>智能体问答</h2><p class="agent-sub">基于云端知识库（10 篇灌溉/农事文档）+ 实时遥测合成回答；支持大模型升级（环境变量 LLM_API_KEY）。</p></div><span class="badge" id="agent-mode-badge">RAG</span></div>
+        <div class="agent-context" id="agent-context">加载当前温室数据...</div>
+        <div class="agent-messages" id="agent-messages">
+          <div class="agent-message agent"><div class="agent-bubble">你好，我是温室灌溉顾问。可以问我：<br>· <button class="agent-suggest" data-q="现在土壤湿度偏低，该怎么处理？">现在土壤湿度偏低，该怎么处理？</button><br>· <button class="agent-suggest" data-q="什么时候灌溉效果最好？">什么时候灌溉效果最好？</button><br>· <button class="agent-suggest" data-q="番茄结果期湿度应该保持在多少？">番茄结果期湿度应该保持在多少？</button><br>· <button class="agent-suggest" data-q="水泵指令显示超时该怎么排查？">水泵指令显示超时该怎么排查？</button></div></div>
+        </div>
+        <form class="agent-input-row" id="agent-form">
+          <textarea id="agent-input" placeholder="输入你的灌溉/农事问题，Shift+Enter 换行，Enter 发送" rows="2" maxlength="500"></textarea>
+          <button type="submit" class="action primary" id="agent-send" disabled><i data-lucide="send"></i>发送</button>
+        </form>
+        <p class="agent-meta" id="agent-meta">登录后即可对话。回答含云端知识库引用与实时数据。</p>
+      </article>
+    </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day12-logout"></script>
   <script src="app.js?v=day12-logout"></script>
+  <script src="agent.js?v=day13-agent"></script>
 </body>
 </html>

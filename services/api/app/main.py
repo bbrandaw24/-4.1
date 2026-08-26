@@ -15,12 +15,15 @@ import paho.mqtt.client as mqtt
 
 try:
     from .auth import init_db, register_auth_routes, require_auth
+    from .agent import answer_question, load_knowledge_base
 except ImportError:  # allow running main.py directly without the package context
     from auth import init_db, register_auth_routes, require_auth
+    from agent import answer_question, load_knowledge_base
 
 app = Flask(__name__)
 init_db()
 register_auth_routes(app)
+load_knowledge_base()
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 LOGGER = logging.getLogger("smart-agriculture-api")
 
@@ -511,6 +514,57 @@ def irrigation_event_history(device_id):
     with irrigation_rules_lock:
         items = [dict(event) for event in irrigation_events if event["device_id"] == device_id]
     return jsonify({"device_id": device_id, "count": len(items[-limit:]), "items": items[-limit:]})
+
+
+@app.post("/api/v1/agent/ask")
+@require_auth()
+def agent_ask():
+    """RAG-powered irrigation advisor. Synthesizes an answer from the knowledge base
+    plus the current device's live state (soil moisture, temperature, irrigation rule).
+    All authenticated roles (guest/farmer/manager) can ask. Optionally backed by an
+    LLM (OpenAI-compatible) when LLM_API_KEY/LLM_BASE_URL/LLM_MODEL are configured.
+    """
+    body = request.get_json(silent=True) or {}
+    question = (body.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question_required"}), 400
+    if len(question) > 500:
+        return jsonify({"error": "question_too_long", "max_chars": 500}), 400
+    history = body.get("history") or []
+    if not isinstance(history, list):
+        history = []
+    history = [h for h in history if isinstance(h, dict) and h.get("question")][-5:]
+
+    device_id = body.get("device_id")
+    if not device_id:
+        with registry_lock:
+            device_id = next(iter(registry.keys()), None)
+
+    history_rows = {}
+    with registry_lock:
+        if device_id:
+            device = registry.get(device_id)
+            if device:
+                history_rows[device_id] = list(device.get("history", []))
+    with irrigation_rules_lock:
+        rules_snapshot = {k: dict(v) for k, v in irrigation_rules.items()}
+
+    try:
+        result = answer_question(
+            question,
+            history=history,
+            device_id=device_id,
+            registry=registry,
+            history_rows=history_rows,
+            irrigation_rules=rules_snapshot,
+        )
+    except Exception as exc:
+        LOGGER.warning("agent ask failed: %s", exc)
+        return jsonify({"error": "agent_unavailable", "message": str(exc)}), 503
+
+    result["device_id"] = device_id
+    result["question"] = question
+    return jsonify(result)
 
 
 def _image_record(image_id):
