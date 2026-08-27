@@ -327,6 +327,7 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     if (!data.items?.length) throw new Error("暂无设备");
+    state.allDevices = data.items;
     populatePlotSwitcher(data.items);
     renderPlotsStrip(data.items);
     if (!selectedDeviceId || !data.items.some((item) => item.device_id === selectedDeviceId)) {
@@ -334,6 +335,10 @@ async function refresh() {
       DEVICE_ID = selectedDeviceId;
     }
     renderDevice(data.items.find((item) => item.device_id === selectedDeviceId) || data.items[0]);
+    renderSensorsBoard(data.items);
+    bindSensorActions();
+    const addBtn = $("#sensor-add-btn");
+    if (addBtn) addBtn.disabled = !Auth.hasPermission("manage_sensors");
     setConnection(true, "API 已连接");
     $("#last-update").textContent = new Date().toLocaleTimeString();
   } catch (error) {
@@ -566,6 +571,184 @@ $("#dropzone").addEventListener("dragover", (event) => event.preventDefault());
 $("#dropzone").addEventListener("drop", (event) => { event.preventDefault(); upload(event.dataTransfer.files[0]); });
 const alertLogRefresh = $("#alert-log-refresh");
 if (alertLogRefresh) alertLogRefresh.addEventListener("click", refreshAlertLog);
+
+// --- Day 16: sensor registry board -----------------------------------------
+const SENSOR_TYPE_META = {
+  soil_temperature:  { name: "土壤温度",  icon: "thermometer",     format: (v) => v.temperature_c !== undefined ? Number(v.temperature_c).toFixed(1) : "--" },
+  soil_ph:           { name: "pH",         icon: "flask-conical",   format: (v) => v.ph !== undefined ? Number(v.ph).toFixed(2) : "--" },
+  soil_npk:          { name: "氮/磷/钾",   icon: "beaker",          format: (v) => v.nitrogen_mg_kg !== undefined ? `${Math.round(v.nitrogen_mg_kg)}/${Math.round(v.phosphorus_mg_kg)}/${Math.round(v.potassium_mg_kg)}` : "--" },
+  air_humidity:      { name: "空气湿度",   icon: "droplets",         format: (v) => v.air_humidity_pct !== undefined ? Number(v.air_humidity_pct).toFixed(1) : "--" },
+  soil_conductivity: { name: "电导率",     icon: "activity",        format: (v) => v.conductivity_ms_cm !== undefined ? Number(v.conductivity_ms_cm).toFixed(3) : "--" },
+};
+const SENSOR_TYPE_ORDER = ["soil_temperature", "soil_ph", "soil_npk", "air_humidity", "soil_conductivity"];
+
+function renderSensorCard(sensor) {
+  const meta = SENSOR_TYPE_META[sensor.type] || { name: sensor.type, icon: "circle", format: () => "--" };
+  const value = sensor.value || {};
+  const formatted = meta.format(value);
+  const isConnected = sensor.status === "connected";
+  const canManage = Auth.hasPermission("manage_sensors");
+  const lastSeen = sensor.last_seen ? new Date(sensor.last_seen).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+  const unitText = sensor.unit && sensor.unit.length ? ` ${sensor.unit}` : "";
+  const icon = `<i data-lucide="${meta.icon}"></i>`;
+  return `<div class="sensor-card ${isConnected ? "" : "disconnected"}" data-sensor="${sensor.id}">
+    <div class="sensor-card-head">${icon}<span>${meta.name}</span></div>
+    <div class="sensor-value">${formatted}<span class="sensor-unit">${unitText}</span></div>
+    <span class="sensor-status ${sensor.status}">${isConnected ? "已连接" : "已断开"}</span>
+    <div class="sensor-last-seen">最近上报 ${lastSeen}</div>
+    <div class="sensor-card-actions">
+      <button class="toggle" data-action="toggle" data-sensor="${sensor.id}" data-status="${sensor.status}" ${canManage ? "" : "disabled"}>${isConnected ? "断开" : "连接"}</button>
+      <button class="remove" data-action="remove" data-sensor="${sensor.id}" ${canManage ? "" : "disabled"}>删除</button>
+    </div>
+  </div>`;
+}
+
+function renderSensorsBoard(devices) {
+  const board = $("#sensors-board");
+  if (!board) return;
+  if (!devices || !devices.length) {
+    board.innerHTML = '<p class="sensor-hint">暂无地块。</p>';
+    return;
+  }
+  board.innerHTML = devices.map((device) => {
+    const sensors = (device.sensors || []).slice().sort((a, b) =>
+      SENSOR_TYPE_ORDER.indexOf(a.type) - SENSOR_TYPE_ORDER.indexOf(b.type));
+    const plot = device.plot || {};
+    const online = Boolean(device.last_seen);
+    return `<section class="sensor-group" data-device="${device.device_id}">
+      <header class="sensor-group-header">
+        <span class="sensor-group-name">${plot.name || device.device_id}</span>
+        <span class="sensor-group-crop">${plot.crop || "—"}</span>
+        <span class="sensor-group-status ${online ? "" : "off"}">
+          <span class="pulse ${online ? "" : "off"}"></span>${online ? "在线" : "离线"}
+        </span>
+      </header>
+      <div class="sensor-grid">${sensors.map(renderSensorCard).join("") || '<div class="sensor-hint" style="padding:18px">该地块暂无传感器，点击"+ 添加传感器"创建。</div>'}</div>
+    </section>`;
+  }).join("");
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function setSensorHint(text, kind = "") {
+  const el = $("#sensor-hint");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove("error", "success");
+  if (kind) el.classList.add(kind);
+}
+
+async function toggleSensor(sensorId, currentStatus) {
+  const next = currentStatus === "connected" ? "disconnected" : "connected";
+  try {
+    const response = await Auth.request(`/api/v1/sensors/${sensorId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: next }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    setSensorHint(`传感器已${next === "connected" ? "连接" : "断开"}`, "success");
+    await refresh();
+  } catch (error) {
+    setSensorHint(`操作失败：${error.message || error}`, "error");
+  }
+}
+
+async function deleteSensorById(sensorId) {
+  try {
+    const response = await Auth.request(`/api/v1/sensors/${sensorId}`, { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    setSensorHint("传感器已删除", "success");
+    await refresh();
+  } catch (error) {
+    setSensorHint(`删除失败：${error.message || error}`, "error");
+  }
+}
+
+async function addSensor(deviceId, sensorType) {
+  try {
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(deviceId)}/sensors`, {
+      method: "POST",
+      body: JSON.stringify({ type: sensorType }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    setSensorHint(`已创建 ${SENSOR_TYPE_META[sensorType]?.name || sensorType} 传感器`, "success");
+    await refresh();
+  } catch (error) {
+    setSensorHint(`创建失败：${error.message || error}`, "error");
+  }
+}
+
+function openAddSensorDialog(deviceId) {
+  const device = (state.allDevices || []).find((d) => d.device_id === deviceId);
+  if (!device) return;
+  const existing = new Set((device.sensors || []).map((s) => s.type));
+  const missing = SENSOR_TYPE_ORDER.filter((t) => !existing.has(t));
+  const dialog = $("#sensor-add-dialog");
+  const typesEl = $("#sensor-add-types");
+  const label = $("#sensor-add-device-label");
+  if (!dialog || !typesEl || !label) return;
+  const plot = device.plot || {};
+  label.textContent = `${plot.name || device.device_id}（${plot.crop || "—"}）`;
+  if (!missing.length) {
+    typesEl.innerHTML = '<p class="sensor-hint">该地块已配置全部 5 类传感器。</p>';
+  } else {
+    typesEl.innerHTML = missing.map((t) => {
+      const meta = SENSOR_TYPE_META[t];
+      return `<button data-type="${t}" type="button"><span>${meta.name}</span><small>${t}</small></button>`;
+    }).join("");
+    typesEl.querySelectorAll("button[data-type]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const type = btn.dataset.type;
+        closeAddSensorDialog();
+        await addSensor(deviceId, type);
+      });
+    });
+  }
+  dialog.classList.remove("hidden");
+}
+
+function closeAddSensorDialog() {
+  $("#sensor-add-dialog")?.classList.add("hidden");
+}
+
+function bindSensorActions() {
+  const board = $("#sensors-board");
+  const addBtn = $("#sensor-add-btn");
+  const cancelBtn = $("#sensor-add-cancel");
+  const dialog = $("#sensor-add-dialog");
+  if (!board || !addBtn) return;
+  if (!board.dataset.bound) {
+    board.dataset.bound = "1";
+    board.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-action]");
+      if (!target) return;
+      const action = target.dataset.action;
+      const sensorId = target.dataset.sensor;
+      if (!sensorId) return;
+      if (action === "toggle") toggleSensor(sensorId, target.dataset.status);
+      if (action === "remove") {
+        if (confirm("确定删除该传感器？删除后云端会立即停止推送数据。")) deleteSensorById(sensorId);
+      }
+    });
+  }
+  if (cancelBtn && !cancelBtn.dataset.bound) {
+    cancelBtn.dataset.bound = "1";
+    cancelBtn.addEventListener("click", closeAddSensorDialog);
+  }
+  if (dialog && !dialog.dataset.bound) {
+    dialog.dataset.bound = "1";
+    dialog.addEventListener("click", (event) => { if (event.target === dialog) closeAddSensorDialog(); });
+  }
+  if (!addBtn.dataset.bound) {
+    addBtn.dataset.bound = "1";
+    addBtn.addEventListener("click", () => {
+      if (state.device) openAddSensorDialog(state.device.device_id);
+    });
+  }
+}
+
 if (window.lucide) window.lucide.createIcons();
 refresh();
 refreshAiStatus();

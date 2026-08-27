@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="auth.css">
   <link rel="stylesheet" href="agent.css">
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
+  <link rel="stylesheet" href="sensor.css?v=day16-sensors">
   <link rel="stylesheet" href="day13.css">
 </head>
 <body>
@@ -70,10 +71,19 @@
     </section>
 
     <section class="route-panel" data-view="devices">
-      <div class="device-layout">
-        <article class="panel device-card"><div class="panel-heading"><div><p class="eyebrow">DEVICE REGISTRY</p><h2 id="device-page-name">等待设备</h2></div><span class="badge" id="device-page-status">OFFLINE</span></div><dl class="device-details"><div><dt>设备 ID</dt><dd id="device-page-id">--</dd></div><div><dt>最近上报</dt><dd id="device-page-seen">--</dd></div><div><dt>API 地址</dt><dd id="device-page-api">--</dd></div><div><dt>AI 状态</dt><dd id="device-page-ai">--</dd></div></dl></article>
-        <article class="panel device-card"><div class="panel-heading"><div><p class="eyebrow">DATA CONTRACT</p><h2>端云连接</h2></div><i data-lucide="network" class="heading-icon"></i></div><div class="connection-list"><div><span class="pulse"></span><span>MQTT 传感器上报</span><b id="mqtt-contract">等待</b></div><div><span class="pulse"></span><span>HTTP API 查询</span><b id="http-contract">等待</b></div><div><span class="pulse off"></span><span>模型推理</span><b id="ai-contract">未就绪</b></div></div></article>
-      </div>
+      <article class="panel sensors-panel">
+        <div class="panel-heading"><div><p class="eyebrow">VIRTUAL HARDWARE</p><h2>传感器管理</h2><p class="agent-sub">每块地默认有 5 类传感器（土壤温度 / pH / 氮磷钾 / 空气湿度 / 电导率），通过 MQTT 实时上报到云端服务器。点击按钮可连接、断开或删除；添加后会立即在云端创建并开始推送。</p></div><span class="badge">MQTT → 云端 mosquitto</span></div>
+        <div id="sensors-board" class="sensors-board"></div>
+        <div class="sensor-actions-row"><button class="action primary" id="sensor-add-btn" disabled>+ 添加传感器</button><span class="sensor-hint" id="sensor-hint">选择地块后可补全缺失的传感器。</span></div>
+        <div class="sensor-add-dialog hidden" id="sensor-add-dialog" role="dialog" aria-modal="true">
+          <div class="dialog-body">
+            <h3>添加传感器</h3>
+            <p>地块：<b id="sensor-add-device-label">--</b></p>
+            <div class="sensor-add-types" id="sensor-add-types"></div>
+            <button class="sensor-add-cancel" id="sensor-add-cancel" type="button">取消</button>
+          </div>
+        </div>
+      </article>
     </section>
 
     <section class="route-panel" data-view="agent">
