@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="day08.css">
   <link rel="stylesheet" href="auth.css">
   <link rel="stylesheet" href="agent.css">
+  <link rel="stylesheet" href="kitten.css?v=day16-kitten">
   <link rel="stylesheet" href="day13.css">
 </head>
 <body>
@@ -77,7 +78,81 @@
 
     <section class="route-panel" data-view="agent">
       <article class="panel agent-panel">
-        <div class="panel-heading"><div><p class="eyebrow">IRRIGATION ADVISOR</p><h2>智能体问答</h2><p class="agent-sub">知识库问答：云端 10 篇灌溉/农事文档 + 实时遥测合成；Luna 模式：接入 Luna 模型（可开思考模式、选强度、显示思维链，仅农户/管理者可用）。</p></div><span class="badge" id="agent-mode-badge">RAG</span></div>
+        <div class="panel-heading"><div><p class="eyebrow">IRRIGATION ADVISOR</p><h2>智能体问答</h2><p class="agent-sub">知识库问答：云端 53 篇灌溉/农事文档 + 实时遥测合成；Luna 模式：接入 Luna 模型（可开思考模式、选强度、显示思维链，仅农户/管理者可用）。</p></div>
+          <div class="agent-head-right">
+            <span class="badge" id="agent-mode-badge">RAG</span>
+            <div class="kitten" id="luna-kitten" data-state="idle" data-mode="kb" aria-live="polite">
+              <svg viewBox="0 0 120 132" role="img" aria-label="Luna 小猫娘">
+                <g class="kitten-tail" transform="translate(0 0)">
+                  <path d="M100,98 C114,94 120,76 107,66 C102,62 96,66 100,71 C103,75 107,74 105,70" fill="none" stroke="#7a4a2b" stroke-width="9" stroke-linecap="round"/>
+                  <circle cx="104" cy="71" r="4" fill="#f6c6cf"/>
+                </g>
+                <circle cx="58" cy="64" r="44" fill="url(#kbg)" stroke="#dce5de" stroke-width="1.5"/>
+                <defs>
+                  <radialGradient id="kbg" cx="38%" cy="32%" r="80%">
+                    <stop offset="0%" stop-color="#ffffff"/>
+                    <stop offset="100%" stop-color="#e5f1e9"/>
+                  </radialGradient>
+                </defs>
+                <g class="kitten-ear-l">
+                  <path d="M27,46 L10,14 Q26,6 41,25 Z" fill="#7a4a2b"/>
+                  <path d="M23,40 L14,21 Q24,17 33,27 Z" fill="#f6c6cf"/>
+                </g>
+                <g class="kitten-ear-r">
+                  <path d="M93,46 L110,14 Q94,6 79,25 Z" fill="#7a4a2b"/>
+                  <path d="M97,40 L106,21 Q96,17 87,27 Z" fill="#f6c6cf"/>
+                </g>
+                <path d="M14,62 Q12,20 58,20 Q104,20 106,62 Q92,46 82,41 Q70,37 58,41 Q42,45 32,53 Q22,57 14,62 Z" fill="#7a4a2b"/>
+                <path d="M14,62 Q10,84 18,98 Q22,105 25,96 Q27,82 23,66 Q18,60 14,62 Z" fill="#7a4a2b"/>
+                <path d="M106,62 Q110,84 102,98 Q98,105 95,96 Q93,82 97,66 Q102,60 106,62 Z" fill="#7a4a2b"/>
+                <circle cx="58" cy="72" r="26" fill="#ffe9dc"/>
+                <g class="eye-open">
+                  <g class="eye-unit">
+                    <circle cx="47" cy="69" r="6.5" fill="#fff" stroke="rgba(23,33,27,0.18)" stroke-width="1"/>
+                    <circle cx="47.6" cy="69.6" r="3.2" fill="#226b46"/>
+                    <circle cx="46.2" cy="67.9" r="1.2" fill="#fff"/>
+                  </g>
+                  <g class="eye-unit">
+                    <circle cx="69" cy="69" r="6.5" fill="#fff" stroke="rgba(23,33,27,0.18)" stroke-width="1"/>
+                    <circle cx="69.6" cy="69.6" r="3.2" fill="#226b46"/>
+                    <circle cx="68.2" cy="67.9" r="1.2" fill="#fff"/>
+                  </g>
+                </g>
+                <g class="eye-happy">
+                  <path d="M39,71 Q47,63 55,71" fill="none" stroke="#17211b" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M61,71 Q69,63 77,71" fill="none" stroke="#17211b" stroke-width="2.2" stroke-linecap="round"/>
+                </g>
+                <g class="eye-think">
+                  <path d="M39,72 Q47,66 55,72" fill="none" stroke="#17211b" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M41,62 Q47,57 53,60" fill="none" stroke="#17211b" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M61,72 Q69,66 77,72" fill="none" stroke="#17211b" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M63,60 Q69,57 75,62" fill="none" stroke="#17211b" stroke-width="1.8" stroke-linecap="round"/>
+                </g>
+                <g class="eye-sad">
+                  <path d="M39,70 Q47,78 55,70" fill="none" stroke="#17211b" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M61,70 Q69,78 77,70" fill="none" stroke="#17211b" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M41,61 Q47,63 53,60" fill="none" stroke="#17211b" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M63,60 Q69,63 75,61" fill="none" stroke="#17211b" stroke-width="1.8" stroke-linecap="round"/>
+                </g>
+                <ellipse cx="35" cy="80" rx="6" ry="3.6" fill="#ffb3c0" opacity="0.55"/>
+                <ellipse cx="81" cy="80" rx="6" ry="3.6" fill="#ffb3c0" opacity="0.55"/>
+                <g class="mouth-closed">
+                  <path d="M52,85 Q58,90 64,85" fill="none" stroke="#17211b" stroke-width="2" stroke-linecap="round"/>
+                </g>
+                <g class="mouth-open">
+                  <ellipse cx="58" cy="87" rx="4.2" ry="5" fill="#c96f6f"/>
+                  <ellipse cx="58" cy="89" rx="2.2" ry="2.2" fill="#a85555"/>
+                </g>
+                <path d="M58,30 Q45,15 39,27 Q49,35 58,30 Z" fill="#226b46"/>
+                <path d="M58,30 Q71,15 77,27 Q67,35 58,30 Z" fill="#226b46"/>
+                <circle cx="58" cy="29" r="3.2" fill="#226b46"/>
+                <circle cx="46" cy="22" r="1.2" fill="#c5e4ce"/>
+              </svg>
+              <span class="kitten-label">Luna</span>
+              <span class="kitten-status">待命中</span>
+            </div>
+          </div>
+        </div>
         <div class="agent-mode-row" role="group" aria-label="问答模式">
           <button class="agent-mode-btn active" data-mode="kb" type="button">知识库问答</button>
           <button class="agent-mode-btn" data-mode="luna" type="button">Luna 模式</button>
@@ -108,6 +183,7 @@
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day13-plots"></script>
   <script src="app.js?v=day13-plots"></script>
-  <script src="agent.js?v=day15-thinking"></script>
+  <script src="kitten.js?v=day16-kitten"></script>
+  <script src="agent.js?v=day16-kitten"></script>
 </body>
 </html>

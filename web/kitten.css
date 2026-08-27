@@ -1,0 +1,134 @@
+/* Day 16: Luna kitten mascot — pure SVG + CSS animation, no external assets.
+ * States driven by #luna-kitten[data-state]: idle | thinking | talking | error
+ * Mode driven by #luna-kitten[data-mode]: kb | luna
+ */
+.agent-head-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.kitten {
+  width: 78px;
+  text-align: center;
+  user-select: none;
+  cursor: default;
+}
+.kitten svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  animation: kitten-breathe 2.8s ease-in-out infinite;
+}
+.kitten-label {
+  display: block;
+  margin-top: 1px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--green);
+}
+.kitten-status {
+  display: block;
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 1px;
+  letter-spacing: 0.02em;
+}
+/* ---- hide eye/mouth variants unless the matching state is active ---- */
+.kitten .eye-happy,
+.kitten .eye-think,
+.kitten .eye-sad,
+.kitten .mouth-open {
+  display: none;
+}
+.kitten[data-state="talking"] .eye-open,
+.kitten[data-state="thinking"] .eye-open,
+.kitten[data-state="error"] .eye-open {
+  display: none;
+}
+.kitten[data-state="talking"] .eye-happy,
+.kitten[data-state="thinking"] .eye-think,
+.kitten[data-state="error"] .eye-sad {
+  display: block;
+}
+.kitten[data-state="talking"] .mouth-closed {
+  display: none;
+}
+.kitten[data-state="talking"] .mouth-open {
+  display: block;
+}
+/* ---- animations ---- */
+@keyframes kitten-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes kitten-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  94% { transform: scaleY(0.08); }
+}
+.kitten .eye-unit {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.kitten[data-state="idle"] .eye-open .eye-unit {
+  animation: kitten-blink 4.6s infinite;
+}
+@keyframes kitten-ear-l {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-8deg); }
+}
+@keyframes kitten-ear-r {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(8deg); }
+}
+.kitten .kitten-ear-l,
+.kitten .kitten-ear-r {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+.kitten[data-state="talking"] .kitten-ear-l { animation: kitten-ear-l 0.5s ease-in-out infinite; }
+.kitten[data-state="talking"] .kitten-ear-r { animation: kitten-ear-r 0.5s ease-in-out infinite; }
+.kitten[data-state="thinking"] .kitten-ear-l { animation: kitten-ear-l 1.1s ease-in-out infinite; }
+.kitten[data-state="thinking"] .kitten-ear-r { animation: kitten-ear-r 1.1s ease-in-out infinite; }
+@keyframes kitten-mouth {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.kitten .mouth-open {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.kitten[data-state="talking"] .mouth-open {
+  animation: kitten-mouth 0.45s ease-in-out infinite;
+}
+@keyframes kitten-tail {
+  0%, 100% { transform: rotate(-10deg); }
+  50% { transform: rotate(12deg); }
+}
+.kitten .kitten-tail {
+  transform-box: fill-box;
+  transform-origin: left bottom;
+  animation: kitten-tail 2.2s ease-in-out infinite;
+}
+@keyframes kitten-sway {
+  0%, 100% { transform: rotate(-2.5deg); }
+  50% { transform: rotate(2.5deg); }
+}
+.kitten[data-state="thinking"] svg {
+  animation: kitten-breathe 1.4s ease-in-out infinite, kitten-sway 1.1s ease-in-out infinite;
+}
+@keyframes kitten-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+.kitten[data-state="error"] svg {
+  animation: kitten-shake 0.35s ease-in-out infinite;
+}
+@media (max-width: 720px) {
+  .kitten { width: 60px; }
+  .agent-head-right { gap: 8px; }
+  .kitten-status { display: none; }
+}

@@ -57,6 +57,7 @@
       return;
     }
     modeBtns.forEach((button) => { button.disabled = false; });
+    if (window.LunaKitten) window.LunaKitten.setMode(mode);
   }
 
   function appendThinking(reasoning) {
@@ -145,6 +146,7 @@
     }
     sending = true;
     updateSendState();
+    if (window.LunaKitten) window.LunaKitten.thinking();
     appendMessage("user", renderText(text));
     history.push({ question: text, answer: "" });
     if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
@@ -170,6 +172,7 @@
           mode = "kb";
           applyModeUI();
         }
+        if (window.LunaKitten) window.LunaKitten.error();
         history[history.length - 1].answer = `(error) ${message}`;
         metaEl.textContent = `失败：${message}`;
         return;
@@ -177,6 +180,7 @@
       if (mode === "luna" && thinking && data.reasoning) appendThinking(data.reasoning);
       appendMessage("agent", renderText(data.answer || "暂无回答。"));
       appendSources(data.sources);
+      if (window.LunaKitten) window.LunaKitten.talking(5000);
       if (mode === "luna" && data.answer_via !== "luna") {
         appendMessage("agent", "（Luna 模型暂时无响应，已自动改用知识库回答）");
       }
@@ -194,6 +198,7 @@
     } catch (error) {
       pending.remove();
       appendMessage("agent", `网络错误：${renderText(String(error.message || error))}`);
+      if (window.LunaKitten) window.LunaKitten.error();
       history[history.length - 1].answer = `(error) ${error}`;
     } finally {
       sending = false;
