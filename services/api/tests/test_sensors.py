@@ -359,3 +359,26 @@ def test_delete_builtin_plot_rejected(client, farmer_headers):
 def test_delete_plot_requires_manage_sensors(client, guest_headers):
     response = client.delete("/api/v1/devices/sim-plot-anything", headers=guest_headers)
     assert response.status_code == 403
+
+
+def test_deleted_plot_not_revived_by_lingering_telemetry(client, farmer_headers):
+    created = client.post("/api/v1/devices",
+                          json={"name": "墓碑测试", "crop": "黄瓜"},
+                          headers=farmer_headers).get_json()
+    device_id = created["device_id"]
+    try:
+        response = client.delete(f"/api/v1/devices/{device_id}", headers=farmer_headers)
+        assert response.status_code == 200
+        # Simulator may still publish for up to a discovery cycle: legacy and
+        # sensor telemetry must be dropped, not re-register the plot.
+        main.on_mqtt_message(None, None, SimpleNamespace(
+            topic=f"farm/{device_id}/sensor/soil",
+            payload=json.dumps({"device_id": device_id, "payload": {"moisture_pct": 50.0}}).encode()))
+        main.on_mqtt_message(None, None, SimpleNamespace(
+            topic=f"farm/{device_id}/telemetry",
+            payload=json.dumps({"device_id": device_id, "value": {"temperature_c": 23.0},
+                                "sensor_id": "deadbeefdeadbeefdeadbeefdeadbeef", "type": "soil_temperature"}).encode()))
+        with main.registry_lock:
+            assert device_id not in main.registry
+    finally:
+        _cleanup_plot(device_id)

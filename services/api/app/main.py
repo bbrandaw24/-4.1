@@ -52,6 +52,9 @@ UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 registry = {}
 registry_lock = Lock()
+# Tombstones for deleted user plots: while present, MQTT telemetry for that
+# device is dropped so a deleted plot cannot be revived by lingering messages.
+_deleted_plots: dict[str, float] = {}
 PUMP_CONFIRM_TIMEOUT_SECONDS = float(os.getenv("PUMP_CONFIRM_TIMEOUT_SECONDS", "5"))
 HISTORY_LIMIT = int(os.getenv("TELEMETRY_HISTORY_LIMIT", "7200"))
 pending_commands = {}
@@ -744,6 +747,12 @@ def on_mqtt_message(_client, _userdata, message):
         LOGGER.warning("ignored invalid MQTT message on %s: %s", message.topic, exc)
         return
 
+    # A deleted plot's lingering telemetry must NOT re-register the device
+    # (registry.setdefault below); drop it until the tombstone expires.
+    if device_id in _deleted_plots:
+        LOGGER.debug("ignoring telemetry for deleted plot %s", device_id)
+        return
+
     # Day 16: new sensor-registry payload — topic `farm/{device}/{sensor_id}/telemetry`
     if parts[3] == "telemetry":
         sensor_id = parts[2]
@@ -900,6 +909,7 @@ def register_device_endpoint():
                                "plot": {"name": name or device_id, "crop": crop or ""}}
     if name or crop:
         _save_custom_plot(device_id, name, crop)
+    _deleted_plots.pop(device_id, None)  # re-created → clear tombstone
     # Seed the 5 default sensor types so the new plot is immediately usable.
     for sensor_type in sorted(SENSOR_TYPES.keys()):
         try:
@@ -967,13 +977,20 @@ def delete_sensor_endpoint(sensor_id):
 def delete_plot_endpoint(device_id):
     """Delete a user-created plot: removes registry entry, all its sensors and
     the persisted custom_plots row. Built-in plots (PLOT_META) are protected so
-    the demo baseline always exists."""
+    the demo baseline always exists. A tombstone is left so telemetry still
+    sent by the simulator before its next discovery cycle is dropped instead of
+    implicitly re-registering the plot (registry.setdefault in the MQTT path)."""
     if device_id in PLOT_META:
         return jsonify({"error": "builtin_plot_cannot_be_deleted",
                         "message": "内置地块（苹果园/梨园/橘园）不可删除，仅可删除自定义地块"}), 403
     with registry_lock:
         existed = device_id in registry
         registry.pop(device_id, None)
+        _deleted_plots[device_id] = time.time()
+        # prune tombstones older than 10 minutes
+        now = time.time()
+        for stale in [k for k, v in _deleted_plots.items() if now - v > 600]:
+            _deleted_plots.pop(stale, None)
     conn = _telemetry_connect()
     try:
         cursor = conn.execute("DELETE FROM sensors WHERE device_id=?", (device_id,))
