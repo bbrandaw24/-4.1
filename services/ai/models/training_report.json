@@ -1,0 +1,80 @@
+{
+  "model_version": "riseholme-2021-mlp-v1",
+  "classes": [
+    "Anomalous",
+    "Occluded",
+    "Ripe",
+    "Unripe"
+  ],
+  "architecture": "MLP(6912-512-128-4), ReLU+Dropout0.3",
+  "backend": "pure numpy (no torch)",
+  "input_size": 48,
+  "dataset": "D:\\GeZheBin\\datasets\\riseholme-classification",
+  "seed": 42,
+  "epochs": 20,
+  "batch_size": 64,
+  "learning_rate": 0.0005,
+  "optimizer": "Adam",
+  "data_augmentation": "hflip/shift+/-2px/brightness+/-20%",
+  "class_weight": {
+    "Anomalous": 2.3572,
+    "Occluded": 0.7375,
+    "Ripe": 0.7552,
+    "Unripe": 0.1501
+  },
+  "class_counts": {
+    "train": {
+      "Anomalous": 107,
+      "Occluded": 342,
+      "Ripe": 334,
+      "Unripe": 1680
+    },
+    "val": {
+      "Anomalous": 22,
+      "Occluded": 49,
+      "Ripe": 39,
+      "Unripe": 249
+    },
+    "test": {
+      "Anomalous": 24,
+      "Occluded": 108,
+      "Ripe": 89,
+      "Unripe": 477
+    }
+  },
+  "test_accuracy": 0.8123,
+  "test_macro_f1": 0.5202,
+  "test_per_class_accuracy": {
+    "Anomalous": 0.0,
+    "Occluded": 0.2685,
+    "Ripe": 0.9438,
+    "Unripe": 0.9518
+  },
+  "confusion_matrix": [
+    [
+      0,
+      3,
+      3,
+      18
+    ],
+    [
+      1,
+      29,
+      27,
+      51
+    ],
+    [
+      1,
+      4,
+      84,
+      0
+    ],
+    [
+      0,
+      22,
+      1,
+      454
+    ]
+  ],
+  "training_seconds": 66.2
+}

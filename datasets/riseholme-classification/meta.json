@@ -1,0 +1,38 @@
+{
+  "dataset": "Riseholme-2021",
+  "source": "https://github.com/ctyeong/Riseholme-2021",
+  "official_split": "Split1",
+  "scenario": "RUO",
+  "normal_splits": "official RUO split files",
+  "anomalous_splits": "manual 70/15/15 (seed=42), original dataset uses all Anomalous for test (one-class)",
+  "classes": [
+    "Ripe",
+    "Unripe",
+    "Occluded",
+    "Anomalous"
+  ],
+  "counts": {
+    "Ripe": {
+      "train": 334,
+      "val": 39,
+      "test": 89
+    },
+    "Unripe": {
+      "train": 1680,
+      "val": 249,
+      "test": 477
+    },
+    "Occluded": {
+      "train": 342,
+      "val": 49,
+      "test": 108
+    },
+    "Anomalous": {
+      "train": 107,
+      "val": 22,
+      "test": 24
+    }
+  },
+  "total_images": 3520,
+  "image_format": "png"
+}

@@ -1,0 +1,9 @@
+{
+  "model_version": "riseholme-2021-mlp-v1",
+  "classes": [
+    "Anomalous",
+    "Occluded",
+    "Ripe",
+    "Unripe"
+  ]
+}
