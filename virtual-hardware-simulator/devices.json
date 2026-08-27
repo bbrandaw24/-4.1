@@ -1,0 +1,40 @@
+{
+  "api": {
+    "base_url": "http://127.0.0.1:8010",
+    "username": "admin",
+    "password": "admin123",
+    "sync_seconds": 30
+  },
+  "mqtt": {
+    "host": "localhost",
+    "port": 1883,
+    "username": "",
+    "password": "",
+    "topic_prefix": "farm",
+    "qos": 1,
+    "retain": false
+  },
+  "devices": [
+    {
+      "id": "virtual-greenhouse-01",
+      "name": "一号温室",
+      "sensors": [
+        {"id": "soil-temp-01", "type": "soil_temperature", "unit": "°C", "baseline": 23, "min": 15, "max": 35, "drift": 0.15, "interval": 5, "fields": ["temperature_c"]},
+        {"id": "soil-moisture-01", "type": "soil_moisture", "unit": "%", "baseline": 52, "min": 0, "max": 100, "drift": 0.8, "interval": 3, "fields": ["moisture_pct"]},
+        {"id": "soil-ph-01", "type": "soil_ph", "unit": "pH", "baseline": 6.2, "min": 4, "max": 9, "drift": 0.03, "interval": 10, "fields": ["ph"]},
+        {"id": "air-humidity-01", "type": "air_humidity", "unit": "%", "baseline": 68, "min": 0, "max": 100, "drift": 0.5, "interval": 5, "fields": ["humidity_pct"]},
+        {"id": "light-01", "type": "light", "unit": "lux", "baseline": 30000, "min": 0, "max": 100000, "drift": 1000, "interval": 5, "fields": ["light_lux"]},
+        {"id": "npk-01", "type": "npk", "unit": "mg/kg", "baseline": 120, "min": 20, "max": 250, "drift": 3, "interval": 10, "fields": ["nitrogen_mg_kg", "phosphorus_mg_kg", "potassium_mg_kg"]}
+      ]
+    },
+    {
+      "id": "virtual-greenhouse-02",
+      "name": "二号温室",
+      "sensors": [
+        {"id": "air-temp-02", "type": "air_temperature", "unit": "°C", "baseline": 26, "min": 5, "max": 45, "drift": 0.2, "interval": 4, "fields": ["temperature_c"]},
+        {"id": "co2-02", "type": "co2", "unit": "ppm", "baseline": 680, "min": 300, "max": 2000, "drift": 8, "interval": 8, "fields": ["co2_ppm"]},
+        {"id": "pump-state-02", "type": "pump_state", "unit": "state", "baseline": 0, "min": 0, "max": 1, "drift": 0, "interval": 6, "fields": ["running"]}
+      ]
+    }
+  ]
+}

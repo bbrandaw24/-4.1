@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Virtual Hardware Lab</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">VH</div>
+        <div><span class="eyebrow">INDEPENDENT DEVICE LAB</span><h1>虚拟硬件模拟器</h1></div>
+      </div>
+      <div class="status-pill"><i id="status-dot"></i><span id="status-text">未运行</span></div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div><span class="eyebrow">SIMULATE / OBSERVE / PUBLISH</span><h2>把虚拟设备接入<br><em>智慧农业平台</em></h2><p>设备由平台统一管理：两个页面都能增删设备与传感器，模拟数据经共享 MQTT 回到平台。</p></div>
+        <div class="hero-grid"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      </section>
+
+      <div id="error" class="notice error hidden"></div>
+      <div class="mode-row"><span id="mode-badge" class="mode-badge">数据源：独立本地配置</span><span id="platform-status" class="platform-status"></span></div>
+      <div class="layout">
+        <section class="panel devices-panel">
+          <div class="panel-head"><div><span class="eyebrow">01 / HARDWARE</span><h3>设备与传感器</h3></div><button id="add-device" class="button ghost">+ 添加设备</button></div>
+          <div id="device-add-form" class="editor hidden">
+            <div class="editor-title">添加设备</div>
+            <label id="device-form-name-label">设备 ID<input id="new-device-name" type="text" placeholder="例如 virtual-greenhouse-01"></label>
+            <label id="device-form-crop-label" class="hidden">作物<input id="new-device-crop" type="text" placeholder="例如 番茄"></label>
+            <div class="editor-actions"><button id="cancel-add-device" class="button ghost">取消</button><button id="confirm-add-device" class="button primary">创建</button></div>
+          </div>
+          <div id="devices" class="devices"></div>
+          <div id="device-editor" class="editor hidden">
+            <div class="editor-title">添加传感器</div>
+            <div id="sensor-type-wrap" class="two-col">
+              <label>传感器类型<select id="new-sensor-type">
+                <option value="soil_temperature">土壤温度</option>
+                <option value="soil_ph">土壤 pH</option>
+                <option value="soil_npk">氮/磷/钾</option>
+                <option value="air_humidity">空气湿度</option>
+                <option value="soil_conductivity">电导率</option>
+              </select></label>
+            </div>
+            <div id="sensor-type-free" class="hidden">
+              <div class="two-col"><input id="new-sensor-id" placeholder="传感器 ID"><input id="new-sensor-type-free" placeholder="类型，例如 soil_moisture"></div>
+              <div class="two-col"><input id="new-sensor-unit" placeholder="单位，例如 %"><input id="new-sensor-baseline" type="number" placeholder="基准值"></div>
+              <div class="two-col"><input id="new-sensor-min" type="number" placeholder="最小值"><input id="new-sensor-max" type="number" placeholder="最大值"></div>
+            </div>
+            <div class="editor-actions"><button id="cancel-sensor" class="button ghost">取消</button><button id="confirm-sensor" class="button primary">添加到设备</button></div>
+          </div>
+        </section>
+
+        <aside class="side-column">
+          <section class="panel mqtt-panel">
+            <div class="panel-head"><div><span class="eyebrow">02 / TRANSPORT</span><h3>MQTT 连接</h3></div><span class="live-tag">共享服务器</span></div>
+            <label>服务器地址<input id="mqtt-host" type="text" placeholder="localhost"></label>
+            <div class="two-col"><label>端口<input id="mqtt-port" type="number" min="1" max="65535"></label><label>QoS<select id="mqtt-qos"><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></label></div>
+            <div class="two-col"><label>用户名<input id="mqtt-username" type="text" placeholder="可选"></label><label>密码<input id="mqtt-password" type="password" placeholder="可选"></label></div>
+            <label>Topic 前缀<input id="mqtt-prefix" type="text" placeholder="farm"></label>
+            <label class="switch-row"><input id="mqtt-retain" type="checkbox"><span class="switch"></span>保留最后一条消息</label>
+            <button id="save-config" class="button full">保存配置</button>
+          </section>
+
+          <section class="panel mqtt-panel">
+            <div class="panel-head"><div><span class="eyebrow">02+ / SOURCE</span><h3>智慧农业平台</h3></div><span class="live-tag">API 对齐</span></div>
+            <label>API 地址<input id="api-base" type="text" placeholder="http://127.0.0.1:8010"></label>
+            <div class="two-col"><label>用户名<input id="api-username" type="text" placeholder="admin"></label><label>密码<input id="api-password" type="password" placeholder="admin123"></label></div>
+            <label>同步间隔（秒）<input id="api-sync" type="number" min="5" value="30"></label>
+            <p class="hint" id="api-sync-hint">填写平台 API 地址后，设备将由平台统一管理，两个页面双向同步。</p>
+          </section>
+
+          <section class="panel control-panel">
+            <div class="panel-head"><div><span class="eyebrow">03 / CONTROL</span><h3>运行控制</h3></div></div>
+            <div class="control-actions"><button id="start" class="button primary">启动模拟器</button><button id="stop" class="button danger">停止</button></div>
+            <button id="preview" class="button ghost full">发送一轮预览数据</button>
+            <div class="mini-stats"><div><b id="device-count">0</b><span>设备</span></div><div><b id="message-count">0</b><span>预览消息</span></div></div>
+          </section>
+        </aside>
+      </div>
+
+      <section class="panel log-panel"><div class="panel-head"><div><span class="eyebrow">04 / TELEMETRY</span><h3>运行日志</h3></div><button id="clear-log" class="text-button">清空</button></div><pre id="logs">等待操作…</pre></section>
+    </main>
+    <footer><span>LOCAL CONTROL CONSOLE</span><span>与智慧农业平台共享 MQTT · 设备双向管理</span></footer>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
