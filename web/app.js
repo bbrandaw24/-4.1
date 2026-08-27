@@ -550,6 +550,35 @@ async function upload(file) {
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     $("#image-result").innerHTML = `<img src="${API}${data.thumbnail_url}" alt="最新作物图像"><p>${data.width} × ${data.height} · 已生成缩略图</p>`;
   } catch (error) { $("#image-result").textContent = `上传失败：${error.message}`; }
+  // 上传后自动进行草莓成熟度识别（AI 服务）
+  await predictStrawberry(file);
+}
+
+const STRAWBERRY_LABELS_ZH = { anomalous: "异常果", occluded: "遮挡", ripe: "成熟", unripe: "未成熟" };
+
+async function predictStrawberry(file) {
+  if (!file) return;
+  $("#ai-result").innerHTML = `<span class="ai-result-empty">正在识别...（AI 推理约需 1-3 秒）</span>`;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const response = await Auth.requestAI(`/api/v1/predict`, { method: "POST", body: form });
+    const data = await response.json();
+    if (data.status === "not_ready") throw new Error(data.message || "模型未就绪");
+    if (data.status === "error" || !response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+    const probs = Object.entries(data.probabilities || {}).sort((a, b) => b[1] - a[1]);
+    const bars = probs.map(([cls, prob]) =>
+      `<div class="prob-row"><span>${STRAWBERRY_LABELS_ZH[cls] || cls}</span><div class="prob-bar"><i style="width:${Math.round(prob * 100)}%"></i></div><b>${(prob * 100).toFixed(1)}%</b></div>`
+    ).join("");
+    const accepted = Boolean(data.predicted_class);
+    const topLabel = data.predicted_label || "不确定";
+    $("#ai-result").innerHTML = `
+      <div class="ai-result-head ${accepted ? "ok" : "low"}">
+        <strong>${topLabel}</strong><span>${(data.confidence * 100).toFixed(1)}%</span>
+      </div>
+      <p class="ai-result-note">${accepted ? "置信度高于阈值，识别结果可信" : `置信度低于阈值 ${(data.threshold ?? 0.6) * 100}%，结果仅供参考`} · ${data.latency_ms ?? "-"} ms</p>
+      ${bars}`;
+  } catch (error) { $("#ai-result").innerHTML = `<span class="ai-result-empty">识别失败：${error.message}</span>`; }
 }
 
 function applyRole() {
