@@ -202,9 +202,85 @@
   color: var(--amber);
   margin-left: auto;
 }
+/* thinking mode controls (luna only) */
+.agent-think-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: -6px 0 12px;
+  padding: 8px 12px;
+  background: #fafdfa;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.agent-think-row.hidden {
+  display: none;
+}
+.agent-think-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+}
+.agent-think-effort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.agent-think-effort select {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.agent-think-note {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--green);
+}
+/* chain-of-thought display */
+.agent-thinking {
+  align-self: flex-start;
+  max-width: 86%;
+  margin-bottom: 2px;
+}
+.agent-thinking details {
+  background: #f6f8f6;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--violet);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.agent-thinking summary {
+  cursor: pointer;
+  color: var(--violet);
+  font-weight: 600;
+  user-select: none;
+}
+.agent-thinking-body {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  color: var(--muted);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
 @media (max-width: 720px) {
   .agent-message,
-  .agent-sources {
+  .agent-sources,
+  .agent-thinking {
     max-width: 95%;
   }
 }

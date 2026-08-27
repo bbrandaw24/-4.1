@@ -151,6 +151,44 @@ def test_invalid_mode_rejected(client, guest_headers):
     assert response.status_code == 400
 
 
+def test_invalid_reasoning_effort_rejected(client, guest_headers):
+    response = client.post(
+        "/api/v1/agent/ask",
+        json={"question": "湿度低怎么办", "mode": "kb", "reasoning_effort": "high"},
+        headers=guest_headers,
+    )
+    assert response.status_code == 400
+
+
+def test_luna_with_reasoning_falls_back(client):
+    """farmer + luna + reasoning=true without LUNA_API_KEY -> synthesizer fallback."""
+    client.post("/api/v1/auth/register",
+                json={"username": "farmer_think", "password": "secret1", "role": "farmer"})
+    token = client.post("/api/v1/auth/login",
+                        json={"username": "farmer_think", "password": "secret1"}).get_json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    device_id = "sim-agent-think"
+    _seed_device(device_id, moisture=44.0, temperature=27.0)
+    try:
+        response = client.post(
+            "/api/v1/agent/ask",
+            json={"question": "现在怎么样？", "device_id": device_id, "mode": "luna",
+                  "reasoning": True, "reasoning_effort": "low"},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.get_data(as_text=True)
+        data = response.get_json()
+        assert data["mode"] == "luna"
+        assert data["answer_via"] == "synthesizer"  # no LUNA_API_KEY in tests
+        assert data.get("reasoning") is None
+        assert "44.0" in data["answer"]
+    finally:
+        with main.registry_lock:
+            main.registry.pop(device_id, None)
+        with main.irrigation_rules_lock:
+            main.irrigation_rules.pop(device_id, None)
+
+
 def test_farmer_luna_mode_falls_back_to_synthesizer(client):
     """Without LUNA_API_KEY configured the luna call fails -> synthesizer answer."""
     client.post("/api/v1/auth/register",

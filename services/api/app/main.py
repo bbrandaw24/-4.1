@@ -666,7 +666,9 @@ def irrigation_event_history(device_id):
 def agent_ask():
     """Irrigation advisor with two modes:
     - mode="kb":   knowledge-base RAG synthesizer (available to all roles)
-    - mode="luna": Luna model (OpenAI-compatible, fixed medium thinking) - farmer/manager only
+    - mode="luna": Luna model (OpenAI-compatible) - farmer/manager only
+    Optional thinking controls (luna mode): reasoning (bool) toggles the
+    chain-of-thought, reasoning_effort selects {"low","medium"}.
     Guests can only use the knowledge-base mode.
     """
     body = request.get_json(silent=True) or {}
@@ -681,6 +683,10 @@ def agent_ask():
     role = (current_user() or {}).get("role")
     if mode == "luna" and role == "guest":
         return jsonify({"error": "luna_requires_privileged_role", "message": "游客模式仅支持知识库问答"}), 403
+    reasoning = bool(body.get("reasoning", False))
+    reasoning_effort = body.get("reasoning_effort") or "medium"
+    if reasoning_effort not in {"low", "medium"}:
+        return jsonify({"error": "reasoning_effort_must_be_low_or_medium"}), 400
     history = body.get("history") or []
     if not isinstance(history, list):
         history = []
@@ -709,6 +715,8 @@ def agent_ask():
             history_rows=history_rows,
             irrigation_rules=rules_snapshot,
             mode=mode,
+            reasoning=reasoning,
+            reasoning_effort=reasoning_effort,
         )
     except Exception as exc:
         LOGGER.warning("agent ask failed: %s", exc)
@@ -716,6 +724,7 @@ def agent_ask():
 
     result["device_id"] = device_id
     result["question"] = question
+    result["reasoning"] = result.get("reasoning")
     result["mode"] = mode
     return jsonify(result)
 

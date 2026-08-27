@@ -13,10 +13,16 @@
   const modeBadge = document.getElementById("agent-mode-badge");
   const modeHintEl = document.getElementById("agent-mode-hint");
   const modeBtns = document.querySelectorAll(".agent-mode-btn");
+  const thinkRowEl = document.getElementById("agent-think-row");
+  const thinkingEl = document.getElementById("agent-thinking");
+  const effortEl = document.getElementById("agent-effort");
+  const thinkNoteEl = document.getElementById("agent-think-note");
   const history = [];
   const MAX_HISTORY = 6;
   let sending = false;
   let mode = "kb"; // "kb" = knowledge base | "luna" = Luna model (farmer/manager only)
+  let thinking = true; // chain-of-thought on/off (luna mode)
+  let effort = "medium"; // "low" | "medium"
 
   if (!messagesEl || !formEl || !inputEl) return;
 
@@ -27,14 +33,18 @@
 
   function applyModeUI() {
     modeBtns.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
-    if (mode === "luna") {
+    const luna = mode === "luna";
+    if (luna) {
       modeBadge.textContent = "LUNA";
       modeBadge.classList.remove("muted");
-      if (modeHintEl) modeHintEl.textContent = "Luna 模式 · 思考强度中等（固定）";
+      if (modeHintEl) modeHintEl.textContent = "Luna 模式";
+      if (thinkRowEl) thinkRowEl.classList.remove("hidden");
+      if (thinkNoteEl) thinkNoteEl.textContent = thinking ? `思考模式开 · 强度${effort === "medium" ? "中" : "低"} · 显示思维链` : "思考模式关 · 直接回答";
     } else {
       modeBadge.textContent = "RAG";
       modeBadge.classList.remove("muted");
       if (modeHintEl) modeHintEl.textContent = "";
+      if (thinkRowEl) thinkRowEl.classList.add("hidden");
     }
     // Guests can only use the knowledge-base mode.
     if (!isPrivileged()) {
@@ -43,9 +53,27 @@
       });
       if (modeHintEl) modeHintEl.textContent = "游客仅支持知识库问答";
       if (mode === "luna") mode = "kb";
-    } else {
-      modeBtns.forEach((button) => { button.disabled = false; });
+      applyModeUI();
+      return;
     }
+    modeBtns.forEach((button) => { button.disabled = false; });
+  }
+
+  function appendThinking(reasoning) {
+    if (!reasoning) return;
+    const wrapper = document.createElement("div");
+    wrapper.className = "agent-thinking";
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "思维链（思考过程）";
+    details.appendChild(summary);
+    const body = document.createElement("div");
+    body.className = "agent-thinking-body";
+    body.textContent = reasoning;
+    details.appendChild(body);
+    wrapper.appendChild(details);
+    messagesEl.appendChild(wrapper);
+    scrollToBottom();
   }
 
   function scrollToBottom() {
@@ -120,13 +148,15 @@
     appendMessage("user", renderText(text));
     history.push({ question: text, answer: "" });
     if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
-    const pending = appendMessage("agent", `<span class="agent-typing">${mode === "luna" ? "Luna 思考中（中等强度）…" : "正在检索知识库与遥测…"}</span>`);
+    const pending = appendMessage("agent", `<span class="agent-typing">${mode === "luna" ? (thinking ? `Luna 思考中（${effort === "medium" ? "中等" : "低"}强度）…` : "Luna 回答中…") : "正在检索知识库与遥测…"}</span>`);
     try {
       const response = await Auth.request("/api/v1/agent/ask", {
         method: "POST",
         body: JSON.stringify({
           question: text,
           mode,
+          reasoning: mode === "luna" ? thinking : false,
+          reasoning_effort: effort,
           history: history.slice(0, -1).map((h) => ({ question: h.question })),
           device_id: window.state && window.state.device ? window.state.device.device_id : undefined,
         }),
@@ -144,6 +174,7 @@
         metaEl.textContent = `失败：${message}`;
         return;
       }
+      if (mode === "luna" && thinking && data.reasoning) appendThinking(data.reasoning);
       appendMessage("agent", renderText(data.answer || "暂无回答。"));
       appendSources(data.sources);
       if (mode === "luna" && data.answer_via !== "luna") {
@@ -157,7 +188,8 @@
         const moist = typeof m.moisture_pct === "number" ? `${m.moisture_pct.toFixed(1)}%` : "--";
         const temp = typeof m.air_temperature_c === "number" ? `${m.air_temperature_c.toFixed(1)}°C` : "--";
         const engine = via === "luna" ? "Luna" : "知识库合成";
-        metaEl.textContent = `已回答 · 引用 ${data.retrieved_count || 0} 条 · 引擎 ${engine} · 当前湿度 ${moist} · 温度 ${temp}`;
+        const think = via === "luna" && data.reasoning_effort ? ` · 思考${data.reasoning_effort}` : "";
+        metaEl.textContent = `已回答 · 引用 ${data.retrieved_count || 0} 条 · 引擎 ${engine}${think} · 当前湿度 ${moist} · 温度 ${temp}`;
       }
     } catch (error) {
       pending.remove();
@@ -196,9 +228,24 @@
       if (mode === next) return;
       mode = next;
       applyModeUI();
-      if (metaEl) metaEl.textContent = mode === "luna" ? "已切换 Luna 模式 · 思考强度中等（固定）" : "已切换知识库问答";
+      if (metaEl) metaEl.textContent = mode === "luna" ? "已切换 Luna 模式" : "已切换知识库问答";
     });
   });
+
+  if (thinkingEl) {
+    thinkingEl.addEventListener("change", () => {
+      thinking = thinkingEl.checked;
+      applyModeUI();
+      if (metaEl) metaEl.textContent = thinking ? "已开启思考模式" : "已关闭思考模式（直接回答）";
+    });
+  }
+  if (effortEl) {
+    effortEl.addEventListener("change", () => {
+      effort = effortEl.value === "low" ? "low" : "medium";
+      applyModeUI();
+      if (metaEl) metaEl.textContent = `思考强度已设为${effort === "medium" ? "中" : "低"}`;
+    });
+  }
 
   // Re-render context whenever the device changes (state.device updated by app.js).
   setInterval(renderContext, 5000);

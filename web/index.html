@@ -77,11 +77,21 @@
 
     <section class="route-panel" data-view="agent">
       <article class="panel agent-panel">
-        <div class="panel-heading"><div><p class="eyebrow">IRRIGATION ADVISOR</p><h2>智能体问答</h2><p class="agent-sub">知识库问答：云端 10 篇灌溉/农事文档 + 实时遥测合成；Luna 模式：接入 Luna 模型（思考强度固定中等，仅农户/管理者可用）。</p></div><span class="badge" id="agent-mode-badge">RAG</span></div>
+        <div class="panel-heading"><div><p class="eyebrow">IRRIGATION ADVISOR</p><h2>智能体问答</h2><p class="agent-sub">知识库问答：云端 10 篇灌溉/农事文档 + 实时遥测合成；Luna 模式：接入 Luna 模型（可开思考模式、选强度、显示思维链，仅农户/管理者可用）。</p></div><span class="badge" id="agent-mode-badge">RAG</span></div>
         <div class="agent-mode-row" role="group" aria-label="问答模式">
           <button class="agent-mode-btn active" data-mode="kb" type="button">知识库问答</button>
           <button class="agent-mode-btn" data-mode="luna" type="button">Luna 模式</button>
           <span class="agent-mode-hint" id="agent-mode-hint"></span>
+        </div>
+        <div class="agent-think-row" id="agent-think-row">
+          <label class="agent-think-toggle"><input type="checkbox" id="agent-thinking" checked><span>思考模式</span></label>
+          <label class="agent-think-effort">思考强度
+            <select id="agent-effort">
+              <option value="medium" selected>中</option>
+              <option value="low">低</option>
+            </select>
+          </label>
+          <span class="agent-think-note" id="agent-think-note"></span>
         </div>
         <div class="agent-context" id="agent-context">加载当前温室数据...</div>
         <div class="agent-messages" id="agent-messages">
@@ -98,6 +108,6 @@
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day13-plots"></script>
   <script src="app.js?v=day13-plots"></script>
-  <script src="agent.js?v=day14-luna2"></script>
+  <script src="agent.js?v=day15-thinking"></script>
 </body>
 </html>

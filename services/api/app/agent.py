@@ -287,7 +287,12 @@ def synthesize_answer(query, retrieved, ctx, history=None):
 
 # --- optional LLM upgrade (OpenAI-compatible) ------------------------------
 def _call_llm(prompt_messages, base_url=None, api_key=None, model=None, reasoning_effort=None):
-    """Call an OpenAI-compatible chat completions endpoint. Returns content string or None."""
+    """Call an OpenAI-compatible chat completions endpoint.
+
+    Returns {"content": str, "reasoning": str|None} or None on failure.
+    reasoning_effort=None -> thinking off (param omitted); the model's
+    chain-of-thought (reasoning_content) is captured when present.
+    """
     api_key = api_key or LUNA_API_KEY
     base_url = base_url or LUNA_BASE_URL
     model = model or LUNA_MODEL
@@ -300,7 +305,6 @@ def _call_llm(prompt_messages, base_url=None, api_key=None, model=None, reasonin
         "temperature": 0.3,
         "max_tokens": 900,
     }
-    # Thinking effort is FIXED at medium for luna mode; never shown or adjustable.
     if reasoning_effort:
         payload["reasoning_effort"] = reasoning_effort
     body = json.dumps(payload).encode("utf-8")
@@ -316,7 +320,12 @@ def _call_llm(prompt_messages, base_url=None, api_key=None, model=None, reasonin
     try:
         with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as response:
             data = json.loads(response.read().decode("utf-8"))
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip() or None
+        message = data.get("choices", [{}])[0].get("message", {})
+        content = (message.get("content") or "").strip() or None
+        reasoning = (message.get("reasoning_content") or "").strip() or None
+        if not content:
+            return None
+        return {"content": content, "reasoning": reasoning}
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, json.JSONDecodeError) as exc:
         LOGGER.warning("LLM call failed: %s", exc)
         return None
@@ -353,10 +362,14 @@ def _build_llm_messages(question, retrieved, ctx, history=None):
     return messages
 
 
-def answer_question(question, history=None, device_id=None, *, registry=None, history_rows=None, irrigation_rules=None, mode="kb"):
-    """Top-level entry: mode="kb" -> knowledge-base synthesizer (always available);
-    mode="luna" -> Luna model via OpenAI-compatible API with medium thinking (requires
-    LUNA_API_KEY; falls back to the synthesizer when the call fails)."""
+def answer_question(question, history=None, device_id=None, *, registry=None, history_rows=None, irrigation_rules=None, mode="kb", reasoning=False, reasoning_effort="medium"):
+    """Top-level entry:
+    - mode="kb":   knowledge-base synthesizer (always available)
+    - mode="luna": Luna model via OpenAI-compatible API (requires LUNA_API_KEY;
+                   falls back to the synthesizer when the call fails).
+    reasoning (bool) toggles thinking; reasoning_effort in {"low","medium"} picks
+    the chain-of-thought depth. The model's reasoning_content is returned as
+    "reasoning" so the UI can display it."""
     docs = load_knowledge_base()
     retrieved = retrieve(question, docs, top_k=3)
     ctx = collect_live_context(
@@ -367,19 +380,24 @@ def answer_question(question, history=None, device_id=None, *, registry=None, hi
     )
     base = synthesize_answer(question, retrieved, ctx, history=history)
     base["answer_via"] = "synthesizer"
+    base["reasoning"] = None
+    base["reasoning_effort"] = None
 
     if mode == "luna" and retrieved and LUNA_API_KEY:
         messages = _build_llm_messages(question, retrieved, ctx, history=history)
-        luna_answer = _call_llm(
+        effort = reasoning_effort if reasoning else None
+        luna_result = _call_llm(
             messages,
             base_url=LUNA_BASE_URL,
             api_key=LUNA_API_KEY,
             model=LUNA_MODEL,
-            reasoning_effort=LUNA_REASONING_EFFORT,
+            reasoning_effort=effort,
         )
-        if luna_answer:
-            base["answer"] = luna_answer
+        if luna_result:
+            base["answer"] = luna_result["content"]
             base["answer_via"] = "luna"
+            base["reasoning"] = luna_result.get("reasoning")
+            base["reasoning_effort"] = effort
 
     base["retrieved_count"] = len(retrieved)
     return base
