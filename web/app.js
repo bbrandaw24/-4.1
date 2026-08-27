@@ -14,8 +14,30 @@ applyRole();
 const fmt = (value, digits = 1, suffix = "") => value === undefined || value === null ? "--" : `${Number(value).toFixed(digits)}${suffix}`;
 
 function setConnection(ok, message) {
-  $("#connection-dot").classList.toggle("off", !ok);
-  $("#connection-label").textContent = message;
+  const dot = $("#connection-dot");
+  if (dot) dot.classList.toggle("off", !ok);
+  const label = $("#connection-label");
+  if (label) label.textContent = message;
+}
+
+// Lightweight health probe that drives the top-right connection pill.
+// Separated from refresh() so a slow /devices response (large payload, ~239KB
+// from the Singapore server) does NOT turn the API pill red and the user can
+// still see real API outages vs. transient fetch slowness.
+async function probeHealthz() {
+  const url = `${API}/healthz`;
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data && data.status === "ok") {
+      setConnection(true, "API 已连接");
+    } else {
+      setConnection(false, "API 暂不可用");
+    }
+  } catch (_) {
+    setConnection(false, "API 暂不可用");
+  }
 }
 
 function setMeter(id, value) { $(id).style.width = `${Math.max(0, Math.min(100, value))}%`; }
@@ -339,11 +361,14 @@ async function refresh() {
     bindSensorActions();
     const addBtn = $("#sensor-add-btn");
     if (addBtn) addBtn.disabled = !Auth.hasPermission("manage_sensors");
-    setConnection(true, "API 已连接");
+    // Connection pill is owned by probeHealthz; refresh success no longer
+    // flips the pill, so a slow /devices cannot mask a healthy API.
     $("#last-update").textContent = new Date().toLocaleTimeString();
   } catch (error) {
-    setConnection(false, "API 暂不可用");
-    $("#device-status").textContent = error.message;
+    // Refresh failure only shows the error in the device-status slot; the
+    // top-right pill stays under healthz control.
+    const status = $("#device-status");
+    if (status) status.textContent = error.message;
     const board = $("#sensors-board");
     if (board && state.allDevices && state.allDevices.length) {
       // Keep the last-known device list visible so the user can see what
@@ -915,8 +940,10 @@ refreshUserPermissions();
 refresh();
 refreshAiStatus();
 refreshAlertLog();
+probeHealthz();
 setRoute(params.get("view") || "overview");
 setInterval(refresh, 5000);
+setInterval(probeHealthz, 10000);
 setInterval(() => { if (state.device) refreshHistory(state.device.device_id); }, 60000);
 setInterval(refreshPumpStatus, 1000);
 setInterval(refreshAlerts, 5000);
