@@ -40,13 +40,16 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 DEFAULT_PROFILES = [
     {"id": "sim-plot-apple", "label": "苹果园", "crop": "苹果",
      "moisture": 50.0, "soil_temp": 23.0, "air_temp": 24.0, "humidity": 66.0, "light": 30000.0,
-     "ph": 6.20, "nitrogen": 130.0, "phosphorus": 50.0, "potassium": 178.0, "conductivity": 1.02},
+     "ph": 6.20, "nitrogen": 130.0, "phosphorus": 50.0, "potassium": 178.0, "conductivity": 1.02,
+     "decay": 0.12, "gain": 1.8, "moist_min": 38.0, "moist_max": 68.0},
     {"id": "sim-plot-pear", "label": "梨园", "crop": "梨",
      "moisture": 60.0, "soil_temp": 25.0, "air_temp": 26.0, "humidity": 70.0, "light": 34000.0,
-     "ph": 6.35, "nitrogen": 145.0, "phosphorus": 55.0, "potassium": 190.0, "conductivity": 1.20},
+     "ph": 6.35, "nitrogen": 145.0, "phosphorus": 55.0, "potassium": 190.0, "conductivity": 1.20,
+     "decay": 0.10, "gain": 1.5, "moist_min": 45.0, "moist_max": 75.0},
     {"id": "sim-plot-orange", "label": "橘园", "crop": "橘子",
      "moisture": 44.0, "soil_temp": 27.0, "air_temp": 28.0, "humidity": 62.0, "light": 36000.0,
-     "ph": 5.95, "nitrogen": 120.0, "phosphorus": 45.0, "potassium": 165.0, "conductivity": 0.95},
+     "ph": 5.95, "nitrogen": 120.0, "phosphorus": 45.0, "potassium": 165.0, "conductivity": 0.95,
+     "decay": 0.16, "gain": 2.0, "moist_min": 35.0, "moist_max": 62.0},
 ]
 
 SENSOR_TYPES = {  # mirror of API SENSOR_TYPES — only the bits the simulator needs
