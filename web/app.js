@@ -590,6 +590,10 @@ async function refreshUserPermissions() {
       Auth.setSession(Auth.getToken(), data.user);
       state.user = data.user;
       applyRole();
+      // Re-render the sensor board with the freshest permissions so the
+      // connect/disconnect/delete/add buttons enable as soon as /auth/me
+      // returns, without waiting for the next refresh() round.
+      if (state.allDevices && state.allDevices.length) renderSensorsBoard(state.allDevices);
     }
   } catch (_) { /* offline; keep cached permissions */ }
 }
@@ -963,6 +967,10 @@ bindBrokerActions();
 loadBrokerPresets();
 loadBroker();
 refreshUserPermissions();
+// Bind sensor-board actions up front, NOT only after the first successful
+// refresh(): on slow links refresh() can fail for minutes and the click
+// delegation never gets attached, leaving every sensor button dead.
+bindSensorActions();
 refresh();
 refreshAiStatus();
 refreshAlertLog();
