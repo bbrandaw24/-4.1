@@ -67,6 +67,15 @@ class GatewayHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         self._proxy("POST")
 
+    def do_PUT(self):
+        self._proxy("PUT")
+
+    def do_PATCH(self):
+        self._proxy("PATCH")
+
+    def do_DELETE(self):
+        self._proxy("DELETE")
+
     def do_OPTIONS(self):
         # For upstream routes, proxy the preflight to the API so cross-origin
         # callers (e.g. GitHub Pages) get the same CORS headers the API emits.
@@ -75,7 +84,7 @@ class GatewayHandler(SimpleHTTPRequestHandler):
             return
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
 

@@ -33,7 +33,7 @@ def add_cors_headers(response):
     """Allow the dashboard and local development hosts to call the API."""
     response.headers["Access-Control-Allow-Origin"] = os.getenv("CORS_ORIGIN", "*")
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return response
 
 
