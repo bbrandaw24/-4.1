@@ -163,10 +163,22 @@
           device_id: window.state && window.state.device ? window.state.device.device_id : undefined,
         }),
       });
-      const data = await response.json();
+      // Read body once as text so we can show a useful error when the server
+      // returns HTML (CORS preflight failure, 404 page, gateway error, etc.)
+      // instead of letting JSON.parse blow up with "Unexpected token '<'".
+      const raw = await response.text();
+      let data = null;
+      if (raw) {
+        try { data = JSON.parse(raw); } catch (parseErr) {
+          console.warn("[agent] non-JSON response", response.status, parseErr, raw.slice(0, 200));
+        }
+      }
       pending.remove();
-      if (!response.ok) {
-        const message = (data && (data.error || data.message)) || `HTTP ${response.status}`;
+      if (!response.ok || !data) {
+        const detail = data
+          ? (data.error || data.message || "")
+          : (raw ? raw.slice(0, 200) : "");
+        const message = detail || `HTTP ${response.status}（响应非 JSON）`;
         appendMessage("agent", `请求失败：${renderText(String(message))}`);
         if (response.status === 403 && mode === "luna") {
           mode = "kb";
@@ -197,9 +209,12 @@
       }
     } catch (error) {
       pending.remove();
-      appendMessage("agent", `网络错误：${renderText(String(error.message || error))}`);
+      // Network / mixed-content / CORS failure: show the real reason.
+      const reason = (error && error.message) ? String(error.message) : String(error);
+      console.warn("[agent] fetch error", error);
+      appendMessage("agent", `网络错误：${renderText(reason)}`);
       if (window.LunaKitten) window.LunaKitten.error();
-      history[history.length - 1].answer = `(error) ${error}`;
+      history[history.length - 1].answer = `(error) ${reason}`;
     } finally {
       sending = false;
       updateSendState();
