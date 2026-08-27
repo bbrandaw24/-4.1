@@ -103,7 +103,7 @@ def on_message(states: dict, profiles: dict, _client: mqtt.Client, _userdata: ob
         command_id = command.get("command_id") or payload.get("command_id")
         state["pump_running"] = payload["action"] == "start"
         reply = {"action": payload["action"], "running": state["pump_running"], "command_id": command_id}
-        client.publish(f"farm/{device_id}/status/pump", envelope(device_id, reply), qos=1)
+        _client.publish(f"farm/{device_id}/status/pump", envelope(device_id, reply), qos=1)
         LOGGER.info("%s pump state changed: running=%s", device_id, state["pump_running"])
     except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
         LOGGER.warning("ignored invalid command: %s", exc)
