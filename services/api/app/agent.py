@@ -383,13 +383,24 @@ def _build_llm_messages(question, retrieved, ctx, history=None):
         "你是温室灌溉顾问 Luna，是主人的猫儿女仆。语气亲切温柔，像照顾主人的贴心女仆，"
         "句尾常带口癖（如\"喵~\"\"呐\"\"主人\"），但给出的农事建议必须专业准确。",
     )
-    system = (
-        f"{persona} 基于【知识库片段】和【实时遥测】用中文回答农户问题，"
-        "给出可执行建议并引用知识来源。回答 2-4 段，先自然回应主人的问题再给建议，避免堆砌术语。"
-    )
-    retrieved_block = "\n\n".join(
-        f"《{doc.get('title')}》\n{doc.get('content', '')}" for doc, _ in retrieved
-    )
+    if retrieved:
+        retrieved_block = "\n\n".join(
+            f"《{doc.get('title')}》\n{doc.get('content', '')}" for doc, _ in retrieved
+        )
+        system = (
+            f"{persona} 基于【知识库片段】和【实时遥测】用中文回答农户问题，"
+            "给出可执行建议并引用知识来源。回答 2-4 段，先自然回应主人的问题再给建议，避免堆砌术语。"
+        )
+    else:
+        # No knowledge-base hit: still answer as Luna, grounded in live telemetry,
+        # and be honest that the KB does not cover the topic (instead of silently
+        # falling back to the dry synthesizer, which confused users in the chat UI).
+        retrieved_block = "（知识库未检索到与该问题匹配的条目）"
+        system = (
+            f"{persona} 主人问的问题没有命中温室知识库。请基于【实时遥测】和你的农业常识给出稳妥建议，"
+            "并在回答中明确说明：知识库暂未收录该问题，建议仅供参考；如需准确答案请补充更多细节。"
+            "语气依然温柔亲切，保留口癖，但不要编造知识库来源。"
+        )
     live_block = json.dumps(ctx, ensure_ascii=False)
     messages = [
         {"role": "system", "content": system},
@@ -426,7 +437,11 @@ def answer_question(question, history=None, device_id=None, *, registry=None, hi
     base["reasoning"] = None
     base["reasoning_effort"] = None
 
-    if mode == "luna" and retrieved and LUNA_API_KEY:
+    # Luna answers ANY privileged question, even when the knowledge base has no
+    # hit (the UI promise is "switch to Luna mode -> get Luna"). Without `retrieved`
+    # it used to silently fall back to the synthesizer, which looked like the
+    # chat never activated Luna for typed-in questions.
+    if mode == "luna" and LUNA_API_KEY:
         messages = _build_llm_messages(question, retrieved, ctx, history=history)
         effort = reasoning_effort if reasoning else None
         luna_result = _call_llm(

@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
 import main  # noqa: E402
 import pytest  # noqa: E402
+import agent  # noqa: E402
 from agent import (  # noqa: E402
     answer_question,
     collect_live_context,
@@ -209,6 +210,49 @@ def test_farmer_luna_mode_falls_back_to_synthesizer(client):
         assert data["mode"] == "luna"
         assert data["answer_via"] == "synthesizer"  # fell back (no LUNA_API_KEY in tests)
         assert "45.0" in data["answer"]
+    finally:
+        with main.registry_lock:
+            main.registry.pop(device_id, None)
+        with main.irrigation_rules_lock:
+            main.irrigation_rules.pop(device_id, None)
+
+
+def test_luna_activates_even_without_kb_hit(monkeypatch, client):
+    """A typed-in question with NO knowledge-base hit must still call Luna.
+
+    Regression for: preset questions activated Luna but typed-in ones silently
+    fell back to the synthesizer, because answer_question required `retrieved`.
+    """
+    client.post("/api/v1/auth/register",
+                json={"username": "farmer_nokb", "password": "secret1", "role": "farmer"})
+    token = client.post("/api/v1/auth/login",
+                        json={"username": "farmer_nokb", "password": "secret1"}).get_json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    device_id = "sim-agent-nokb"
+    _seed_device(device_id, moisture=50.0, temperature=26.0)
+    monkeypatch.setattr(agent, "LUNA_API_KEY", "test-key")
+    calls = []
+
+    def fake_llm(messages, **kwargs):
+        calls.append(messages)
+        return {"content": "喵~主人，知识库没有收录这个问题，先观察湿度趋势吧。", "reasoning": None}
+
+    monkeypatch.setattr(agent, "_call_llm", fake_llm)
+    try:
+        # This question retrieves 0 docs from the 53-doc KB (verified).
+        response = client.post(
+            "/api/v1/agent/ask",
+            json={"question": "你好，能给我讲个笑话吗？", "device_id": device_id, "mode": "luna"},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.get_data(as_text=True)
+        data = response.get_json()
+        assert data["mode"] == "luna"
+        assert data["answer_via"] == "luna", "Luna must answer even with no KB hit"
+        assert len(calls) == 1
+        system = calls[0][0]["content"]
+        assert "没有命中温室知识库" in system
+        assert "喵" in data["answer"]
     finally:
         with main.registry_lock:
             main.registry.pop(device_id, None)
