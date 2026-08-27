@@ -2,9 +2,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-# 常规依赖走默认源（腾讯云镜像）；torch/torchvision 单独从 PyTorch 官方 CPU index 拉取
-# （--index-url 单源，避免 pip 先命中腾讯镜像的 776MB CUDA 包）
-RUN pip install --no-cache-dir -r requirements.txt \
+# 常规依赖走腾讯云镜像（容器内默认源 files.pythonhosted.org 国内超时）；
+# torch/torchvision 单独从 PyTorch 官方 CPU index 拉取（--index-url 单源）
+RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.tencent.com/pypi/simple \
  && pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
 
 COPY app ./app
