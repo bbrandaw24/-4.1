@@ -190,6 +190,18 @@ def init_telemetry_db():
             )
             """
         )
+        # User-created plots (Day 16+ "add plot" feature): survives API restarts.
+        # The built-in apple/pear/orange plots stay in PLOT_META (code).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS custom_plots (
+                device_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                crop TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
     finally:
         conn.close()
@@ -322,6 +334,47 @@ if ALERT_LOGGING_ENABLED:
 
 
 init_telemetry_db()
+
+
+# --- Day 16: user-created plots (persistent "add plot" feature) -------------
+def _save_custom_plot(device_id, name, crop):
+    """Persist a user-created plot so it survives API restarts."""
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "INSERT INTO custom_plots (device_id, name, crop, created_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(device_id) DO UPDATE SET name=excluded.name, crop=excluded.crop",
+            (device_id, name or device_id, crop or "", utc_now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_custom_plots_into_registry():
+    """Re-register persisted user plots after an API restart."""
+    conn = _telemetry_connect()
+    try:
+        rows = conn.execute("SELECT device_id, name, crop FROM custom_plots").fetchall()
+    finally:
+        conn.close()
+    for device_id, name, crop in rows:
+        with registry_lock:
+            if device_id in registry:
+                registry[device_id]["plot"] = {"name": name, "crop": crop or ""}
+                continue
+            registry[device_id] = {
+                "device_id": device_id,
+                "telemetry": {},
+                "last_seen": None,
+                "pump": {"action": "stop", "running": False, "status": "standby",
+                         "timestamp": None, "command_id": None},
+                "plot": {"name": name, "crop": crop or ""},
+            }
+        LOGGER.info("restored custom plot %s (%s)", device_id, name)
+
+
+_load_custom_plots_into_registry()
 
 
 # --- Day 16: sensor CRUD -----------------------------------------------------
@@ -815,7 +868,7 @@ def devices():
     enriched = []
     for device in items:
         item = dict(device)
-        item["plot"] = PLOT_META.get(device.get("device_id"), {})
+        item["plot"] = device.get("plot") or PLOT_META.get(device.get("device_id"), {})
         item["sensors"] = list_sensors_for_device(device.get("device_id"))
         enriched.append(item)
     return jsonify({"items": enriched, "count": len(enriched)})
@@ -826,15 +879,36 @@ def devices():
 def register_device_endpoint():
     body = request.get_json(silent=True) or {}
     device_id = (body.get("device_id") or "").strip()
+    name = (body.get("name") or "").strip()
+    crop = (body.get("crop") or "").strip()
     if not device_id:
-        return jsonify({"error": "device_id_required"}), 400
+        # Web UI creates plots without choosing an id; generate one for them.
+        device_id = f"sim-plot-{uuid4().hex[:8]}"
     with registry_lock:
         if device_id in registry:
-            return jsonify({"device_id": device_id, "status": "exists"}), 200
+            if name or crop:
+                _save_custom_plot(device_id, name, crop)
+                registry[device_id]["plot"] = {
+                    "name": name or (registry[device_id].get("plot") or {}).get("name") or device_id,
+                    "crop": crop or (registry[device_id].get("plot") or {}).get("crop") or "",
+                }
+            return jsonify({"device_id": device_id, "status": "exists",
+                            "plot": registry[device_id].get("plot", {})}), 200
         registry[device_id] = {"device_id": device_id, "telemetry": {}, "last_seen": None,
                                "pump": {"action": "stop", "running": False, "status": "standby",
-                                        "timestamp": None, "command_id": None}}
-    return jsonify({"device_id": device_id, "status": "registered"}), 201
+                                        "timestamp": None, "command_id": None},
+                               "plot": {"name": name or device_id, "crop": crop or ""}}
+    if name or crop:
+        _save_custom_plot(device_id, name, crop)
+    # Seed the 5 default sensor types so the new plot is immediately usable.
+    for sensor_type in sorted(SENSOR_TYPES.keys()):
+        try:
+            create_sensor(device_id, sensor_type)
+        except ValueError:
+            pass  # already exists
+    LOGGER.info("registered new plot %s (%s / %s)", device_id, name, crop)
+    return jsonify({"device_id": device_id, "status": "registered",
+                    "plot": {"name": name or device_id, "crop": crop or ""}}), 201
 
 
 @app.post("/api/v1/devices/<device_id>/sensors")

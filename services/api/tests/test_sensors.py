@@ -10,6 +10,7 @@ Covers:
 import json
 import os
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -249,3 +250,73 @@ def test_mqtt_broker_presets_listed(client, farmer_headers):
 def test_mqtt_broker_presets_visible_to_guest(client, guest_headers):
     response = client.get("/api/v1/system/mqtt-broker-presets", headers=guest_headers)
     assert response.status_code == 200
+
+
+def _cleanup_plot(device_id):
+    with main.registry_lock:
+        main.registry.pop(device_id, None)
+    conn = main._telemetry_connect()
+    try:
+        conn.execute("DELETE FROM custom_plots WHERE device_id=?", (device_id,))
+        conn.execute("DELETE FROM sensors WHERE device_id=?", (device_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# --- Day 16: add plot (user-created plots, not limited to the 3 built-ins) ---
+def test_add_plot_registers_and_seeds_sensors(client, farmer_headers):
+    response = client.post("/api/v1/devices",
+                           json={"name": "葡萄园", "crop": "葡萄"},
+                           headers=farmer_headers)
+    assert response.status_code == 201, response.get_data(as_text=True)
+    data = response.get_json()
+    try:
+        assert data["device_id"].startswith("sim-plot-")
+        assert data["plot"]["name"] == "葡萄园"
+        assert data["plot"]["crop"] == "葡萄"
+        # New plot auto-seeds the 5 default sensors.
+        sensors = main.list_sensors_for_device(data["device_id"])
+        assert {s["type"] for s in sensors} == {"soil_temperature", "soil_ph", "soil_npk",
+                                                "air_humidity", "soil_conductivity"}
+        # Plot metadata is persisted and restored into the registry.
+        main._load_custom_plots_into_registry()
+        with main.registry_lock:
+            assert main.registry[data["device_id"]]["plot"]["name"] == "葡萄园"
+    finally:
+        _cleanup_plot(data["device_id"])
+
+
+def test_add_plot_visible_in_devices_with_plot_meta(client, farmer_headers):
+    created = client.post("/api/v1/devices",
+                          json={"name": "草莓园", "crop": "草莓"},
+                          headers=farmer_headers).get_json()
+    try:
+        devices = client.get("/api/v1/devices", headers=farmer_headers).get_json()
+        item = next((x for x in devices["items"] if x["device_id"] == created["device_id"]), None)
+        assert item is not None
+        assert item["plot"].get("name") == "草莓园"
+        assert item["plot"].get("crop") == "草莓"
+        assert len(item.get("sensors") or []) == 5
+    finally:
+        _cleanup_plot(created["device_id"])
+
+
+def test_add_plot_existing_device_updates_metadata(client, farmer_headers):
+    device_id = f"sim-plot-dup-{uuid.uuid4().hex[:6]}"
+    try:
+        first = client.post("/api/v1/devices", json={"device_id": device_id, "name": "旧名"},
+                            headers=farmer_headers)
+        assert first.status_code == 201
+        second = client.post("/api/v1/devices", json={"device_id": device_id, "name": "新名", "crop": "桃"},
+                             headers=farmer_headers)
+        assert second.status_code == 200
+        assert second.get_json()["plot"]["name"] == "新名"
+    finally:
+        _cleanup_plot(device_id)
+
+
+def test_add_plot_requires_manage_sensors(client, guest_headers):
+    response = client.post("/api/v1/devices", json={"name": "X", "crop": "苹果"},
+                           headers=guest_headers)
+    assert response.status_code == 403

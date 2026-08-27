@@ -99,13 +99,37 @@
       <article class="panel sensors-panel">
         <div class="panel-heading"><div><p class="eyebrow">VIRTUAL HARDWARE</p><h2>传感器管理</h2><p class="agent-sub">每块地默认有 5 类传感器（土壤温度 / pH / 氮磷钾 / 空气湿度 / 电导率），通过 MQTT 实时上报到云端服务器。点击按钮可连接、断开或删除；添加后会立即在云端创建并开始推送。</p></div><span class="badge">MQTT → 云端 mosquitto</span></div>
         <div id="sensors-board" class="sensors-board"><p class="sensor-hint" style="padding:18px">加载中…</p></div>
-        <div class="sensor-actions-row"><button class="action primary" id="sensor-add-btn" disabled>+ 添加传感器</button><span class="sensor-hint" id="sensor-hint">选择地块后可补全缺失的传感器。</span></div>
+        <div class="sensor-actions-row"><button class="action primary" id="sensor-add-btn" disabled>+ 添加传感器</button><button class="action ghost" id="plot-add-btn">+ 添加地块</button><span class="sensor-hint" id="sensor-hint">可创建新地块（不局限于内置 3 块），创建后自动补齐 5 类传感器并开始模拟上报。</span></div>
         <div class="sensor-add-dialog hidden" id="sensor-add-dialog" role="dialog" aria-modal="true">
           <div class="dialog-body">
             <h3>添加传感器</h3>
             <p>地块：<b id="sensor-add-device-label">--</b></p>
             <div class="sensor-add-types" id="sensor-add-types"></div>
             <button class="sensor-add-cancel" id="sensor-add-cancel" type="button">取消</button>
+          </div>
+        </div>
+        <div class="sensor-add-dialog hidden" id="plot-add-dialog" role="dialog" aria-modal="true">
+          <div class="dialog-body">
+            <h3>添加地块</h3>
+            <p>创建后立即在云端注册，自动补齐 5 类传感器，模拟器约 30 秒内开始上报数据。</p>
+            <label class="plot-field">地块名称<input id="plot-name" type="text" placeholder="如：葡萄园" maxlength="20" autocomplete="off"></label>
+            <label class="plot-field">种植作物
+              <select id="plot-crop">
+                <option value="苹果">苹果</option>
+                <option value="梨">梨</option>
+                <option value="橘子">橘子</option>
+                <option value="草莓">草莓</option>
+                <option value="番茄">番茄</option>
+                <option value="黄瓜">黄瓜</option>
+                <option value="葡萄">葡萄</option>
+                <option value="水稻">水稻</option>
+                <option value="其他">其他</option>
+              </select>
+            </label>
+            <div class="plot-dialog-actions">
+              <button class="action primary" id="plot-add-confirm" type="button">创建地块</button>
+              <button class="sensor-add-cancel" id="plot-add-cancel" type="button">取消</button>
+            </div>
           </div>
         </div>
       </article>

@@ -150,6 +150,19 @@ class ApiClient:
             LOGGER.warning("list_sensors(%s) failed: %s", device_id, exc)
             return []
 
+    def list_devices(self) -> list[dict]:
+        req = urllib.request.Request(
+            f"{self.base}/api/v1/devices",
+            headers=self._headers(),
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read()).get("items", [])
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+            LOGGER.warning("list_devices failed: %s", exc)
+            return []
+
     def create_sensor(self, device_id: str, sensor_type: str):
         req = urllib.request.Request(
             f"{self.base}/api/v1/devices/{device_id}/sensors",
@@ -202,6 +215,43 @@ def bootstrap(api: ApiClient, profiles: list[dict]):
         for sensor_type in SENSOR_TYPES:
             if sensor_type not in existing_types:
                 api.create_sensor(device_id, sensor_type)
+
+
+def _default_profile_for(device: dict) -> dict:
+    """Build a simulation profile for a user-created plot (web "add plot")."""
+    plot = device.get("plot") or {}
+    return {
+        "id": device.get("device_id"),
+        "label": plot.get("name") or device.get("device_id"),
+        "crop": plot.get("crop") or "通用",
+        "moisture": random.uniform(42, 58), "soil_temp": 23.0, "air_temp": 25.0,
+        "humidity": 65.0, "light": 30000.0, "ph": 6.20,
+        "nitrogen": 130.0, "phosphorus": 50.0, "potassium": 175.0, "conductivity": 1.00,
+        "decay": 0.12, "gain": 1.8, "moist_min": 38.0, "moist_max": 68.0,
+    }
+
+
+def sync_devices(api: ApiClient, profiles: list[dict]) -> list[dict]:
+    """Discover plots created through the web UI and simulate them too.
+
+    The simulator no longer hard-codes three plots: every device registered on
+    the API (built-ins + user-created) gets a profile, so a new plot starts
+    publishing telemetry within the next discovery cycle.
+    """
+    items = api.list_devices()
+    if not items:
+        return profiles
+    known = {p["id"] for p in profiles}
+    fresh = list(profiles)
+    for device in items:
+        device_id = device.get("device_id")
+        if not device_id or device_id in known:
+            continue
+        profile = _default_profile_for(device)
+        LOGGER.info("discovered new plot %s (%s / %s)", profile["id"], profile["label"], profile["crop"])
+        fresh.append(profile)
+        known.add(device_id)
+    return fresh
 
 
 def refresh_sensor_cache(api: ApiClient, profiles: list[dict]) -> dict:
@@ -350,6 +400,7 @@ def main() -> None:
     sensor_last_publish: dict[str, float] = {}
     sensor_cache_refresh_at = 0.0
     sensor_cache: dict[str, list[dict]] = {p["id"]: [] for p in profiles}
+    last_discovery_at = 0.0
 
     stopping = False
 
@@ -372,6 +423,30 @@ def main() -> None:
                 except Exception as exc:
                     LOGGER.debug("sensor cache refresh failed: %s", exc)
                 sensor_cache_refresh_at = now_ts
+            # Discover plots created via the web UI every 30s and start
+            # simulating them (sensors + pump control + legacy payloads).
+            if api.token and (now_ts - last_discovery_at) > 30:
+                try:
+                    discovered = sync_devices(api, profiles)
+                    for np_ in discovered:
+                        if np_["id"] not in profiles_by_id:
+                            profiles_by_id[np_["id"]] = np_
+                            states[np_["id"]] = {
+                                "moisture": np_["moisture"], "soil_temp": np_["soil_temp"],
+                                "air_temp": np_["air_temp"], "humidity": np_["humidity"],
+                                "light": np_["light"], "ph": np_["ph"],
+                                "nitrogen": np_["nitrogen"], "phosphorus": np_["phosphorus"],
+                                "potassium": np_["potassium"], "conductivity": np_["conductivity"],
+                                "pump_running": False,
+                            }
+                            sensor_cache[np_["id"]] = []
+                            client.subscribe(f"farm/{np_['id']}/control/pump", qos=1)
+                            if KEEP_LEGACY_PAYLOADS:
+                                client.subscribe(f"farm/{np_['id']}/+/telemetry", qos=1)
+                    profiles = discovered
+                except Exception as exc:
+                    LOGGER.debug("device discovery failed: %s", exc)
+                last_discovery_at = now_ts
             for profile in profiles:
                 device_id = profile["id"]
                 for sensor in sensor_cache.get(device_id, []):

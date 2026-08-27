@@ -796,6 +796,40 @@ function closeAddSensorDialog() {
   $("#sensor-add-dialog")?.classList.add("hidden");
 }
 
+// --- Day 16: add plot (not limited to the built-in 3 plots) -----------------
+function openAddPlotDialog() {
+  const dialog = $("#plot-add-dialog");
+  if (!dialog) return;
+  $("#plot-name").value = "";
+  $("#plot-crop").value = "苹果";
+  dialog.classList.remove("hidden");
+  const nameInput = $("#plot-name");
+  if (nameInput) nameInput.focus();
+}
+
+function closeAddPlotDialog() {
+  $("#plot-add-dialog")?.classList.add("hidden");
+}
+
+async function addPlot() {
+  const name = ($("#plot-name")?.value || "").trim();
+  const crop = $("#plot-crop")?.value || "其他";
+  if (!name) { setSensorHint("请填写地块名称", "error"); return; }
+  try {
+    const response = await Auth.request("/api/v1/devices", {
+      method: "POST",
+      body: JSON.stringify({ name, crop }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    closeAddPlotDialog();
+    setSensorHint(`已创建地块「${name}」，模拟器约 30 秒内开始上报`, "success");
+    await refresh();
+  } catch (error) {
+    setSensorHint(`创建地块失败：${error.message || error}`, "error");
+  }
+}
+
 function bindSensorActions() {
   const board = $("#sensors-board");
   const addBtn = $("#sensor-add-btn");
@@ -829,6 +863,21 @@ function bindSensorActions() {
     addBtn.addEventListener("click", () => {
       if (state.device) openAddSensorDialog(state.device.device_id);
     });
+  }
+  const plotAddBtn = $("#plot-add-btn");
+  if (plotAddBtn && !plotAddBtn.dataset.bound) {
+    plotAddBtn.dataset.bound = "1";
+    plotAddBtn.addEventListener("click", openAddPlotDialog);
+  }
+  const plotAddConfirm = $("#plot-add-confirm");
+  if (plotAddConfirm && !plotAddConfirm.dataset.bound) {
+    plotAddConfirm.dataset.bound = "1";
+    plotAddConfirm.addEventListener("click", addPlot);
+  }
+  const plotAddCancel = $("#plot-add-cancel");
+  if (plotAddCancel && !plotAddCancel.dataset.bound) {
+    plotAddCancel.dataset.bound = "1";
+    plotAddCancel.addEventListener("click", closeAddPlotDialog);
   }
 }
 
