@@ -84,8 +84,16 @@ services:
   ai:
     build: ./services/ai
     restart: unless-stopped
+    environment:
+      AI_MODEL_VERSION: ${AI_MODEL_VERSION:-riseholme-2021-mlp-v1}
+      AI_CONFIDENCE_THRESHOLD: ${AI_CONFIDENCE_THRESHOLD:-0.60}
+      AI_MODEL_PATH: /models/riseholme_mlp_v1.npz
+      AI_LABELS_PATH: /models/labels.json
     ports:
       - "${AI_PORT:-8001}:8001"
+    volumes:
+      # 训练产物挂载：训练后模型直接进入容器，无需重建镜像
+      - ./services/ai/models:/models
 
   web:
     build: ./web
