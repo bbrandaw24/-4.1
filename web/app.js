@@ -699,6 +699,15 @@ async function toggleSensor(sensorId, currentStatus) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    // Apply locally FIRST so the board reflects the change even when the
+    // follow-up refresh() is slow or fails (previously the old list was
+    // re-rendered from stale state and the change looked like it never landed).
+    if (state.allDevices) {
+      state.allDevices.forEach((dev) => {
+        (dev.sensors || []).forEach((s) => { if (s.id === sensorId) s.status = next; });
+      });
+      renderSensorsBoard(state.allDevices);
+    }
     setSensorHint(`传感器已${next === "connected" ? "连接" : "断开"}`, "success");
     await refresh();
   } catch (error) {
@@ -711,6 +720,14 @@ async function deleteSensorById(sensorId) {
     const response = await Auth.request(`/api/v1/sensors/${sensorId}`, { method: "DELETE" });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    // Remove locally FIRST so the sensor disappears immediately instead of
+    // waiting for (or being masked by) the follow-up refresh().
+    if (state.allDevices) {
+      state.allDevices.forEach((dev) => {
+        if (dev.sensors) dev.sensors = dev.sensors.filter((s) => s.id !== sensorId);
+      });
+      renderSensorsBoard(state.allDevices);
+    }
     setSensorHint("传感器已删除", "success");
     await refresh();
   } catch (error) {
@@ -726,6 +743,15 @@ async function addSensor(deviceId, sensorType) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    // Append locally FIRST so the new sensor card appears immediately.
+    if (state.allDevices && data && data.id) {
+      const dev = state.allDevices.find((d) => d.device_id === deviceId);
+      if (dev) {
+        if (!dev.sensors) dev.sensors = [];
+        dev.sensors.push(data);
+        renderSensorsBoard(state.allDevices);
+      }
+    }
     setSensorHint(`已创建 ${SENSOR_TYPE_META[sensorType]?.name || sensorType} 传感器`, "success");
     await refresh();
   } catch (error) {

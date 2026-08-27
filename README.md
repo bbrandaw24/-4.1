@@ -83,7 +83,8 @@
 | v13.3 | 2026-08-27 | `4130c2d` | fix(agent)：知识库未命中时 Luna 仍激活（修复输入框问题不能激活 Luna） |
 | v13.4 | 2026-08-27 | `8095c7c` | docs(readme)：新增版本更新记录（v1.1 起每次推送逐一编号） |
 | v13.5 | 2026-08-27 | `2b0bb9b` | fix(web)：app.js 缓存版本号 day13-plots → day16-sensors（修复设备板块操作无响应） |
-| v13.6 | 2026-08-27 | 本提交 | fix(web)：右上「API 暂不可用」徽章改为独立 /healthz 轻探针驱动，与 /devices 大响应解耦；setTextContent null 保护 |
+| v13.6 | 2026-08-27 | `7a1b17d` | fix(web)：右上「API 暂不可用」徽章改为独立 /healthz 轻探针驱动，与 /devices 大响应解耦；setTextContent null 保护 |
+| v13.7 | 2026-08-27 | 本提交 | fix(web)：传感器连接/断开/删除/创建后本地立即更新列表，不再依赖 refresh（修复慢链路下删除看起来无效） |
 
 ## 系统组成
 
