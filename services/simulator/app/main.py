@@ -232,17 +232,18 @@ def _default_profile_for(device: dict) -> dict:
 
 
 def sync_devices(api: ApiClient, profiles: list[dict]) -> list[dict]:
-    """Discover plots created through the web UI and simulate them too.
+    """Reconcile simulation profiles with the API's device list.
 
-    The simulator no longer hard-codes three plots: every device registered on
-    the API (built-ins + user-created) gets a profile, so a new plot starts
-    publishing telemetry within the next discovery cycle.
+    Plots created through the web UI are picked up within the next discovery
+    cycle; plots deleted through the web UI stop being simulated. When the API
+    is unreachable the current profile list is kept untouched.
     """
     items = api.list_devices()
     if not items:
         return profiles
-    known = {p["id"] for p in profiles}
-    fresh = list(profiles)
+    api_ids = {d.get("device_id") for d in items if d.get("device_id")}
+    fresh = [p for p in profiles if p["id"] in api_ids]
+    known = {p["id"] for p in fresh}
     for device in items:
         device_id = device.get("device_id")
         if not device_id or device_id in known:
@@ -251,6 +252,9 @@ def sync_devices(api: ApiClient, profiles: list[dict]) -> list[dict]:
         LOGGER.info("discovered new plot %s (%s / %s)", profile["id"], profile["label"], profile["crop"])
         fresh.append(profile)
         known.add(device_id)
+    removed = [p["id"] for p in profiles if p["id"] not in api_ids]
+    if removed:
+        LOGGER.info("stopped simulating removed plots: %s", removed)
     return fresh
 
 
@@ -443,6 +447,15 @@ def main() -> None:
                             client.subscribe(f"farm/{np_['id']}/control/pump", qos=1)
                             if KEEP_LEGACY_PAYLOADS:
                                 client.subscribe(f"farm/{np_['id']}/+/telemetry", qos=1)
+                    # Stop simulating plots deleted via the web UI.
+                    active_ids = {p["id"] for p in discovered}
+                    for stale in list(profiles_by_id.keys()):
+                        if stale not in active_ids:
+                            profiles_by_id.pop(stale, None)
+                            states.pop(stale, None)
+                            sensor_cache.pop(stale, None)
+                            sensor_last_publish = {k: v for k, v in sensor_last_publish.items()
+                                                   if not k.startswith(stale)}
                     profiles = discovered
                 except Exception as exc:
                     LOGGER.debug("device discovery failed: %s", exc)

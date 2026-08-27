@@ -962,6 +962,32 @@ def delete_sensor_endpoint(sensor_id):
     return jsonify({"deleted": sensor_id, "device_id": sensor["device_id"], "type": sensor["type"]})
 
 
+@app.delete("/api/v1/devices/<device_id>")
+@require_auth("manage_sensors")
+def delete_plot_endpoint(device_id):
+    """Delete a user-created plot: removes registry entry, all its sensors and
+    the persisted custom_plots row. Built-in plots (PLOT_META) are protected so
+    the demo baseline always exists."""
+    if device_id in PLOT_META:
+        return jsonify({"error": "builtin_plot_cannot_be_deleted",
+                        "message": "内置地块（苹果园/梨园/橘园）不可删除，仅可删除自定义地块"}), 403
+    with registry_lock:
+        existed = device_id in registry
+        registry.pop(device_id, None)
+    conn = _telemetry_connect()
+    try:
+        cursor = conn.execute("DELETE FROM sensors WHERE device_id=?", (device_id,))
+        conn.execute("DELETE FROM custom_plots WHERE device_id=?", (device_id,))
+        conn.commit()
+        sensor_rows = cursor.rowcount
+    finally:
+        conn.close()
+    if not existed:
+        return jsonify({"error": "plot_not_found", "device_id": device_id}), 404
+    LOGGER.info("deleted plot %s (%d sensors removed)", device_id, sensor_rows)
+    return jsonify({"deleted": device_id, "sensors_removed": sensor_rows})
+
+
 @app.get("/api/v1/devices/<device_id>/sensors")
 @require_auth()
 def list_sensors_endpoint(device_id):

@@ -320,3 +320,42 @@ def test_add_plot_requires_manage_sensors(client, guest_headers):
     response = client.post("/api/v1/devices", json={"name": "X", "crop": "苹果"},
                            headers=guest_headers)
     assert response.status_code == 403
+
+
+# --- Day 16: delete plot -----------------------------------------------------
+def test_delete_custom_plot_removes_everything(client, farmer_headers):
+    created = client.post("/api/v1/devices",
+                          json={"name": "待删地块", "crop": "番茄"},
+                          headers=farmer_headers).get_json()
+    device_id = created["device_id"]
+    try:
+        # sensors exist before deletion
+        assert len(main.list_sensors_for_device(device_id)) == 5
+        response = client.delete(f"/api/v1/devices/{device_id}", headers=farmer_headers)
+        assert response.status_code == 200, response.get_data(as_text=True)
+        data = response.get_json()
+        assert data["deleted"] == device_id
+        assert data["sensors_removed"] == 5
+        # registry + sensors + custom_plots all cleaned
+        with main.registry_lock:
+            assert device_id not in main.registry
+        assert main.list_sensors_for_device(device_id) == []
+        conn = main._telemetry_connect()
+        try:
+            row = conn.execute("SELECT 1 FROM custom_plots WHERE device_id=?", (device_id,)).fetchone()
+        finally:
+            conn.close()
+        assert row is None
+    finally:
+        _cleanup_plot(device_id)
+
+
+def test_delete_builtin_plot_rejected(client, farmer_headers):
+    response = client.delete("/api/v1/devices/sim-plot-apple", headers=farmer_headers)
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "builtin_plot_cannot_be_deleted"
+
+
+def test_delete_plot_requires_manage_sensors(client, guest_headers):
+    response = client.delete("/api/v1/devices/sim-plot-anything", headers=guest_headers)
+    assert response.status_code == 403

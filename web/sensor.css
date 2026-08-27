@@ -35,6 +35,11 @@
 .sensor-group-status { margin-left: auto; font-size: 11px; color: var(--green); display: inline-flex; align-items: center; gap: 6px; }
 .sensor-group-status .pulse { width: 7px; height: 7px; }
 .sensor-group-status.off { color: var(--amber); }
+.plot-remove {
+  margin-left: auto; padding: 4px 10px; border: 1px solid #e8cfcf; background: #fff6f6;
+  color: #a33232; border-radius: 7px; cursor: pointer; font-size: 11px; font-weight: 600;
+}
+.plot-remove:hover { background: #fde8e8; border-color: #d9a0a0; }
 .sensor-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; }
 .sensor-card { padding: 14px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; min-height: 132px; }
 .sensor-card:last-child { border-right: 0; }

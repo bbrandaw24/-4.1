@@ -667,11 +667,17 @@ function renderSensorsBoard(devices) {
     board.innerHTML = '<p class="sensor-hint">暂无地块。</p>';
     return;
   }
+  const canManage = Auth.hasPermission("manage_sensors");
+  const BUILTIN_PLOTS = ["sim-plot-apple", "sim-plot-pear", "sim-plot-orange"];
   board.innerHTML = devices.map((device) => {
     const sensors = (device.sensors || []).slice().sort((a, b) =>
       SENSOR_TYPE_ORDER.indexOf(a.type) - SENSOR_TYPE_ORDER.indexOf(b.type));
     const plot = device.plot || {};
     const online = Boolean(device.last_seen);
+    const isBuiltin = BUILTIN_PLOTS.includes(device.device_id);
+    const removeBtn = (!isBuiltin && canManage)
+      ? `<button class="plot-remove" data-action="remove-plot" data-device="${device.device_id}" type="button" title="删除该地块">删除地块</button>`
+      : "";
     return `<section class="sensor-group" data-device="${device.device_id}">
       <header class="sensor-group-header">
         <span class="sensor-group-name">${plot.name || device.device_id}</span>
@@ -679,6 +685,7 @@ function renderSensorsBoard(devices) {
         <span class="sensor-group-status ${online ? "" : "off"}">
           <span class="pulse ${online ? "" : "off"}"></span>${online ? "在线" : "离线"}
         </span>
+        ${removeBtn}
       </header>
       <div class="sensor-grid">${sensors.map(renderSensorCard).join("") || '<div class="sensor-hint" style="padding:18px">该地块暂无传感器，点击"+ 添加传感器"创建。</div>'}</div>
     </section>`;
@@ -736,6 +743,24 @@ async function deleteSensorById(sensorId) {
     await refresh();
   } catch (error) {
     setSensorHint(`删除失败：${error.message || error}`, "error");
+  }
+}
+
+async function deletePlotById(deviceId) {
+  try {
+    const response = await Auth.request(`/api/v1/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+    // Local-first removal so the plot disappears immediately.
+    if (state.allDevices) {
+      state.allDevices = state.allDevices.filter((d) => d.device_id !== deviceId);
+      if (state.device && state.device.device_id === deviceId) state.device = null;
+      renderSensorsBoard(state.allDevices);
+    }
+    setSensorHint(`地块已删除（移除 ${data.sensors_removed ?? 0} 个传感器）`, "success");
+    await refresh();
+  } catch (error) {
+    setSensorHint(`删除地块失败：${error.message || error}`, "error");
   }
 }
 
@@ -847,6 +872,10 @@ function bindSensorActions() {
       if (action === "toggle") toggleSensor(sensorId, target.dataset.status);
       if (action === "remove") {
         if (confirm("确定删除该传感器？删除后云端会立即停止推送数据。")) deleteSensorById(sensorId);
+      }
+      if (action === "remove-plot") {
+        const deviceId = target.dataset.device;
+        if (deviceId && confirm("确定删除该地块？其全部传感器将一并移除，删除后不可恢复。")) deletePlotById(deviceId);
       }
     });
   }
