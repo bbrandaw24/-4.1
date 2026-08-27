@@ -1,8 +1,10 @@
 /* Shared auth helpers: token storage, API base resolution, authed fetch. */
-// GitHub Pages is HTTPS, while the current cloud demo gateway is HTTP. A
+// GitHub Pages is HTTPS, while the cloud demo gateway is HTTP. A
 // browser blocks HTTPS -> HTTP API requests as mixed content. Redirect the
 // complete app to the same-origin cloud gateway before loading the dashboard.
-const CLOUD_GATEWAY = "http://43.156.230.129:8080";
+// Since 2026-08-27 the only maintained server is BEIJING (62.234.223.89);
+// the Singapore instance is decommissioned.
+const CLOUD_GATEWAY = "http://62.234.223.89:8080";
 const ON_GITHUB_PAGES = window.location.hostname === "bbrandaw24.github.io";
 if (ON_GITHUB_PAGES) {
   const page = window.location.pathname.toLowerCase().includes("login") ? "/login.html" : "/index.html";
@@ -18,10 +20,10 @@ const Auth = (() => {
     return window.location.protocol.startsWith("http") && window.location.hostname !== "bbrandaw24.github.io";
   }
   function apiBase() {
-    return params().get("api") || (isGateway() ? window.location.origin : "http://43.156.230.129:8010");
+    return params().get("api") || (isGateway() ? window.location.origin : "http://62.234.223.89:8010");
   }
   function aiBase() {
-    return params().get("ai") || (isGateway() ? window.location.origin : "http://43.156.230.129:8001");
+    return params().get("ai") || (isGateway() ? window.location.origin : "http://62.234.223.89:8001");
   }
 
   function getToken() { return localStorage.getItem(TOKEN_KEY); }
