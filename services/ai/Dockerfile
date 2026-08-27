@@ -2,8 +2,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-# 默认源装常规依赖；torch/torchvision 从 PyTorch 官方 CPU index 拉取（体积小）
-RUN pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+# 常规依赖走默认源（腾讯云镜像）；torch/torchvision 单独从 PyTorch 官方 CPU index 拉取
+# （--index-url 单源，避免 pip 先命中腾讯镜像的 776MB CUDA 包）
+RUN pip install --no-cache-dir -r requirements.txt \
+ && pip install --no-cache-dir torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
 
 COPY app ./app
 COPY models ./models
