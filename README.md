@@ -106,6 +106,17 @@ Mosquitto -> Flask API -> SQLite/MySQL
 
 本地虚拟机是 Linux/Docker/MQTT/API 的开发环境，不是 BearPi 硬件本身，也不是公网服务器。Windows 端主要用于 MobaXterm SSH、浏览器、截图和 GitHub 操作。
 
+## 技术栈
+
+| 类别 | 技术 | 用途 |
+| :--- | :--- | :--- |
+| **后端框架** | Python 3.12 + Flask | RESTful API |
+| **消息协议** | MQTT (Mosquitto) | 设备数据上报与指令下发 |
+| **数据库** | SQLite + MySQL | 遥测历史、用户数据、图片存储 |
+| **AI 服务** | Luna (OpenAI 兼容) | 智能体问答 |
+| **容器化** | Docker + Docker Compose | 服务编排与部署 |
+| **前端** | HTML + CSS + JavaScript (原生) | Web 看板 |
+
 ## 地址与环境
 
 | 环境 | 地址/入口 | 用途 |
