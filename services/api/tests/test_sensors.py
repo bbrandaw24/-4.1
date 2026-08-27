@@ -187,3 +187,48 @@ def test_mqtt_payload_updates_connected_sensor(client, farmer_headers):
     assert after["value"] == {"temperature_c": 24.7}
     assert after["unit"] == "°C"
     assert after["last_seen"]
+
+
+def test_mqtt_broker_round_trip(client, farmer_headers):
+    """PUT a broker configuration; verify GET returns it (password masked)."""
+    response = client.get("/api/v1/system/mqtt-broker", headers=farmer_headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert "host" in body and "port" in body
+    assert "password_set" in body  # never echo raw password
+    original_host = body["host"]
+    put_response = client.put(
+        "/api/v1/system/mqtt-broker",
+        json={"host": "broker.example.com", "port": 1884, "username": "demo", "password": "secret"},
+        headers=farmer_headers,
+    )
+    assert put_response.status_code == 200
+    put_body = put_response.get_json()
+    assert put_body["host"] == "broker.example.com"
+    assert put_body["port"] == 1884
+    assert put_body["password_set"] is True
+    assert put_body["restart_required"] is True
+    follow_up = client.get("/api/v1/system/mqtt-broker", headers=farmer_headers)
+    follow_body = follow_up.get_json()
+    assert follow_body["host"] == "broker.example.com"
+    assert follow_body["password_set"] is True
+    assert original_host != follow_body["host"]
+
+
+def test_mqtt_broker_rejects_empty_host(client, farmer_headers):
+    response = client.put("/api/v1/system/mqtt-broker",
+                          json={"host": "", "port": 1883}, headers=farmer_headers)
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "host_required"
+
+
+def test_mqtt_broker_rejects_invalid_port(client, farmer_headers):
+    response = client.put("/api/v1/system/mqtt-broker",
+                          json={"host": "x", "port": 70000}, headers=farmer_headers)
+    assert response.status_code == 400
+
+
+def test_guest_cannot_modify_broker(client, farmer_headers, guest_headers):
+    response = client.put("/api/v1/system/mqtt-broker",
+                          json={"host": "x", "port": 1883}, headers=guest_headers)
+    assert response.status_code == 403

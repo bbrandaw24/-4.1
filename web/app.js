@@ -344,6 +344,14 @@ async function refresh() {
   } catch (error) {
     setConnection(false, "API 暂不可用");
     $("#device-status").textContent = error.message;
+    const board = $("#sensors-board");
+    if (board && state.allDevices && state.allDevices.length) {
+      // Keep the last-known device list visible so the user can see what
+      // sensors were known before the refresh failed.
+      renderSensorsBoard(state.allDevices);
+    } else if (board && !board.querySelector(".sensor-group")) {
+      board.innerHTML = `<p class="sensor-hint" style="padding:18px">暂未获取到设备列表：${error.message || error}</p>`;
+    }
   }
 }
 
@@ -749,7 +757,94 @@ function bindSensorActions() {
   }
 }
 
+// --- Day 16: global MQTT broker configuration panel -------------------------
+function setBrokerHint(text, kind = "") {
+  const el = $("#broker-hint");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove("error", "success");
+  if (kind) el.classList.add(kind);
+}
+
+function renderBroker(broker) {
+  const badge = $("#broker-status-badge");
+  if (badge) {
+    badge.textContent = broker.source === "database" ? "已保存" : "环境变量";
+    badge.classList.toggle("muted", broker.source !== "database");
+  }
+  $("#broker-current-host").textContent = broker.host || "--";
+  $("#broker-current-port").textContent = broker.port || "--";
+  $("#broker-current-user").textContent = broker.username || "(无)";
+  $("#broker-current-pass").textContent = broker.password_set ? "已设置" : "(无)";
+  $("#broker-current-updated").textContent = broker.updated_at ? new Date(broker.updated_at).toLocaleString() : "--";
+  const form = $("#broker-form");
+  if (form && !form.dataset.touched) {
+    form.elements.host.value = broker.host || "";
+    form.elements.port.value = broker.port || 1883;
+    form.elements.username.value = broker.username || "";
+    form.elements.password.value = "";
+  }
+}
+
+async function loadBroker() {
+  try {
+    const response = await Auth.request("/api/v1/system/mqtt-broker", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    renderBroker(await response.json());
+  } catch (error) {
+    const badge = $("#broker-status-badge");
+    if (badge) { badge.textContent = "读取失败"; badge.classList.add("muted"); }
+    setBrokerHint(`读取失败：${error.message || error}`, "error");
+  }
+}
+
+function bindBrokerActions() {
+  const form = $("#broker-form");
+  if (!form || form.dataset.bound) return;
+  form.dataset.bound = "1";
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!Auth.hasPermission("manage_sensors")) {
+      setBrokerHint("当前身份无修改 broker 的权限", "error");
+      return;
+    }
+    form.dataset.touched = "1";
+    const payload = {
+      host: form.elements.host.value.trim(),
+      port: Number(form.elements.port.value) || 1883,
+      username: form.elements.username.value.trim(),
+      password: form.elements.password.value,
+    };
+    if (!payload.host) {
+      setBrokerHint("请填写 broker 主机名", "error");
+      return;
+    }
+    if (!payload.password) payload.password = "__KEEP__";
+    const saveBtn = $("#broker-save-btn");
+    if (saveBtn) saveBtn.disabled = true;
+    setBrokerHint("保存中…");
+    try {
+      const response = await Auth.request("/api/v1/system/mqtt-broker", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      renderBroker({ ...data, password_set: data.password_set });
+      form.elements.password.value = "";
+      setBrokerHint("已保存。提示：修改 broker 地址需重启 API 与模拟器容器才能生效。", "success");
+    } catch (error) {
+      setBrokerHint(`保存失败：${error.message || error}`, "error");
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  });
+  form.addEventListener("input", () => { form.dataset.touched = "1"; });
+}
+
 if (window.lucide) window.lucide.createIcons();
+bindBrokerActions();
+loadBroker();
 refresh();
 refreshAiStatus();
 refreshAlertLog();
@@ -760,3 +855,4 @@ setInterval(refreshPumpStatus, 1000);
 setInterval(refreshAlerts, 5000);
 setInterval(refreshAiStatus, 15000);
 setInterval(refreshAlertLog, 30000);
+setInterval(loadBroker, 30000);

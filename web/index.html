@@ -71,9 +71,29 @@
     </section>
 
     <section class="route-panel" data-view="devices">
+      <article class="panel broker-panel">
+        <div class="panel-heading"><div><p class="eyebrow">MQTT BROKER</p><h2>全局 MQTT Broker</h2><p class="agent-sub">所有传感器的遥测都通过该 broker 中转。默认指向云端 mosquitto（容器内 <code>mosquitto:1883</code>）。修改保存后需重启 API 和模拟器容器才能生效。</p></div><span class="badge" id="broker-status-badge">加载中…</span></div>
+        <div class="broker-current">
+          <div><span>当前地址</span><b id="broker-current-host">--</b></div>
+          <div><span>端口</span><b id="broker-current-port">--</b></div>
+          <div><span>用户名</span><b id="broker-current-user">--</b></div>
+          <div><span>密码</span><b id="broker-current-pass">--</b></div>
+          <div><span>更新时间</span><b id="broker-current-updated">--</b></div>
+        </div>
+        <form id="broker-form" class="broker-form">
+          <h4>编辑配置</h4>
+          <div class="broker-form-row">
+            <label>主机<input type="text" name="host" required placeholder="mosquitto"></label>
+            <label>端口<input type="number" name="port" min="1" max="65535" value="1883"></label>
+            <label>用户名<input type="text" name="username" placeholder="(可选)"></label>
+            <label>密码<input type="password" name="password" placeholder="(留空保持)"></label>
+          </div>
+          <div class="broker-form-actions"><button type="submit" class="action primary" id="broker-save-btn">保存配置</button><span class="broker-hint" id="broker-hint"></span></div>
+        </form>
+      </article>
       <article class="panel sensors-panel">
         <div class="panel-heading"><div><p class="eyebrow">VIRTUAL HARDWARE</p><h2>传感器管理</h2><p class="agent-sub">每块地默认有 5 类传感器（土壤温度 / pH / 氮磷钾 / 空气湿度 / 电导率），通过 MQTT 实时上报到云端服务器。点击按钮可连接、断开或删除；添加后会立即在云端创建并开始推送。</p></div><span class="badge">MQTT → 云端 mosquitto</span></div>
-        <div id="sensors-board" class="sensors-board"></div>
+        <div id="sensors-board" class="sensors-board"><p class="sensor-hint" style="padding:18px">加载中…</p></div>
         <div class="sensor-actions-row"><button class="action primary" id="sensor-add-btn" disabled>+ 添加传感器</button><span class="sensor-hint" id="sensor-hint">选择地块后可补全缺失的传感器。</span></div>
         <div class="sensor-add-dialog hidden" id="sensor-add-dialog" role="dialog" aria-modal="true">
           <div class="dialog-body">

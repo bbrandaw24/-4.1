@@ -167,6 +167,30 @@ class ApiClient:
             else:
                 LOGGER.warning("create_sensor(%s,%s): HTTP %s", device_id, sensor_type, exc.code)
 
+    def get_broker(self) -> dict:
+        """Fetch the persisted global MQTT broker configuration.
+
+        Returns a dict with host/port/username/password keys (password is "" if
+        unset). Falls back to module MQTT_HOST/MQTT_PORT on any error.
+        """
+        req = urllib.request.Request(
+            f"{self.base}/api/v1/system/mqtt-broker",
+            headers=self._headers(),
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                payload = json.loads(resp.read())
+                return {
+                    "host": payload.get("host") or MQTT_HOST,
+                    "port": int(payload.get("port") or MQTT_PORT),
+                    "username": payload.get("username", ""),
+                    "password": "",  # API does not return the password; only env would have it
+                }
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, ValueError) as exc:
+            LOGGER.warning("get_broker failed (%s); using env defaults", exc)
+            return {"host": MQTT_HOST, "port": MQTT_PORT, "username": "", "password": ""}
+
 
 def bootstrap(api: ApiClient, profiles: list[dict]):
     """Register each device and create missing default sensors."""
@@ -301,15 +325,27 @@ def main() -> None:
         except Exception as exc:
             LOGGER.warning("bootstrap failed: %s", exc)
 
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="multi-plot-simulator")
+    broker = api.get_broker() if api.token else {"host": MQTT_HOST, "port": MQTT_PORT}
+    broker_host = broker.get("host") or MQTT_HOST
+    broker_port = int(broker.get("port") or MQTT_PORT)
+    broker_user = broker.get("username") or ""
+    broker_pass = broker.get("password") or ""
+
+    client_kwargs = {}
+    if broker_user:
+        client_kwargs["username"] = broker_user
+    if broker_pass:
+        client_kwargs["password"] = broker_pass
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
+                         client_id="multi-plot-simulator", **client_kwargs)
     client.on_message = lambda c, u, m: on_message(states, profiles_by_id, c, u, m)
-    client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+    client.connect(broker_host, broker_port, keepalive=60)
     for p in profiles:
         client.subscribe(f"farm/{p['id']}/control/pump", qos=1)
         if KEEP_LEGACY_PAYLOADS:
             client.subscribe(f"farm/{p['id']}/+/telemetry", qos=1)
     client.loop_start()
-    LOGGER.info("connected to %s:%s", MQTT_HOST, MQTT_PORT)
+    LOGGER.info("connected to %s:%s", broker_host, broker_port)
 
     sensor_last_publish: dict[str, float] = {}
     sensor_cache_refresh_at = 0.0

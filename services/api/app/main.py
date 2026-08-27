@@ -45,6 +45,8 @@ def handle_cors_preflight():
 
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "smart-agriculture-api")
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
@@ -176,6 +178,18 @@ def init_telemetry_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sensors_device ON sensors(device_id)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mqtt_broker (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                username TEXT,
+                password TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
     finally:
         conn.close()
@@ -577,6 +591,68 @@ def _parse_timestamp(value):
         return None
 
 
+# --- Day 16: global MQTT broker configuration (persistent) ------------------
+def get_mqtt_broker():
+    """Return broker config from SQLite, seeded from env on first call."""
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute(
+            "SELECT host, port, username, password, updated_at FROM mqtt_broker WHERE id=1"
+        ).fetchone()
+    finally:
+        conn.close()
+    if row:
+        return {
+            "host": row[0],
+            "port": int(row[1]),
+            "username": row[2] or "",
+            "password": row[3] or "",
+            "updated_at": row[4],
+            "source": "database",
+        }
+    config = {
+        "host": MQTT_HOST,
+        "port": MQTT_PORT,
+        "username": MQTT_USERNAME,
+        "password": MQTT_PASSWORD,
+        "updated_at": utc_now(),
+        "source": "env",
+    }
+    set_mqtt_broker(config["host"], config["port"], config["username"], config["password"])
+    return get_mqtt_broker()
+
+
+def set_mqtt_broker(host, port, username="", password=""):
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "INSERT INTO mqtt_broker (id, host, port, username, password, updated_at) "
+            "VALUES (1, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET host=excluded.host, port=excluded.port, "
+            "username=excluded.username, password=excluded.password, updated_at=excluded.updated_at",
+            (host, int(port), username or None, password or None, utc_now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_mqtt_broker_into_module():
+    """Read the persisted MQTT broker (saved via the API) and override module
+    constants so the listener and pump publisher use the configured broker.
+    On first launch the row is seeded from environment variables."""
+    global MQTT_HOST, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD
+    config = get_mqtt_broker()
+    if config["source"] == "database":
+        MQTT_HOST = config["host"]
+        MQTT_PORT = config["port"]
+        MQTT_USERNAME = config["username"]
+        MQTT_PASSWORD = config["password"]
+
+
+_load_mqtt_broker_into_module()
+
+
 def _pump_snapshot(device_id):
     with registry_lock:
         device = registry.get(device_id)
@@ -818,6 +894,53 @@ def list_sensors_endpoint(device_id):
     """Convenience read endpoint; /devices already embeds the sensor list per device."""
     return jsonify({"device_id": device_id, "items": list_sensors_for_device(device_id),
                     "count": len(list_sensors_for_device(device_id))})
+
+
+@app.get("/api/v1/system/mqtt-broker")
+@require_auth()
+def get_mqtt_broker_endpoint():
+    """Read the persisted global MQTT broker configuration.
+
+    The frontend dashboard uses this to render the broker editor. The password
+    is masked in the response to avoid leaking it back through logs / DevTools;
+    a non-empty `password_set` flag indicates whether a password is configured.
+    """
+    config = get_mqtt_broker()
+    return jsonify({
+        "host": config["host"],
+        "port": config["port"],
+        "username": config["username"],
+        "password_set": bool(config["password"]),
+        "updated_at": config["updated_at"],
+        "source": config["source"],
+    })
+
+
+@app.put("/api/v1/system/mqtt-broker")
+@require_auth("manage_sensors")
+def put_mqtt_broker_endpoint():
+    """Persist a new global broker. Changes apply after the API listener and the
+    simulator reconnect; for the cloud deployment run a `docker compose up -d
+    --force-recreate api simulator` to pick up the new broker."""
+    body = request.get_json(silent=True) or {}
+    host = (body.get("host") or "").strip()
+    if not host:
+        return jsonify({"error": "host_required"}), 400
+    try:
+        port = int(body.get("port") or 1883)
+    except (TypeError, ValueError):
+        return jsonify({"error": "port_must_be_integer"}), 400
+    if not (1 <= port <= 65535):
+        return jsonify({"error": "port_out_of_range"}), 400
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    if password == "__KEEP__":  # frontend sentinel: keep current password
+        existing = get_mqtt_broker()
+        password = existing["password"]
+    set_mqtt_broker(host, port, username, password)
+    return jsonify({"host": host, "port": port, "username": username,
+                    "password_set": bool(password), "updated_at": utc_now(),
+                    "restart_required": True})
 
 
 @app.get("/api/v1/devices/<device_id>/telemetry/latest")
