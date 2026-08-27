@@ -1,4 +1,14 @@
 /* Shared auth helpers: token storage, API base resolution, authed fetch. */
+// GitHub Pages is HTTPS, while the current cloud demo gateway is HTTP. A
+// browser blocks HTTPS -> HTTP API requests as mixed content. Redirect the
+// complete app to the same-origin cloud gateway before loading the dashboard.
+const CLOUD_GATEWAY = "http://43.156.230.129:8080";
+const ON_GITHUB_PAGES = window.location.hostname === "bbrandaw24.github.io";
+if (ON_GITHUB_PAGES) {
+  const page = window.location.pathname.toLowerCase().includes("login") ? "/login.html" : "/index.html";
+  window.location.replace(`${CLOUD_GATEWAY}${page}${window.location.search || ""}`);
+}
+
 const Auth = (() => {
   const TOKEN_KEY = "smartagri_token";
   const USER_KEY = "smartagri_user";
