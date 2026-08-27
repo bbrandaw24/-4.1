@@ -542,11 +542,31 @@ function applyRole() {
   const schedule = $("#schedule-enabled"); if (schedule) schedule.disabled = !canRules;
   const uploadPanel = document.querySelector(".upload-panel");
   if (uploadPanel) uploadPanel.classList.toggle("locked", !canUpload);
+  const canManageSensors = Auth.hasPermission("manage_sensors");
+  const addBtn = $("#sensor-add-btn");
+  if (addBtn) addBtn.disabled = !canManageSensors;
   const logout = $("#logout-button");
   if (logout && !logout.dataset.bound) {
     logout.dataset.bound = "1";
     logout.addEventListener("click", () => { Auth.logout(); });
   }
+}
+
+async function refreshUserPermissions() {
+  // Permissions can change server-side (e.g. new roles added after a user
+  // logged in). Pull the freshest user/permissions from /auth/me so buttons
+  // like sensor management are enabled for farmers right away without a
+  // re-login.
+  try {
+    const response = await Auth.request("/api/v1/auth/me", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data && data.user) {
+      Auth.setSession(Auth.getToken(), data.user);
+      state.user = data.user;
+      applyRole();
+    }
+  } catch (_) { /* offline; keep cached permissions */ }
 }
 
 $("#refresh-button").addEventListener("click", refresh);
@@ -845,6 +865,7 @@ function bindBrokerActions() {
 if (window.lucide) window.lucide.createIcons();
 bindBrokerActions();
 loadBroker();
+refreshUserPermissions();
 refresh();
 refreshAiStatus();
 refreshAlertLog();
@@ -856,3 +877,4 @@ setInterval(refreshAlerts, 5000);
 setInterval(refreshAiStatus, 15000);
 setInterval(refreshAlertLog, 30000);
 setInterval(loadBroker, 30000);
+setInterval(refreshUserPermissions, 60000);
