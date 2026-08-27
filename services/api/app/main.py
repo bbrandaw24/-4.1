@@ -896,6 +896,56 @@ def list_sensors_endpoint(device_id):
                     "count": len(list_sensors_for_device(device_id))})
 
 
+@app.get("/api/v1/system/mqtt-broker-presets")
+@require_auth()
+def list_mqtt_broker_presets():
+    """Return a catalog of well-known public MQTT brokers for the dashboard's
+    preset dropdown. Farmers/managers pick one and we pre-fill the editor;
+    they can still switch to Custom and enter their own host/port."""
+    return jsonify({"presets": [
+        {
+            "id": "tencent-mosquitto",
+            "label": "云端 mosquitto（项目自带）",
+            "host": "mosquitto",
+            "port": 1883,
+            "username": "",
+            "description": "项目 compose 内的 mosquitto 服务，容器内可达",
+        },
+        {
+            "id": "hivemq-public",
+            "label": "HiveMQ Public Broker（演示）",
+            "host": "broker.hivemq.com",
+            "port": 1883,
+            "username": "",
+            "description": "HiveMQ 公网免费 broker，端口 1883 仅开放部分 topic；演示用",
+        },
+        {
+            "id": "emqx-public",
+            "label": "EMQX Public Broker（演示）",
+            "host": "broker.emqx.io",
+            "port": 1883,
+            "username": "",
+            "description": "EMQX 公网免费 broker，演示用",
+        },
+        {
+            "id": "mosquitto-test",
+            "label": "test.mosquitto.org（演示）",
+            "host": "test.mosquitto.org",
+            "port": 1883,
+            "username": "",
+            "description": "Eclipse Mosquitto 官方测试 broker",
+        },
+        {
+            "id": "custom",
+            "label": "自定义 broker",
+            "host": "",
+            "port": 1883,
+            "username": "",
+            "description": "填入任意 MQTT broker 地址（host/port/用户名/密码）",
+        },
+    ]})
+
+
 @app.get("/api/v1/system/mqtt-broker")
 @require_auth()
 def get_mqtt_broker_endpoint():

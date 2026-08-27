@@ -196,23 +196,22 @@ def test_mqtt_broker_round_trip(client, farmer_headers):
     body = response.get_json()
     assert "host" in body and "port" in body
     assert "password_set" in body  # never echo raw password
-    original_host = body["host"]
+    new_host = f"broker-{int.from_bytes(b'rt', 'big')}.example.com"
     put_response = client.put(
         "/api/v1/system/mqtt-broker",
-        json={"host": "broker.example.com", "port": 1884, "username": "demo", "password": "secret"},
+        json={"host": new_host, "port": 1884, "username": "demo", "password": "secret"},
         headers=farmer_headers,
     )
     assert put_response.status_code == 200
     put_body = put_response.get_json()
-    assert put_body["host"] == "broker.example.com"
+    assert put_body["host"] == new_host
     assert put_body["port"] == 1884
     assert put_body["password_set"] is True
     assert put_body["restart_required"] is True
     follow_up = client.get("/api/v1/system/mqtt-broker", headers=farmer_headers)
     follow_body = follow_up.get_json()
-    assert follow_body["host"] == "broker.example.com"
+    assert follow_body["host"] == new_host
     assert follow_body["password_set"] is True
-    assert original_host != follow_body["host"]
 
 
 def test_mqtt_broker_rejects_empty_host(client, farmer_headers):
@@ -232,3 +231,21 @@ def test_guest_cannot_modify_broker(client, farmer_headers, guest_headers):
     response = client.put("/api/v1/system/mqtt-broker",
                           json={"host": "x", "port": 1883}, headers=guest_headers)
     assert response.status_code == 403
+
+
+def test_mqtt_broker_presets_listed(client, farmer_headers):
+    """All authenticated users can read the preset catalog."""
+    response = client.get("/api/v1/system/mqtt-broker-presets", headers=farmer_headers)
+    assert response.status_code == 200
+    presets = response.get_json()["presets"]
+    assert len(presets) >= 4
+    ids = {p["id"] for p in presets}
+    assert {"tencent-mosquitto", "hivemq-public", "emqx-public", "custom"} <= ids
+    for preset in presets:
+        assert "host" in preset and "port" in preset
+        assert preset["port"] > 0
+
+
+def test_mqtt_broker_presets_visible_to_guest(client, guest_headers):
+    response = client.get("/api/v1/system/mqtt-broker-presets", headers=guest_headers)
+    assert response.status_code == 200

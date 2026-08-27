@@ -72,7 +72,7 @@
 
     <section class="route-panel" data-view="devices">
       <article class="panel broker-panel">
-        <div class="panel-heading"><div><p class="eyebrow">MQTT BROKER</p><h2>全局 MQTT Broker</h2><p class="agent-sub">所有传感器的遥测都通过该 broker 中转。默认指向云端 mosquitto（容器内 <code>mosquitto:1883</code>）。修改保存后需重启 API 和模拟器容器才能生效。</p></div><span class="badge" id="broker-status-badge">加载中…</span></div>
+        <div class="panel-heading"><div><p class="eyebrow">MQTT BROKER</p><h2>选择全局 MQTT Broker</h2><p class="agent-sub">农户可切换 MQTT broker：选择预设（云端 mosquitto 或公网测试 broker）让传感器遥测转发到该地址；选自定义可填任意 host/port。保存后需重启 API 与模拟器容器才能生效。</p></div><span class="badge" id="broker-status-badge">加载中…</span></div>
         <div class="broker-current">
           <div><span>当前地址</span><b id="broker-current-host">--</b></div>
           <div><span>端口</span><b id="broker-current-port">--</b></div>
@@ -81,7 +81,12 @@
           <div><span>更新时间</span><b id="broker-current-updated">--</b></div>
         </div>
         <form id="broker-form" class="broker-form">
-          <h4>编辑配置</h4>
+          <h4>选择 broker</h4>
+          <div class="broker-preset-row">
+            <label>预设<select id="broker-preset-select"><option value="">加载中…</option></select></label>
+            <p class="broker-preset-desc" id="broker-preset-desc">选择一个预设自动填表单，或选"自定义"手动填写。</p>
+          </div>
+          <h4>连接参数</h4>
           <div class="broker-form-row">
             <label>主机<input type="text" name="host" required placeholder="mosquitto"></label>
             <label>端口<input type="number" name="port" min="1" max="65535" value="1883"></label>

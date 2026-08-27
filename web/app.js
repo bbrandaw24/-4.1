@@ -778,12 +778,20 @@ function bindSensorActions() {
 }
 
 // --- Day 16: global MQTT broker configuration panel -------------------------
+let BROKER_PRESETS = [];
+
 function setBrokerHint(text, kind = "") {
   const el = $("#broker-hint");
   if (!el) return;
   el.textContent = text;
   el.classList.remove("error", "success");
   if (kind) el.classList.add(kind);
+}
+
+function detectPresetFor(broker) {
+  if (!broker || !broker.host) return "";
+  const match = BROKER_PRESETS.find((p) => p.id !== "custom" && p.host === broker.host && Number(p.port) === Number(broker.port));
+  return match ? match.id : "custom";
 }
 
 function renderBroker(broker) {
@@ -804,6 +812,8 @@ function renderBroker(broker) {
     form.elements.username.value = broker.username || "";
     form.elements.password.value = "";
   }
+  const select = $("#broker-preset-select");
+  if (select) select.value = detectPresetFor(broker);
 }
 
 async function loadBroker() {
@@ -816,6 +826,41 @@ async function loadBroker() {
     if (badge) { badge.textContent = "读取失败"; badge.classList.add("muted"); }
     setBrokerHint(`读取失败：${error.message || error}`, "error");
   }
+}
+
+async function loadBrokerPresets() {
+  try {
+    const response = await Auth.request("/api/v1/system/mqtt-broker-presets", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    BROKER_PRESETS = data.presets || [];
+    const select = $("#broker-preset-select");
+    if (!select) return;
+    select.innerHTML = BROKER_PRESETS.map((p) => `<option value="${p.id}">${p.label}</option>`).join("");
+    // sync the select to current broker
+    try {
+      const cur = await Auth.request("/api/v1/system/mqtt-broker", { cache: "no-store" });
+      if (cur.ok) select.value = detectPresetFor(await cur.json());
+    } catch (_) { /* offline */ }
+    select.addEventListener("change", () => {
+      const preset = BROKER_PRESETS.find((p) => p.id === select.value);
+      if (!preset || preset.id === "custom") {
+        const desc = $("#broker-preset-desc");
+        if (desc) desc.textContent = "自定义 broker：请手动填写主机、端口、用户名与密码。";
+        return;
+      }
+      const form = $("#broker-form");
+      if (!form) return;
+      form.dataset.touched = "1";
+      form.elements.host.value = preset.host;
+      form.elements.port.value = preset.port;
+      form.elements.username.value = preset.username || "";
+      form.elements.password.value = "";
+      setBrokerHint(`已选择预设：${preset.label}（点保存后生效）`, "");
+      const desc = $("#broker-preset-desc");
+      if (desc) desc.textContent = preset.description || "";
+    });
+  } catch (_) { /* presets are convenience; don't break the panel */ }
 }
 
 function bindBrokerActions() {
@@ -864,6 +909,7 @@ function bindBrokerActions() {
 
 if (window.lucide) window.lucide.createIcons();
 bindBrokerActions();
+loadBrokerPresets();
 loadBroker();
 refreshUserPermissions();
 refresh();
