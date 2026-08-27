@@ -1,0 +1,13 @@
+{
+  "classes": [
+    "anomalous",
+    "occluded",
+    "ripe",
+    "unripe"
+  ],
+  "threshold": 0.6,
+  "input_size": [
+    224,
+    224
+  ]
+}
