@@ -478,7 +478,15 @@ if os.getenv("MQTT_LISTENER_ENABLED", "true").lower() == "true":
 
 @app.get("/healthz")
 def healthz():
-    return jsonify({"status": "ok", "service": "api"})
+    try:
+        docs = load_knowledge_base()
+    except Exception:  # knowledge base is best-effort for healthz
+        docs = []
+    return jsonify({
+        "status": "ok",
+        "service": "api",
+        "kb_docs": len(docs),
+    })
 
 
 @app.get("/api/v1/system/status")
