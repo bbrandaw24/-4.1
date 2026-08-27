@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.tencent.co
 COPY app ./app
 COPY models ./models
 
-ENV AI_MODEL_PATH=/app/models/strawberry_resnet50_tl.ts \
+ENV AI_MODEL_PATH=/app/models/strawberry_resnet50.ts \
     AI_LABELS_PATH=/app/models/classes.json
 
 EXPOSE 8001
