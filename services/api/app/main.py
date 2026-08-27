@@ -63,6 +63,52 @@ PLOT_META = {
     "sim-plot-pear": {"name": "梨园", "crop": "梨"},
     "sim-plot-orange": {"name": "橘园", "crop": "橘子"},
 }
+
+# --- Day 16: sensor registry ------------------------------------------------
+# Each plot (device) owns a fixed set of virtual hardware (sensors). Sensors
+# are first-class persistent entities stored in SQLite so that the dashboard
+# can render them, the simulator can drive them, and the alert/agent layers
+# can pull their latest values. The MQTT broker is shared globally; the topic
+# itself encodes the sensor identity (`farm/{device}/{sensor_id}/telemetry`).
+SENSOR_TYPES = {
+    "soil_temperature": {
+        "name": "土壤温度",
+        "unit": "°C",
+        "field": "temperature_c",
+        "baseline_range": (20.0, 26.0),
+        "publish_interval_seconds": 30,
+    },
+    "soil_ph": {
+        "name": "pH",
+        "unit": "",
+        "field": "ph",
+        "baseline_range": (5.8, 6.8),
+        "publish_interval_seconds": 30,
+    },
+    "soil_npk": {
+        "name": "氮/磷/钾",
+        "unit": "mg/kg",
+        "field": "npk",
+        "baseline_range": (80, 200),
+        "publish_interval_seconds": 60,
+    },
+    "air_humidity": {
+        "name": "空气湿度",
+        "unit": "%",
+        "field": "air_humidity_pct",
+        "baseline_range": (55.0, 75.0),
+        "publish_interval_seconds": 15,
+    },
+    "soil_conductivity": {
+        "name": "电导率",
+        "unit": "mS/cm",
+        "field": "conductivity_ms_cm",
+        "baseline_range": (0.8, 2.5),
+        "publish_interval_seconds": 30,
+    },
+}
+SENSOR_STATUS_CONNECTED = "connected"
+SENSOR_STATUS_DISCONNECTED = "disconnected"
 ALERT_LOG_LIMIT = int(os.getenv("ALERT_LOG_LIMIT", "500"))  # keep newest N alert records
 ALERT_EVAL_INTERVAL_SECONDS = float(os.getenv("ALERT_EVAL_INTERVAL", "5"))
 ALERT_LOGGING_ENABLED = os.getenv("ALERT_LOGGING_ENABLED", "true").lower() == "true"
@@ -114,6 +160,22 @@ def init_telemetry_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_al_device_ts ON alert_log(device_id, ts)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sensors (
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                value_json TEXT,
+                unit TEXT,
+                last_seen TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(device_id, type)
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sensors_device ON sensors(device_id)")
         conn.commit()
     finally:
         conn.close()
@@ -246,6 +308,129 @@ if ALERT_LOGGING_ENABLED:
 
 
 init_telemetry_db()
+
+
+# --- Day 16: sensor CRUD -----------------------------------------------------
+def _sensor_to_dict(row):
+    if row is None:
+        return None
+    sensor_id, device_id, sensor_type, status, value_json, unit, last_seen, created_at = row
+    value = None
+    if value_json:
+        try:
+            value = json.loads(value_json)
+        except (json.JSONDecodeError, TypeError):
+            value = None
+    meta = SENSOR_TYPES.get(sensor_type, {})
+    return {
+        "id": sensor_id,
+        "device_id": device_id,
+        "type": sensor_type,
+        "name": meta.get("name", sensor_type),
+        "unit": unit or meta.get("unit", ""),
+        "status": status,
+        "value": value,
+        "last_seen": last_seen,
+        "created_at": created_at,
+    }
+
+
+def list_sensors_for_device(device_id):
+    conn = _telemetry_connect()
+    try:
+        rows = conn.execute(
+            "SELECT id, device_id, type, status, value_json, unit, last_seen, created_at FROM sensors "
+            "WHERE device_id=? ORDER BY created_at ASC",
+            (device_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [_sensor_to_dict(row) for row in rows]
+
+
+def get_sensor(sensor_id):
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute(
+            "SELECT id, device_id, type, status, value_json, unit, last_seen, created_at FROM sensors WHERE id=?",
+            (sensor_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return _sensor_to_dict(row)
+
+
+def create_sensor(device_id, sensor_type, status=SENSOR_STATUS_CONNECTED):
+    if sensor_type not in SENSOR_TYPES:
+        raise ValueError(f"unknown sensor type: {sensor_type}")
+    sensor_id = uuid4().hex
+    created_at = utc_now()
+    meta = SENSOR_TYPES[sensor_type]
+    conn = _telemetry_connect()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO sensors (id, device_id, type, status, value_json, unit, last_seen, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (sensor_id, device_id, sensor_type, status, None, meta.get("unit"), None, created_at),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError as exc:
+            raise ValueError(f"sensor already exists for {device_id}/{sensor_type}") from exc
+    finally:
+        conn.close()
+    LOGGER.info("sensor created: %s on %s type=%s", sensor_id[:8], device_id, sensor_type)
+    return get_sensor(sensor_id)
+
+
+def update_sensor_status(sensor_id, status):
+    if status not in {SENSOR_STATUS_CONNECTED, SENSOR_STATUS_DISCONNECTED}:
+        raise ValueError(f"invalid status: {status}")
+    conn = _telemetry_connect()
+    try:
+        cursor = conn.execute("UPDATE sensors SET status=? WHERE id=?", (status, sensor_id))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_sensor_value(sensor_id, value, unit, last_seen):
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "UPDATE sensors SET value_json=?, unit=?, last_seen=? WHERE id=?",
+            (json.dumps(value, ensure_ascii=False) if value is not None else None, unit, last_seen, sensor_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_sensor(sensor_id):
+    conn = _telemetry_connect()
+    try:
+        cursor = conn.execute("DELETE FROM sensors WHERE id=?", (sensor_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def seed_default_sensors_for_device(device_id):
+    """Create the canonical 5 sensors if missing. Idempotent."""
+    existing = list_sensors_for_device(device_id)
+    existing_types = {row["type"] for row in existing}
+    created = []
+    for sensor_type in SENSOR_TYPES:
+        if sensor_type in existing_types:
+            continue
+        try:
+            created.append(create_sensor(device_id, sensor_type))
+        except ValueError:
+            pass  # raced with another seed; ignore
+    return created
+
 
 # --- Day 10: automatic irrigation rules -------------------------------------
 IRRIGATION_RULE_LIMITS = {"min_pct": 5.0, "max_pct": 95.0}
@@ -410,20 +595,66 @@ def _pump_snapshot(device_id):
 
 
 def on_mqtt_message(_client, _userdata, message):
-    """Validate sensor and actuator envelopes and update the latest snapshot."""
+    """Validate sensor and actuator envelopes and update the latest snapshot.
+
+    Supported topics (backward-compatible):
+      farm/{device_id}/sensor/{kind}        → legacy "soil"/"climate" payload
+      farm/{device_id}/{sensor_id}/telemetry → Day 16 sensor registry payload
+      farm/{device_id}/status/pump          → pump confirmation
+    """
     parts = message.topic.split("/")
     if len(parts) != 4 or parts[0] != "farm" or parts[1] == "":
         return
     try:
         envelope = json.loads(message.payload.decode("utf-8"))
-        device_id = envelope["device_id"]
-        payload = envelope["payload"]
-        timestamp = envelope["timestamp"]
-        if not isinstance(device_id, str) or not isinstance(payload, dict):
-            raise ValueError("invalid envelope types")
+        device_id = envelope.get("device_id") or parts[1]
+        timestamp = envelope.get("timestamp")
+        if not isinstance(device_id, str) or not device_id:
+            raise ValueError("device_id missing")
     except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         LOGGER.warning("ignored invalid MQTT message on %s: %s", message.topic, exc)
         return
+
+    # Day 16: new sensor-registry payload — topic `farm/{device}/{sensor_id}/telemetry`
+    if parts[3] == "telemetry":
+        sensor_id = parts[2]
+        sensor_type = envelope.get("type")
+        value = envelope.get("value")
+        unit = envelope.get("unit") or ""
+        ts = timestamp or utc_now()
+        if not isinstance(sensor_id, str) or not isinstance(value, dict):
+            LOGGER.warning("ignored malformed sensor payload on %s", message.topic)
+            return
+        sensor = get_sensor(sensor_id)
+        if sensor is None or sensor["device_id"] != device_id:
+            LOGGER.info("ignoring telemetry for unknown sensor %s on %s", sensor_id[:8], device_id)
+            return
+        if sensor["status"] != SENSOR_STATUS_CONNECTED:
+            LOGGER.debug("sensor %s disconnected; payload dropped", sensor_id[:8])
+            return
+        try:
+            resolved_type = sensor_type or sensor["type"]
+            update_sensor_value(sensor_id, value, unit, ts)
+            _store_telemetry(device_id, resolved_type,
+                             {"value": value, "unit": unit, "sensor_id": sensor_id, "type": resolved_type},
+                             ts)
+        except Exception as exc:
+            LOGGER.warning("sensor update failed: %s", exc)
+            return
+        # Keep registry.last_seen fresh so /devices still reports connectivity.
+        with registry_lock:
+            device = registry.setdefault(device_id, {"device_id": device_id, "telemetry": {}, "last_seen": None,
+                                                     "pump": {"action": "stop", "running": False, "status": "standby",
+                                                              "timestamp": None, "command_id": None}})
+            device["last_seen"] = ts
+        return
+
+    # Legacy + pump topics carry the envelope under a `payload` key.
+    payload = envelope.get("payload")
+    if not isinstance(payload, dict):
+        LOGGER.warning("ignored message without payload on %s", message.topic)
+        return
+
     with registry_lock:
         device = registry.setdefault(device_id, {"device_id": device_id, "telemetry": {}, "last_seen": None,
                                                  "pump": {"action": "stop", "running": False, "status": "standby",
@@ -465,6 +696,7 @@ def mqtt_listener():
     try:
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
         client.subscribe("farm/+/sensor/+", qos=1)
+        client.subscribe("farm/+/+/telemetry", qos=1)  # Day 16 sensor-registry topic
         client.subscribe("farm/+/status/pump", qos=1)
         LOGGER.info("MQTT listener connected to %s:%s", MQTT_HOST, MQTT_PORT)
         client.loop_forever()
@@ -508,8 +740,84 @@ def devices():
     for device in items:
         item = dict(device)
         item["plot"] = PLOT_META.get(device.get("device_id"), {})
+        item["sensors"] = list_sensors_for_device(device.get("device_id"))
         enriched.append(item)
     return jsonify({"items": enriched, "count": len(enriched)})
+
+
+@app.post("/api/v1/devices")
+@require_auth("manage_sensors")
+def register_device_endpoint():
+    body = request.get_json(silent=True) or {}
+    device_id = (body.get("device_id") or "").strip()
+    if not device_id:
+        return jsonify({"error": "device_id_required"}), 400
+    with registry_lock:
+        if device_id in registry:
+            return jsonify({"device_id": device_id, "status": "exists"}), 200
+        registry[device_id] = {"device_id": device_id, "telemetry": {}, "last_seen": None,
+                               "pump": {"action": "stop", "running": False, "status": "standby",
+                                        "timestamp": None, "command_id": None}}
+    return jsonify({"device_id": device_id, "status": "registered"}), 201
+
+
+@app.post("/api/v1/devices/<device_id>/sensors")
+@require_auth("manage_sensors")
+def create_sensor_endpoint(device_id):
+    body = request.get_json(silent=True) or {}
+    sensor_type = (body.get("type") or "").strip()
+    if not sensor_type:
+        return jsonify({"error": "type_required", "allowed": sorted(SENSOR_TYPES.keys())}), 400
+    try:
+        sensor = create_sensor(device_id, sensor_type)
+    except ValueError as exc:
+        msg = str(exc)
+        if "unknown sensor type" in msg:
+            return jsonify({"error": "unknown_sensor_type", "type": sensor_type,
+                            "allowed": sorted(SENSOR_TYPES.keys())}), 400
+        if "already exists" in msg:
+            return jsonify({"error": "sensor_already_exists", "device_id": device_id, "type": sensor_type}), 409
+        return jsonify({"error": "invalid_request", "message": msg}), 400
+    # Make sure the device exists in registry so /devices picks it up.
+    with registry_lock:
+        registry.setdefault(device_id, {"device_id": device_id, "telemetry": {}, "last_seen": None,
+                                        "pump": {"action": "stop", "running": False, "status": "standby",
+                                                 "timestamp": None, "command_id": None}})
+    return jsonify(sensor), 201
+
+
+@app.patch("/api/v1/sensors/<sensor_id>")
+@require_auth("manage_sensors")
+def patch_sensor_endpoint(sensor_id):
+    body = request.get_json(silent=True) or {}
+    if "status" in body:
+        try:
+            update_sensor_status(sensor_id, body["status"])
+        except ValueError:
+            return jsonify({"error": "invalid_status",
+                            "allowed": [SENSOR_STATUS_CONNECTED, SENSOR_STATUS_DISCONNECTED]}), 400
+    sensor = get_sensor(sensor_id)
+    if sensor is None:
+        return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
+    return jsonify(sensor)
+
+
+@app.delete("/api/v1/sensors/<sensor_id>")
+@require_auth("manage_sensors")
+def delete_sensor_endpoint(sensor_id):
+    sensor = get_sensor(sensor_id)
+    if sensor is None:
+        return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
+    delete_sensor(sensor_id)
+    return jsonify({"deleted": sensor_id, "device_id": sensor["device_id"], "type": sensor["type"]})
+
+
+@app.get("/api/v1/devices/<device_id>/sensors")
+@require_auth()
+def list_sensors_endpoint(device_id):
+    """Convenience read endpoint; /devices already embeds the sensor list per device."""
+    return jsonify({"device_id": device_id, "items": list_sensors_for_device(device_id),
+                    "count": len(list_sensors_for_device(device_id))})
 
 
 @app.get("/api/v1/devices/<device_id>/telemetry/latest")

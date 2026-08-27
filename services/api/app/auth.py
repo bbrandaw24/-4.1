@@ -6,8 +6,8 @@ werkzeug; sessions are stateless bearer tokens signed with itsdangerous.
 
 Permission model (three tiers):
   guest   -> view                       (read-only dashboard)
-  farmer  -> view + control_pump        (operate irrigation)
-  manager -> view + control_pump + manage_rules + upload_image + list_users
+  farmer  -> view + control_pump + manage_sensors
+  manager -> view + control_pump + manage_rules + manage_sensors + upload_image + list_users
 """
 import os
 import re
@@ -29,8 +29,8 @@ SEED_DEMO = os.getenv("AUTH_SEED_DEMO", "1") != "0"
 ALLOWED_REGISTER_ROLES = ("farmer", "manager")
 ROLE_PERMISSIONS = {
     "guest": {"view"},
-    "farmer": {"view", "control_pump"},
-    "manager": {"view", "control_pump", "manage_rules", "upload_image", "list_users"},
+    "farmer": {"view", "control_pump", "manage_sensors"},
+    "manager": {"view", "control_pump", "manage_rules", "manage_sensors", "upload_image", "list_users"},
 }
 ROLE_LABELS = {"guest": "游客", "farmer": "农户", "manager": "管理者"}
 
