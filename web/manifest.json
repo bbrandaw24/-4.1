@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "智慧农业 · 温室运行台",
+  "short_name": "智慧农业",
+  "description": "多地块传感器数据、灌溉控制和图像采集集中在同一个工作面",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0F2A1D",
+  "background_color": "#0F2A1D",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
