@@ -31,7 +31,8 @@ async function probeHealthz() {
     const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    if (data && data.status === "ok") {
+    // system/status 返回 status:"ready"（旧 /healthz 是 "ok"），两者都算健康
+    if (data && (data.status === "ok" || data.status === "ready")) {
       setConnection(true, "API 已连接");
     } else {
       setConnection(false, "API 暂不可用");
