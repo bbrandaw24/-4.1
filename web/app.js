@@ -242,14 +242,14 @@ function renderDevice(device) {
     ["电导率", fmt(soil.conductivity_ms_cm, 2, " mS/cm"), "0.4–1.8"],
   ];
   $("#telemetry-table").innerHTML = rows.map(([name, value, range]) => `<div class="telemetry-row"><span class="name">${name}</span><span class="value">${value}</span><span class="range">${range}</span></div>`).join("");
-  $("#device-page-name").textContent = device.device_id;
-  $("#device-page-id").textContent = device.device_id;
-  $("#device-page-seen").textContent = new Date(device.last_seen).toLocaleString();
-  $("#device-page-api").textContent = API;
-  $("#device-page-status").textContent = "ONLINE";
-  $("#device-page-status").classList.remove("muted");
-  $("#mqtt-contract").textContent = "在线";
-  $("#http-contract").textContent = "在线";
+  // 设备详情面板元素（device-page-*）在部分页面布局中不存在，空值保护避免刷新中断
+  if ($("#device-page-name")) $("#device-page-name").textContent = device.device_id;
+  if ($("#device-page-id")) $("#device-page-id").textContent = device.device_id;
+  if ($("#device-page-seen")) $("#device-page-seen").textContent = new Date(device.last_seen).toLocaleString();
+  if ($("#device-page-api")) $("#device-page-api").textContent = API;
+  if ($("#device-page-status")) { $("#device-page-status").textContent = "ONLINE"; $("#device-page-status").classList.remove("muted"); }
+  if ($("#mqtt-contract")) $("#mqtt-contract").textContent = "在线";
+  if ($("#http-contract")) $("#http-contract").textContent = "在线";
   renderTrendPanels();
   drawTrend();
   refreshPumpStatus();
@@ -459,6 +459,8 @@ async function refreshAlertLog() {
 }
 
 async function refreshAiStatus() {
+  const devicePageAi = $("#device-page-ai");
+  const aiContract = $("#ai-contract");
   try {
     const response = await Auth.requestAI(`/api/v1/model/status`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -470,14 +472,14 @@ async function refreshAiStatus() {
       : `${data.message || "模型尚未就绪"} · 阈值 ${Number(data.confidence_threshold || 0.6).toFixed(2)}`;
     $("#ai-status-badge").textContent = data.ready ? "MODEL READY" : "MODEL PENDING";
     $("#ai-status-badge").classList.toggle("muted", !data.ready);
-    $("#device-page-ai").textContent = data.ready ? data.model_version : "待训练";
-    $("#ai-contract").textContent = data.ready ? "在线" : "未就绪";
+    if (devicePageAi) devicePageAi.textContent = data.ready ? data.model_version : "待训练";
+    if (aiContract) aiContract.textContent = data.ready ? "在线" : "未就绪";
   } catch (error) {
     $("#ai-status-copy").textContent = `AI 服务暂不可用：${error.message}`;
     $("#ai-status-badge").textContent = "AI OFFLINE";
     $("#ai-status-badge").classList.add("muted");
-    $("#device-page-ai").textContent = "不可用";
-    $("#ai-contract").textContent = "离线";
+    if (devicePageAi) devicePageAi.textContent = "不可用";
+    if (aiContract) aiContract.textContent = "离线";
   }
 }
 
