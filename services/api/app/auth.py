@@ -29,7 +29,7 @@ SEED_DEMO = os.getenv("AUTH_SEED_DEMO", "1") != "0"
 ALLOWED_REGISTER_ROLES = ("farmer", "manager")
 ROLE_PERMISSIONS = {
     "guest": {"view"},
-    "farmer": {"view", "control_pump", "manage_sensors"},
+    "farmer": {"view", "control_pump", "manage_sensors", "upload_image"},
     "manager": {"view", "control_pump", "manage_rules", "manage_sensors", "upload_image", "list_users"},
 }
 ROLE_LABELS = {"guest": "游客", "farmer": "农户", "manager": "管理者"}
