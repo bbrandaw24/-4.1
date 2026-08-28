@@ -25,8 +25,8 @@ function setConnection(ok, message) {
 // from the Singapore server) does NOT turn the API pill red and the user can
 // still see real API outages vs. transient fetch slowness.
 async function probeHealthz() {
-  // 网关模式下 /healthz 无网关路由，必须走 /api 前缀打到 API 服务
-  const url = `${API}/api/healthz`;
+  // 网关只代理 /api 与 /ai 前缀；API 的 healthz 在无前缀的 /healthz，故用 system/status 探测
+  const url = `${API}/api/v1/system/status`;
   try {
     const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
