@@ -97,6 +97,7 @@
 | v14.2 | 2026-08-28 | `c26e858` | fix(build)：AI 镜像构建修复（容器内 pip 腾讯镜像源、torch 走 PyTorch CPU index、模型文件名对齐） |
 | v14.3 | 2026-08-28 | `f0cb07c` | fix(web)：网关模式请求修复——requestAI 补 /ai 前缀、健康探测改 /api/v1/system/status 并兼容 ready 状态、device-page 空元素保护（修复上传/识别无响应与页面报错） |
 | v14.4 | 2026-08-28 | `27f5b04` | feat(web)：上传图片完整组件——多选批量（PNG/JPG/JPEG，≤5MiB，≤9 张）、缩略图预览网格、逐张进度条 + 全局 N/M 进度、格式/大小校验与友好提示、失败重试/删除、键盘可操作与 aria 无障碍、每张上传成功自动草莓识别 |
+| v14.5 | 2026-08-28 | `bbf8313` | feat(web)：PWA 支持——manifest + Service Worker（静态资源网络优先/离线回退，API 请求不缓存）+ 192/512/maskable 图标，手机浏览器「添加到主屏幕」即可当 App 使用 |
 
 ## 系统组成
 
