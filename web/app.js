@@ -541,21 +541,152 @@ async function refreshAlerts() {
   } catch (_) { $("#alert-list").innerHTML = '<span class="alert-empty">告警服务暂不可用</span>'; }
 }
 
-async function upload(file) {
-  if (!file) return;
-  if (!Auth.hasPermission("upload_image")) { $("#image-result").textContent = "当前身份无图像上传权限"; return; }
-  const form = new FormData();
-  form.append("file", file);
-  if (state.device) form.append("device_id", state.device.device_id);
-  $("#image-result").textContent = "正在上传...";
-  try {
-    const response = await Auth.request(`/api/v1/images`, { method: "POST", body: form });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-    $("#image-result").innerHTML = `<img src="${API}${data.thumbnail_url}" alt="最新作物图像"><p>${data.width} × ${data.height} · 已生成缩略图</p>`;
-  } catch (error) { $("#image-result").textContent = `上传失败：${error.message}`; }
-  // 上传后自动进行草莓成熟度识别（AI 服务）
-  await predictStrawberry(file);
+// ---- 上传图片组件：多选批量、校验、预览、进度、重试 ----
+const UPLOAD_LIMITS = {
+  maxBytes: 5 * 1024 * 1024,          // 单张最大 5 MiB（与后端 MAX_UPLOAD_BYTES 一致）
+  maxCount: 9,                         // 单批最多 9 张
+  formats: { "image/png": "PNG", "image/jpeg": "JPG/JPEG" }
+};
+let uploadQueue = [];                  // [{id, file, status: pending|uploading|done|error, progress, error, data}]
+let uploadRunning = false;
+let uploadSeq = 0;
+
+function validateFile(file) {
+  if (!(file.type in UPLOAD_LIMITS.formats)) return `不支持 ${file.type || "未知"} 格式，仅支持 ${Object.values(UPLOAD_LIMITS.formats).join(" / ")}`;
+  if (file.size > UPLOAD_LIMITS.maxBytes) return `超过大小限制 ${UPLOAD_LIMITS.maxBytes / 1024 / 1024} MiB（实际 ${(file.size / 1024 / 1024).toFixed(1)} MiB）`;
+  return null;
+}
+
+function pickFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  if (!Auth.hasPermission("upload_image")) { setUploadStatus("当前身份无图像上传权限", true); return; }
+  const files = Array.from(fileList).slice(0, UPLOAD_LIMITS.maxCount);
+  // 新一轮选择替换待上传队列（已完成/失败的保留在预览区，仅替换 pending）
+  uploadQueue = uploadQueue.filter(e => e.status !== "pending");
+  files.forEach((file) => {
+    const invalid = validateFile(file);
+    uploadQueue.push({
+      id: `up-${++uploadSeq}`, file, status: invalid ? "error" : "pending",
+      progress: 0, error: invalid || "", data: null,
+      thumb: URL.createObjectURL(file),
+    });
+  });
+  renderPreview();
+  if (uploadQueue.some(e => e.status === "error")) setUploadStatus("部分文件未通过校验，已标红", true);
+  runUploadQueue();
+}
+
+async function runUploadQueue() {
+  if (uploadRunning) return;
+  uploadRunning = true;
+  const pending = uploadQueue.filter(e => e.status === "pending");
+  if (!pending.length) { uploadRunning = false; return; }
+  setUploadStatus(`开始上传 ${pending.length} 张图片…`);
+  let ok = 0, fail = 0;
+  for (const entry of pending) {
+    if (entry.status !== "pending") continue;
+    entry.status = "uploading";
+    renderPreview();
+    const success = await uploadOne(entry);
+    if (success) ok++; else fail++;
+    if (success) {
+      // 上传成功后自动进行草莓成熟度识别（结果展示在 AI 识别区）
+      predictStrawberry(entry.file).catch(() => {});
+    }
+  }
+  uploadRunning = false;
+  const total = ok + fail;
+  setUploadStatus(total ? `上传完成：成功 ${ok} 张${fail ? `，失败 ${fail} 张（可点击卡片重试）` : ""}` : "没有可上传的文件");
+}
+
+function uploadOne(entry) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();   // XHR 才能拿到上传进度事件
+    const form = new FormData();
+    form.append("file", entry.file);
+    if (state.device) form.append("device_id", state.device.device_id);
+    xhr.open("POST", `${API}/api/v1/images`);
+    const token = Auth.getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) { entry.progress = Math.round((event.loaded / event.total) * 100); renderPreview(); }
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300 && data.image_id) {
+        entry.status = "done"; entry.data = data; entry.progress = 100;
+      } else {
+        entry.status = "error"; entry.error = data.error || data.message || `HTTP ${xhr.status}`;
+      }
+      renderPreview(); resolve(entry.status === "done");
+    };
+    xhr.onerror = () => { entry.status = "error"; entry.error = "网络错误，请检查连接后重试"; renderPreview(); resolve(false); };
+    xhr.send(form);
+  });
+}
+
+function retryEntry(id) {
+  const entry = uploadQueue.find(e => e.id === id);
+  if (!entry || entry.status !== "error") return;
+  const invalid = validateFile(entry.file);
+  if (invalid) { entry.error = invalid; renderPreview(); return; }
+  entry.status = "pending"; entry.progress = 0; entry.error = "";
+  renderPreview(); runUploadQueue();
+}
+
+function removeEntry(id) {
+  const entry = uploadQueue.find(e => e.id === id);
+  if (entry && entry.thumb) URL.revokeObjectURL(entry.thumb);
+  uploadQueue = uploadQueue.filter(e => e.id !== id);
+  renderPreview();
+}
+
+function setUploadStatus(message, isError = false) {
+  const el = $("#upload-status");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.toggle("error", isError);
+}
+
+function renderPreview() {
+  const wrap = $("#upload-preview");
+  const progressWrap = $("#upload-progress-wrap");
+  const fill = $("#upload-progress-fill");
+  const text = $("#upload-progress-text");
+  const queue = uploadQueue.filter(e => e.status !== "done");
+  const done = uploadQueue.filter(e => e.status === "done");
+  wrap.innerHTML = queue.map((entry) => {
+    const statusCls = entry.status === "error" ? "error" : entry.status === "done" ? "ok" : "uploading";
+    const statusText = entry.status === "error" ? (entry.error || "失败")
+      : entry.status === "done" ? "已上传"
+      : entry.status === "uploading" ? "上传中…" : "等待上传";
+    const actions = entry.status === "error"
+      ? `<button class="preview-retry" data-id="${entry.id}" aria-label="重试上传 ${entry.file.name}">重试</button>`
+      : `<button class="preview-remove" data-id="${entry.id}" aria-label="移除 ${entry.file.name}">×</button>`;
+    return `<div class="preview-card ${statusCls}" role="group" aria-label="${entry.file.name}：${statusText}">
+      <img src="${entry.thumb}" alt="${entry.file.name}">
+      <div class="preview-meta"><span class="preview-name" title="${entry.file.name}">${entry.file.name}</span><span class="preview-status">${statusText}</span></div>
+      ${entry.status === "uploading" ? `<div class="preview-progress"><i style="width:${entry.progress}%"></i></div>` : ""}
+      <div class="preview-actions">${actions}</div>
+    </div>`;
+  }).join("");
+  const total = uploadQueue.length;
+  const active = uploadQueue.filter(e => e.status === "pending" || e.status === "uploading").length;
+  if (active) {
+    progressWrap.hidden = false;
+    const doneCount = uploadQueue.filter(e => e.status === "done").length;
+    const pct = total ? Math.round(((doneCount) / total) * 100) : 0;
+    fill.style.width = `${pct}%`;
+    text.textContent = `${doneCount} / ${total}（剩余 ${active}）`;
+    fill.setAttribute("aria-valuenow", pct);
+  } else {
+    progressWrap.hidden = true;
+  }
+  if (!queue.length && done.length) wrap.innerHTML += `<p class="preview-summary">本批 ${done.length} 张全部上传成功 ✓</p>`;
+  // 事件绑定（重试/删除）
+  wrap.querySelectorAll(".preview-retry").forEach(b => b.addEventListener("click", () => retryEntry(b.dataset.id)));
+  wrap.querySelectorAll(".preview-remove").forEach(b => b.addEventListener("click", () => removeEntry(b.dataset.id)));
 }
 
 const STRAWBERRY_LABELS_ZH = { anomalous: "异常果", occluded: "遮挡", ripe: "成熟", unripe: "未成熟" };
@@ -656,9 +787,11 @@ $("#notify-button").addEventListener("click", async () => {
   state.notifications = permission === "granted";
   $("#notify-button").textContent = state.notifications ? "通知已启用" : "启用通知";
 });
-$("#image-input").addEventListener("change", (event) => upload(event.target.files[0]));
-$("#dropzone").addEventListener("dragover", (event) => event.preventDefault());
-$("#dropzone").addEventListener("drop", (event) => { event.preventDefault(); upload(event.dataTransfer.files[0]); });
+$("#image-input").addEventListener("change", (event) => { pickFiles(event.target.files); event.target.value = ""; });
+$("#upload-btn").addEventListener("click", () => $("#image-input").click());
+$("#dropzone").addEventListener("dragover", (event) => { event.preventDefault(); $("#dropzone").classList.add("dragging"); });
+$("#dropzone").addEventListener("dragleave", () => $("#dropzone").classList.remove("dragging"));
+$("#dropzone").addEventListener("drop", (event) => { event.preventDefault(); $("#dropzone").classList.remove("dragging"); pickFiles(event.dataTransfer.files); });
 const alertLogRefresh = $("#alert-log-refresh");
 if (alertLogRefresh) alertLogRefresh.addEventListener("click", refreshAlertLog);
 
