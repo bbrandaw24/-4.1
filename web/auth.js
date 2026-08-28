@@ -84,7 +84,9 @@ const Auth = (() => {
     const headers = new Headers(options.headers || {});
     if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    return fetch(aiBase() + path, { ...options, headers });
+    // 网关模式（同源 8080）下必须带 /ai 前缀才能命中网关的 AI 上游，否则会打到 API 服务 404
+    const url = aiBase() + (isGateway() && !path.startsWith("/ai") ? "/ai" + path : path);
+    return fetch(url, { ...options, headers });
   }
 
   return { apiBase, aiBase, getToken, getUser, setSession, clear, logout, hasPermission, redirectToLogin, request, requestAI };
