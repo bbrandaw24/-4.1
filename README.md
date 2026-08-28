@@ -98,6 +98,7 @@
 | v14.3 | 2026-08-28 | `f0cb07c` | fix(web)：网关模式请求修复——requestAI 补 /ai 前缀、健康探测改 /api/v1/system/status 并兼容 ready 状态、device-page 空元素保护（修复上传/识别无响应与页面报错） |
 | v14.4 | 2026-08-28 | `27f5b04` | feat(web)：上传图片完整组件——多选批量（PNG/JPG/JPEG，≤5MiB，≤9 张）、缩略图预览网格、逐张进度条 + 全局 N/M 进度、格式/大小校验与友好提示、失败重试/删除、键盘可操作与 aria 无障碍、每张上传成功自动草莓识别 |
 | v14.5 | 2026-08-28 | `bbf8313` | feat(web)：PWA 支持——manifest + Service Worker（静态资源网络优先/离线回退，API 请求不缓存）+ 192/512/maskable 图标，手机浏览器「添加到主屏幕」即可当 App 使用 |
+| v14.6 | 2026-08-28 | `20145d3` | feat(ai)：问答 LLM 后端切换智谱 GLM（glm-5.3-flash，open.bigmodel.cn，thinking 参数适配，key 存 .env）；fix(compose)：AI_MODEL_PATH 恢复 resnet50-tl + labels 恢复 classes.json（修 git reset 把服务器 compose 还原成 MLP 路径导致识图 not_ready 501） |
 
 ## 系统组成
 
