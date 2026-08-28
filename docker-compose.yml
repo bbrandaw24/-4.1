@@ -67,9 +67,10 @@ services:
       AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-1}
       # Luna mode for the irrigation advisor (OpenAI-compatible). Thinking effort
       # is fixed at medium server-side; key lives in .env, never committed.
+      # 2026-08-28: default backend switched to 智谱 GLM (open.bigmodel.cn).
       LUNA_API_KEY: ${LUNA_API_KEY:-}
-      LUNA_BASE_URL: ${LUNA_BASE_URL:-https://wolfai.top/v1}
-      LUNA_MODEL: ${LUNA_MODEL:-gpt-5.6-luna}
+      LUNA_BASE_URL: ${LUNA_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      LUNA_MODEL: ${LUNA_MODEL:-glm-5.3-flash}
       LUNA_REASONING_EFFORT: ${LUNA_REASONING_EFFORT:-medium}
     ports:
       - "${API_PORT:-8010}:8000"
@@ -85,10 +86,10 @@ services:
     build: ./services/ai
     restart: unless-stopped
     environment:
-      AI_MODEL_VERSION: ${AI_MODEL_VERSION:-riseholme-2021-mlp-v1}
+      AI_MODEL_VERSION: ${AI_MODEL_VERSION:-strawberry-resnet50-tl-v1}
       AI_CONFIDENCE_THRESHOLD: ${AI_CONFIDENCE_THRESHOLD:-0.60}
-      AI_MODEL_PATH: /models/riseholme_mlp_v1.npz
-      AI_LABELS_PATH: /models/labels.json
+      AI_MODEL_PATH: /models/strawberry_resnet50.ts
+      AI_LABELS_PATH: /models/classes.json
     ports:
       - "${AI_PORT:-8001}:8001"
     volumes:

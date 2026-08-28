@@ -23,11 +23,12 @@ LOGGER = logging.getLogger("smart-agriculture-api")
 DEFAULT_KB_PATH = Path(__file__).resolve().parent / "knowledge_base.json"
 KB_PATH = os.getenv("KNOWLEDGE_BASE_PATH", str(DEFAULT_KB_PATH))
 
-# Optional LLM upgrade: "luna" mode uses the user's Luna model (OpenAI-compatible).
+# Optional LLM upgrade: "luna" mode uses an OpenAI-compatible LLM.
+# Default backend: 智谱 GLM (open.bigmodel.cn, glm-5.3-flash，支持视觉/思考)。
 # Thinking effort is FIXED at medium and not exposed to end users.
 LUNA_API_KEY = os.getenv("LUNA_API_KEY")
-LUNA_BASE_URL = os.getenv("LUNA_BASE_URL", "https://wolfai.top/v1")
-LUNA_MODEL = os.getenv("LUNA_MODEL", "gpt-5.6-luna")
+LUNA_BASE_URL = os.getenv("LUNA_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+LUNA_MODEL = os.getenv("LUNA_MODEL", "glm-5.3-flash")
 LUNA_REASONING_EFFORT = os.getenv("LUNA_REASONING_EFFORT", "medium")
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "60"))  # medium reasoning can take 20-45s
 
@@ -348,7 +349,10 @@ def _call_llm(prompt_messages, base_url=None, api_key=None, model=None, reasonin
         "temperature": 0.3,
         "max_tokens": 900,
     }
-    if reasoning_effort:
+    if model and model.startswith("glm"):
+        # 智谱 GLM：思考开关用 thinking.type，不接受 reasoning_effort
+        payload["thinking"] = {"type": "enabled" if reasoning_effort else "disabled"}
+    elif reasoning_effort:
         payload["reasoning_effort"] = reasoning_effort
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
