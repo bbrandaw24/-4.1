@@ -841,6 +841,9 @@ function renderSensorsBoard(devices) {
     const plot = device.plot || {};
     const online = Boolean(device.last_seen);
     const isBuiltin = BUILTIN_PLOTS.includes(device.device_id);
+    const addSensorBtn = canManage
+      ? `<button class="plot-add-sensor" data-action="add-sensor" data-device="${device.device_id}" type="button" title="为该地块添加传感器">+ 添加传感器</button>`
+      : "";
     const removeBtn = (!isBuiltin && canManage)
       ? `<button class="plot-remove" data-action="remove-plot" data-device="${device.device_id}" type="button" title="删除该地块">删除地块</button>`
       : "";
@@ -851,7 +854,7 @@ function renderSensorsBoard(devices) {
         <span class="sensor-group-status ${online ? "" : "off"}">
           <span class="pulse ${online ? "" : "off"}"></span>${online ? "在线" : "离线"}
         </span>
-        ${removeBtn}
+        ${addSensorBtn}${removeBtn}
       </header>
       <div class="sensor-grid">${sensors.map(renderSensorCard).join("") || '<div class="sensor-hint" style="padding:18px">该地块暂无传感器，点击"+ 添加传感器"创建。</div>'}</div>
     </section>`;
@@ -1033,15 +1036,25 @@ function bindSensorActions() {
       const target = event.target.closest("[data-action]");
       if (!target) return;
       const action = target.dataset.action;
-      const sensorId = target.dataset.sensor;
-      if (!sensorId) return;
-      if (action === "toggle") toggleSensor(sensorId, target.dataset.status);
-      if (action === "remove") {
-        if (confirm("确定删除该传感器？删除后云端会立即停止推送数据。")) deleteSensorById(sensorId);
+      // Sensor-level actions (toggle/remove) require a sensor id.
+      if (action === "toggle" || action === "remove") {
+        const sensorId = target.dataset.sensor;
+        if (!sensorId) return;
+        if (action === "toggle") toggleSensor(sensorId, target.dataset.status);
+        if (action === "remove") {
+          if (confirm("确定删除该传感器？删除后云端会立即停止推送数据。")) deleteSensorById(sensorId);
+        }
+        return;
       }
+      // Plot-level actions (delete / add sensor) use the device id instead.
       if (action === "remove-plot") {
         const deviceId = target.dataset.device;
         if (deviceId && confirm("确定删除该地块？其全部传感器将一并移除，删除后不可恢复。")) deletePlotById(deviceId);
+        return;
+      }
+      if (action === "add-sensor") {
+        const deviceId = target.dataset.device;
+        if (deviceId) openAddSensorDialog(deviceId);
       }
     });
   }
