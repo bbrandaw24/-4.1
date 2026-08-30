@@ -159,16 +159,9 @@ body {
   position: relative;
 }
 
-/* 极淡噪点纹理（纯 CSS，无外链图片） */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: var(--ag-noise-opacity);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
-}
+/* 性能红线：不要用 position:fixed 的全屏 fractalNoise 噪点层——
+   任何动画帧都会触发整屏重光栅化，软件渲染设备（App WebView/无 GPU）
+   直接冻死。纸感改由 --ag-canvas 底色承担。 */
 
 :root[data-theme="dark"] body::after {
   content: "";
@@ -719,7 +712,10 @@ button.action:active, .action:active { transform: scale(.97); }
 .badge.muted { background: var(--ag-line-soft) !important; color: var(--ag-muted) !important; border-color: var(--ag-line) !important; }
 
 /* ============================ 入场动画（纯 CSS 交错） ============================ */
-.route-panel > *, .metric, .plots-strip > *, .trend-summary > div {
+/* 入场动画只用于数量有限的卡片（.metric/.plots-strip）。
+   不对 .route-panel > * 全量生效：app.js 每 5s 重渲染会反复重放动画，
+   软件渲染设备上会持续整屏重绘导致卡死。 */
+.metric, .plots-strip > *, .trend-summary > div {
   animation: agFadeUp .5s var(--ag-ease) both;
 }
 .metric:nth-child(1) { animation-delay: .04s }
