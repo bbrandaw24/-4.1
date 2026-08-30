@@ -100,7 +100,13 @@
 | v14.5 | 2026-08-28 | `bbf8313` | feat(web)：PWA 支持——manifest + Service Worker（静态资源网络优先/离线回退，API 请求不缓存）+ 192/512/maskable 图标，手机浏览器「添加到主屏幕」即可当 App 使用 |
 | v14.6 | 2026-08-28 | `20145d3` | feat(ai)：问答 LLM 后端切换智谱 GLM（glm-5.3-flash，open.bigmodel.cn，thinking 参数适配，key 存 .env）；fix(compose)：AI_MODEL_PATH 恢复 resnet50-tl + labels 恢复 classes.json（修 git reset 把服务器 compose 还原成 MLP 路径导致识图 not_ready 501） |
 | v15.0 | 2026-08-30 | `d55e862` | feat(web)：**双主题设计系统**——新增 `theme.css`（两套 Design Token：自然清新 / 深色数据大屏）+ `enhance.js`（视觉增强，不改业务逻辑）。顶栏毛玻璃深绿渐变 + 温室叶片 SVG logo + 主题切换按钮（localStorage 记忆 + 跟随系统深色）；指标卡改为图标徽章＋等宽大数字＋数值滚动动画＋迷你 sparkline＋达标/偏低/超标状态标签＋胶囊渐变仪表条；地块卡作物图标与 hover 三项读数；两张趋势图重绘为平滑曲线＋渐变面积＋虚线网格＋hover tooltip＋1h/6h/10h 切换（深色带辉光）；设备页表单分区卡、输入框 focus 光环、传感器小卡（图标+名称+值+状态灯）、弹窗淡入缩放；智能体页气泡带小尾巴、打字三点跳动、建议问题 chip、输入栏胶囊、Luna 外围呼吸光晕（内部动画类名不变）；全局 hover/active、导航下划线滑动、卡片 fade-in-up 交错入场；850/560 断点复核。所有 id/class/data-* 与 DOM 层级保持不变，仅新增装饰子元素；PWA 缓存版本 smartagri-v1 → v2 |
-| v15.0.1 | 2026-08-30 | `待提交` | fix(theme)：移除 `.sensor-card` 强制 grid 单行布局与 `enhance.js` 强插的 sensor icon/dot，修复设备页数值重叠；chore(sw)：PWA 缓存版本 v2 → v3 |
+| v15.0.1 | 2026-08-30 | `4a9b427` | fix(theme)：移除 `.sensor-card` 强制 grid 单行布局与 `enhance.js` 强插的 sensor icon/dot，修复设备页数值重叠；chore(sw)：PWA 缓存版本 v2 → v3 |
+| v15.0.2 | 2026-08-30 | `11210e5` | fix(theme)：`.panel` 的 `overflow:hidden` / hover `transform` / 深色 `backdrop-filter` 会使嵌在 `.panel.sensors-panel` 内的 `position:fixed` 弹窗（添加地块、添加传感器对话框）被裁剪错位——上述属性一律用 `:not(.sensors-panel)` 排除；`.hidden` 补 `display:none!important` 兜底 |
+| v15.0.3 | 2026-08-30 | `3d9f489` | fix(enhance)：**关键修复**——`updateMetrics` 在 MutationObserver 回调里无条件重写 `.ag-spark` 的 innerHTML，再次触发 Observer 形成无限循环，主线程 100% 占用导致页面所有点击失效（即「前端无法删除/创建地块」的根因）；改为内容比对后才写 DOM（`__agSvg` / `__agStatus` 缓存） |
+| v15.0.4 | 2026-08-30 | `10c93d6` | perf(theme)：移除逐卡 `backdrop-filter:blur(14px)`（GPU 挂死根因），毛玻璃效果仅保留在顶栏 |
+| v15.0.5 | 2026-08-30 | `2b286a7` | perf(theme)：删除全屏 `fractalNoise` 噪点 fixed 层与全站入场动画（软件渲染下每帧整屏重绘造成持续卡顿） |
+| v15.0.6 | 2026-08-30 | `c1d49fa` | perf(theme)：地块条卡片（每 5s 重建一次）不再播放入场动画，消除周期性重绘开销 |
+| v15.1 | 2026-08-30 | `a082a81` | feat(sim)：**创建地块即上线**——根因是模拟器按「30s 设备发现 + 5s 传感器缓存 + 最长 60s 首帧遥测」轮询，新地块约 95 秒才首次写入 `last_seen`，前端因此显示离线；现 `POST /api/v1/devices` 创建成功后由 API 向 `farm/control/new_plot` 广播事件，模拟器订阅该主题后立即发现该地块并推送首帧遥测，绕过轮询。实测新地块 **0.33 秒上线**（原约 95 秒） |
 
 ## 系统组成
 
