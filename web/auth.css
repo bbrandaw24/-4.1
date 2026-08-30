@@ -15,8 +15,10 @@
   white-space: nowrap;
 }
 .user-chip .icon-button:hover { color: #fff; }
-.control-panel.locked .automation-fields,
-.control-panel.locked .control-actions { opacity: .5; pointer-events: none; }
+/* .locked 只锁规则配置区（自动模式/阈值/定时），因为 manage_rules 权限
+   只约束规则编辑；水泵启停按钮由 JS 按 control_pump 权限 disabled 控制，
+   农户（farmer）有 control_pump 但无 manage_rules，必须能点启动/停止。 */
+.control-panel.locked .automation-fields { opacity: .5; pointer-events: none; }
 .panel.locked .dropzone { opacity: .5; pointer-events: none; }
 .lock-note {
   font-size: 11px;
