@@ -21,10 +21,11 @@
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
   <link rel="stylesheet" href="sensor.css?v=day16-sensors">
   <link rel="stylesheet" href="day13.css">
+  <link rel="stylesheet" href="theme.css?v=v15-themes">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark">AG</span><div><strong>温室运行台</strong><small>SMART AGRICULTURE / OPERATIONS</small></div></div>
+    <div class="brand"><span class="brand-mark" title="智慧农业"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M12 20V10"/><path d="M12 10c0-3.3-2.4-5.6-6-6 .2 3.6 2.3 6 5 6.6"/><path d="M12 13c0-2.2 1.7-3.8 4.4-4.1-.2 2.4-1.6 4-3.5 4.4"/></svg></span><div><strong>温室运行台</strong><small>SMART AGRICULTURE / OPERATIONS</small></div></div>
     <div class="topbar-actions"><div class="connection"><span class="pulse" id="connection-dot"></span><span id="connection-label">正在连接 API</span><button class="icon-button" id="refresh-button" title="立即刷新"><i data-lucide="refresh-cw"></i></button></div><div class="user-chip"><span id="role-badge">--</span><button class="icon-button" id="logout-button" title="退出登录"><i data-lucide="log-out"></i></button></div></div>
   </header>
 
@@ -254,6 +255,7 @@
   <script src="app.js?v=day16-sensors"></script>
   <script src="kitten.js?v=day16-kitten"></script>
   <script src="agent.js?v=day16-kitten"></script>
+  <script src="enhance.js?v=v15-themes"></script>
   <script>
     // PWA：注册 Service Worker（离线缓存 + 可添加到主屏幕）
     if ('serviceWorker' in navigator) {

@@ -99,6 +99,7 @@
 | v14.4 | 2026-08-28 | `27f5b04` | feat(web)：上传图片完整组件——多选批量（PNG/JPG/JPEG，≤5MiB，≤9 张）、缩略图预览网格、逐张进度条 + 全局 N/M 进度、格式/大小校验与友好提示、失败重试/删除、键盘可操作与 aria 无障碍、每张上传成功自动草莓识别 |
 | v14.5 | 2026-08-28 | `bbf8313` | feat(web)：PWA 支持——manifest + Service Worker（静态资源网络优先/离线回退，API 请求不缓存）+ 192/512/maskable 图标，手机浏览器「添加到主屏幕」即可当 App 使用 |
 | v14.6 | 2026-08-28 | `20145d3` | feat(ai)：问答 LLM 后端切换智谱 GLM（glm-5.3-flash，open.bigmodel.cn，thinking 参数适配，key 存 .env）；fix(compose)：AI_MODEL_PATH 恢复 resnet50-tl + labels 恢复 classes.json（修 git reset 把服务器 compose 还原成 MLP 路径导致识图 not_ready 501） |
+| v15.0 | 2026-08-30 | `待提交` | feat(web)：**双主题设计系统**——新增 `theme.css`（两套 Design Token：自然清新 / 深色数据大屏）+ `enhance.js`（视觉增强，不改业务逻辑）。顶栏毛玻璃深绿渐变 + 温室叶片 SVG logo + 主题切换按钮（localStorage 记忆 + 跟随系统深色）；指标卡改为图标徽章＋等宽大数字＋数值滚动动画＋迷你 sparkline＋达标/偏低/超标状态标签＋胶囊渐变仪表条；地块卡作物图标与 hover 三项读数；两张趋势图重绘为平滑曲线＋渐变面积＋虚线网格＋hover tooltip＋1h/6h/10h 切换（深色带辉光）；设备页表单分区卡、输入框 focus 光环、传感器小卡（图标+名称+值+状态灯）、弹窗淡入缩放；智能体页气泡带小尾巴、打字三点跳动、建议问题 chip、输入栏胶囊、Luna 外围呼吸光晕（内部动画类名不变）；全局 hover/active、导航下划线滑动、卡片 fade-in-up 交错入场；850/560 断点复核。所有 id/class/data-* 与 DOM 层级保持不变，仅新增装饰子元素；PWA 缓存版本 smartagri-v1 → v2 |
 
 ## 系统组成
 
