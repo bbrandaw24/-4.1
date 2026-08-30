@@ -748,3 +748,14 @@ button.action:active, .action:active { transform: scale(.97); }
   .metric > strong { font-size: 26px !important; }
   .agent-bubble { max-width: 92% !important; }
 }
+
+/* 账户管理面板：跟随主题变量 */
+.users-panel .user-row { border-color: var(--ag-line) !important; background: var(--ag-surface-2) !important; }
+.users-panel .user-info strong { color: var(--ag-ink) !important; }
+.users-panel .user-sub { color: var(--ag-muted) !important; }
+.users-panel .user-role-select {
+  background: var(--ag-surface-2) !important; color: var(--ag-ink) !important;
+  border-color: var(--ag-line) !important; border-radius: var(--ag-r-sm) !important;
+}
+.users-panel .user-delete { border-radius: var(--ag-r-sm) !important; transition: transform var(--ag-t), box-shadow var(--ag-t); }
+.users-panel .user-delete:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--ag-sh-1); }
