@@ -487,29 +487,9 @@
   };
 
   function decorateSensors() {
-    var board = document.querySelector("#sensors-board");
-    if (!board) return;
-    Array.prototype.forEach.call(board.querySelectorAll(".sensor-card"), function (card) {
-      if (card.__agDeco) return;
-      card.__agDeco = true;
-      var type = card.getAttribute("data-sensor-type") || card.getAttribute("data-type") || "";
-      var key = Object.keys(SENSOR_ICON).filter(function (k) { return type.indexOf(k) >= 0; })[0] || "npk";
-      var text = card.textContent || "";
-      if (/(温|temperature)/.test(text)) key = "temperature";
-      else if (/(湿|humidity)/.test(text)) key = "humidity";
-      else if (/ph/i.test(text)) key = "ph";
-      else if (/(氮|npk|肥)/.test(text)) key = "npk";
-      else if (/(电导|conductivity)/.test(text)) key = "conductivity";
-
-      var icon = document.createElement("div");
-      icon.className = "ag-sensor-icon";
-      icon.innerHTML = SENSOR_ICON[key];
-      card.insertBefore(icon, card.firstChild);
-
-      var dot = document.createElement("span");
-      dot.className = "ag-sensor-dot" + (/(离线|断开|offline|inactive)/.test(text) ? " off" : "");
-      card.appendChild(dot);
-    });
+    // 传感器卡片结构由 sensor.css 决定，不再强塞新子元素，
+    // 仅依赖 theme.css 的样式增强（圆角/阴影/hover/状态标签 pill）。
+    // 此处保留空函数作为 hook，便于后续在不破坏布局前提下追加装饰。
   }
 
   /* ---------------- 6. 智能体：打字动画 / 空态装饰 ---------------- */

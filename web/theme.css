@@ -264,7 +264,6 @@ body::before {
 .panel,
 .metric,
 .notice,
-.sensor-card,
 .preview-card,
 .trend-summary,
 .plots-strip > * {
@@ -278,7 +277,6 @@ body::before {
 :root[data-theme="dark"] .panel,
 :root[data-theme="dark"] .metric,
 :root[data-theme="dark"] .notice,
-:root[data-theme="dark"] .sensor-card,
 :root[data-theme="dark"] .preview-card,
 :root[data-theme="dark"] .trend-summary,
 :root[data-theme="dark"] .plots-strip > * {
@@ -290,8 +288,7 @@ body::before {
 
 .panel:hover,
 .metric:hover,
-.notice:hover,
-.sensor-card:hover {
+.notice:hover {
   transform: translateY(-3px);
   box-shadow: var(--ag-sh-3) !important;
 }
@@ -518,21 +515,40 @@ input:focus, select:focus, textarea:focus {
 :root[data-theme="dark"] select:focus,
 :root[data-theme="dark"] textarea:focus { box-shadow: 0 0 0 3px rgba(85, 198, 123, .28), 0 0 14px rgba(85, 198, 123, .25) !important; }
 
-/* 传感器小卡片 */
-.sensors-board { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)) !important; gap: 12px !important; }
-.sensor-card {
-  display: grid !important;
-  grid-template-columns: 34px 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 13px 14px !important;
+/* 传感器分组与卡片（保留原有 flex 列布局，只做视觉增强） */
+.sensor-group {
+  background: var(--ag-surface) !important;
+  border: 1px solid var(--ag-line) !important;
+  border-radius: var(--ag-r-lg) !important;
+  box-shadow: var(--ag-sh-1) !important;
+  overflow: hidden;
+  transition: transform var(--ag-t), box-shadow var(--ag-t);
 }
-.sensor-card .ag-sensor-icon { width: 34px; height: 34px; border-radius: var(--ag-r-sm); display: grid; place-items: center; background: var(--ag-green-soft); color: var(--ag-green); }
-.sensor-card .ag-sensor-icon svg { width: 17px; height: 17px; }
-.sensor-card .ag-sensor-name { font-weight: 600; font-size: 13px; }
-.sensor-card .ag-sensor-value { font-size: 12px; color: var(--ag-muted); font-variant-numeric: tabular-nums; }
-.sensor-card .ag-sensor-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ag-dot-on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ag-dot-on) 18%, transparent); }
-.sensor-card .ag-sensor-dot.off { background: var(--ag-dot-off); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ag-dot-off) 18%, transparent); }
+:root[data-theme="dark"] .sensor-group { background: var(--ag-glass-bg) !important; backdrop-filter: blur(var(--ag-blur)) saturate(140%); border-color: var(--ag-glass-stroke) !important; box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important; }
+.sensor-group:hover { transform: translateY(-2px); box-shadow: var(--ag-sh-2) !important; }
+:root[data-theme="dark"] .sensor-group:hover { box-shadow: var(--ag-sh-2), var(--ag-glow) !important; }
+
+.sensor-group-header { background: var(--ag-surface-2) !important; border-bottom: 1px solid var(--ag-line) !important; }
+:root[data-theme="dark"] .sensor-group-header { background: rgba(14, 40, 27, .55) !important; }
+
+.sensor-card {
+  transition: background var(--ag-t), transform var(--ag-t) !important;
+}
+.sensor-card:hover { transform: translateY(-1px); background: var(--ag-surface-2) !important; }
+:root[data-theme="dark"] .sensor-card:hover { background: rgba(85, 198, 123, .08) !important; }
+.sensor-card-head svg {
+  width: 18px !important;
+  height: 18px !important;
+  color: var(--ag-green) !important;
+  filter: none;
+}
+.sensor-value { text-shadow: var(--ag-num-shadow); }
+.sensor-status.connected { background: var(--ag-green-soft) !important; color: var(--ag-green) !important; border: 1px solid color-mix(in srgb, var(--ag-green) 20%, transparent) !important; }
+.sensor-status.disconnected { background: var(--ag-amber-soft) !important; color: var(--ag-amber) !important; border: 1px solid color-mix(in srgb, var(--ag-amber) 20%, transparent) !important; }
+.sensor-card-actions button { border-radius: var(--ag-r-sm) !important; transition: transform var(--ag-t), box-shadow var(--ag-t), background var(--ag-t); }
+.sensor-card-actions button:hover { transform: translateY(-1px); box-shadow: var(--ag-sh-1); }
+.plot-remove { border-radius: var(--ag-r-sm) !important; transition: transform var(--ag-t); }
+.plot-remove:hover { transform: translateY(-1px); }
 
 /* 弹窗：遮罩淡入 + 缩放入场 */
 .sensor-add-dialog {
@@ -723,5 +739,4 @@ button.action:active, .action:active { transform: scale(.97); }
   .brand small { display: none !important; }
   .metric > strong { font-size: 26px !important; }
   .agent-bubble { max-width: 92% !important; }
-  .sensor-card { grid-template-columns: 30px 1fr auto !important; }
 }
