@@ -591,6 +591,26 @@ def _publish_pump_command(device_id, action, source="manual"):
     return command, None
 
 
+def _publish_new_plot(device_id: str) -> None:
+    """Notify simulators that a new plot was created so they can adopt it
+    immediately instead of waiting for the next 30s discovery cycle."""
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
+                             client_id=f"smart-agri-newplot-{uuid4().hex[:8]}")
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        client.loop_start()
+        info = client.publish(
+            "farm/control/new_plot",
+            json.dumps({"device_id": device_id, "timestamp": utc_now()}),
+            qos=1,
+        )
+        info.wait_for_publish(timeout=5)
+        client.loop_stop()
+        client.disconnect()
+    except Exception as exc:
+        LOGGER.warning("new_plot broadcast failed: %s", exc)
+
+
 def evaluate_all_irrigation_rules(publish=None):
     """One evaluation pass over every auto-enabled device using latest soil moisture."""
     publish = publish or _publish_pump_command
@@ -917,6 +937,12 @@ def register_device_endpoint():
         except ValueError:
             pass  # already exists
     LOGGER.info("registered new plot %s (%s / %s)", device_id, name, crop)
+    # Best-effort: wake the simulator immediately so the plot goes online
+    # within ~1s instead of waiting for the next discovery cycle.
+    try:
+        _publish_new_plot(device_id)
+    except Exception:
+        pass
     return jsonify({"device_id": device_id, "status": "registered",
                     "plot": {"name": name or device_id, "crop": crop or ""}}), 201
 
