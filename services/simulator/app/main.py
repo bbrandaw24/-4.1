@@ -29,6 +29,11 @@ import paho.mqtt.client as mqtt
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 LOGGER = logging.getLogger("device-simulator")
 
+# Plots announced via the `farm/control/new_plot` MQTT event are adopted on the
+# next main-loop tick (well under a second) instead of waiting up to 30s for the
+# periodic discovery sweep.
+pending_new_plots: set = set()
+
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 PUBLISH_INTERVAL = float(os.getenv("PUBLISH_INTERVAL_SECONDS", "1"))
@@ -327,26 +332,55 @@ def build_legacy_payload(profile: dict, state: dict) -> tuple[dict, dict]:
 # --- MQTT plumbing ----------------------------------------------------------
 def on_message(states: dict, profiles_by_id: dict, _client, _userdata, message):
     parts = message.topic.split("/")
-    if len(parts) != 4 or parts[0] != "farm" or parts[2] != "control" or parts[3] != "pump":
+    if not parts or parts[0] != "farm":
         return
-    device_id = parts[1]
-    state = states.get(device_id)
-    if state is None:
-        LOGGER.warning("ignored pump command for unknown device %s", device_id)
-        return
-    try:
-        command = json.loads(message.payload.decode("utf-8"))
-        payload = command.get("payload", command)
-        action = payload.get("action")
-        if action not in {"start", "stop"}:
+    # Per-device pump control command.
+    if len(parts) == 4 and parts[2] == "control" and parts[3] == "pump":
+        device_id = parts[1]
+        state = states.get(device_id)
+        if state is None:
+            LOGGER.warning("ignored pump command for unknown device %s", device_id)
             return
-        command_id = command.get("command_id") or payload.get("command_id")
-        state["pump_running"] = action == "start"
-        reply = {"action": action, "running": state["pump_running"], "command_id": command_id}
-        _client.publish(f"farm/{device_id}/status/pump", envelope_legacy(device_id, reply), qos=1)
-        LOGGER.info("%s pump state changed: running=%s", device_id, state["pump_running"])
-    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
-        LOGGER.warning("ignored invalid command: %s", exc)
+        try:
+            command = json.loads(message.payload.decode("utf-8"))
+            payload = command.get("payload", command)
+            action = payload.get("action")
+            if action not in {"start", "stop"}:
+                return
+            command_id = command.get("command_id") or payload.get("command_id")
+            state["pump_running"] = action == "start"
+            reply = {"action": action, "running": state["pump_running"], "command_id": command_id}
+            _client.publish(f"farm/{device_id}/status/pump", envelope_legacy(device_id, reply), qos=1)
+            LOGGER.info("%s pump state changed: running=%s", device_id, state["pump_running"])
+        except (UnicodeDecodeError, json.JSONDecodeError, AttributeError) as exc:
+            LOGGER.warning("ignored invalid command: %s", exc)
+        return
+    # A plot was just created via the web UI: flag it for immediate adoption so
+    # it goes ONLINE within ~1s instead of waiting for the discovery sweep.
+    if len(parts) == 3 and parts[1] == "control" and parts[2] == "new_plot":
+        try:
+            command = json.loads(message.payload.decode("utf-8"))
+            did = command.get("device_id") or (command.get("payload") or {}).get("device_id")
+            if did:
+                pending_new_plots.add(did)
+                LOGGER.info("new_plot event for %s; will adopt immediately", did)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            LOGGER.warning("ignored invalid new_plot event: %s", exc)
+
+
+def _push_first_frame(client, profile: dict, state: dict, sensors: list[dict], device_id: str) -> None:
+    """Publish one immediate telemetry frame for a freshly adopted plot so it
+    flips to ONLINE without waiting for the sensor sampling interval."""
+    for sensor in sensors:
+        value, unit = compute_sensor_value(sensor, state)
+        if not value:
+            continue
+        topic = f"farm/{device_id}/{sensor['id']}/telemetry"
+        client.publish(topic, envelope_sensor(sensor, value, unit, now()), qos=1, retain=False).wait_for_publish()
+    if KEEP_LEGACY_PAYLOADS:
+        soil, climate = build_legacy_payload(profile, state)
+        client.publish(f"farm/{device_id}/sensor/soil", envelope_legacy(device_id, soil), qos=1).wait_for_publish()
+        client.publish(f"farm/{device_id}/sensor/climate", envelope_legacy(device_id, climate), qos=1).wait_for_publish()
 
 
 def main() -> None:
@@ -398,6 +432,7 @@ def main() -> None:
         client.subscribe(f"farm/{p['id']}/control/pump", qos=1)
         if KEEP_LEGACY_PAYLOADS:
             client.subscribe(f"farm/{p['id']}/+/telemetry", qos=1)
+    client.subscribe("farm/control/new_plot", qos=1)
     client.loop_start()
     LOGGER.info("connected to %s:%s", broker_host, broker_port)
 
@@ -429,9 +464,11 @@ def main() -> None:
                 sensor_cache_refresh_at = now_ts
             # Discover plots created via the web UI every 30s and start
             # simulating them (sensors + pump control + legacy payloads).
-            if api.token and (now_ts - last_discovery_at) > 30:
+            force_discover = bool(pending_new_plots)
+            if api.token and (force_discover or (now_ts - last_discovery_at) > 30):
                 try:
                     discovered = sync_devices(api, profiles)
+                    newly_added = []
                     for np_ in discovered:
                         if np_["id"] not in profiles_by_id:
                             profiles_by_id[np_["id"]] = np_
@@ -447,6 +484,7 @@ def main() -> None:
                             client.subscribe(f"farm/{np_['id']}/control/pump", qos=1)
                             if KEEP_LEGACY_PAYLOADS:
                                 client.subscribe(f"farm/{np_['id']}/+/telemetry", qos=1)
+                            newly_added.append(np_["id"])
                     # Stop simulating plots deleted via the web UI.
                     active_ids = {p["id"] for p in discovered}
                     for stale in list(profiles_by_id.keys()):
@@ -457,6 +495,17 @@ def main() -> None:
                             sensor_last_publish = {k: v for k, v in sensor_last_publish.items()
                                                    if not k.startswith(stale)}
                     profiles = discovered
+                    pending_new_plots.clear()
+                    # Adopt new plots immediately: push a first telemetry frame so
+                    # the plot flips to ONLINE without waiting for the interval.
+                    if newly_added:
+                        try:
+                            fresh_cache = refresh_sensor_cache(api, [profiles_by_id[i] for i in newly_added])
+                            for did in newly_added:
+                                sensor_cache[did] = fresh_cache.get(did, [])
+                                _push_first_frame(client, profiles_by_id[did], states[did], sensor_cache[did], did)
+                        except Exception as exc:
+                            LOGGER.debug("immediate adoption failed: %s", exc)
                 except Exception as exc:
                     LOGGER.debug("device discovery failed: %s", exc)
                 last_discovery_at = now_ts
