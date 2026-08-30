@@ -393,16 +393,26 @@
       }
       var key = metricKey(metric);
       var samples = (typeof state !== "undefined" && state.samples) ? state.samples : [];
-      // 关键：仅在内容真正变化时写 DOM。
-      // 无条件 innerHTML 会在 MutationObserver 回调里再次触发 Observer，
-      // 形成无限循环把主线程吃满 → 页面点击全部失效。
-      var svg = (key && samples.length > 1)
-        ? sparkSvg(samples.map(function (s) { return s[key]; }), getComputedStyle(metric).color)
-        : "";
-      if (host.__agSvg !== svg) {
-        host.__agSvg = svg;
-        host.innerHTML = svg;
-        host.style.color = svg ? getComputedStyle(metric).color : "";
+      // 性能：color 只在首次读取一次并缓存。getComputedStyle 会触发样式重算，
+      // 在高频装饰回调里反复调用会造成布局抖动（本次卡顿的主要来源之一）。
+      var color = metric.__agColor || (metric.__agColor = getComputedStyle(metric).color);
+      var last = samples[samples.length - 1];
+      // 性能：数据没变就不重建 SVG 字符串。samples 每 5s 才新增一条，
+      // 而本函数会被观察者/定时器更频繁地调用，重复生成字符串纯属浪费。
+      var sig = (key && last) ? (last.timestamp + ":" + last[key]) : "";
+      if (host.__agSig !== sig) {
+        host.__agSig = sig;
+        var svg = (key && samples.length > 1)
+          ? sparkSvg(samples.map(function (s) { return s[key]; }), color)
+          : "";
+        // 关键：仅在内容真正变化时写 DOM。
+        // 无条件 innerHTML 会在 MutationObserver 回调里再次触发 Observer，
+        // 形成无限循环把主线程吃满 → 页面点击全部失效。
+        if (host.__agSvg !== svg) {
+          host.__agSvg = svg;
+          host.innerHTML = svg;
+          host.style.color = svg ? color : "";
+        }
       }
       // 状态标签：依据目标区间判定
       var span = metric.querySelector("span:not(.ag-spark)");
@@ -502,21 +512,31 @@
   }
 
   /* ---------------- 6. 智能体：打字动画 / 空态装饰 ---------------- */
+  // 性能守卫：消息数量没变就跳过重扫；空态插画是静态元素，只装饰一次
+  var lastAgentMsgCount = -1;
+  var emptyStatesDone = false;
+
   function decorateAgent() {
     var box = document.querySelector("#agent-messages");
-    if (!box) return;
-    Array.prototype.forEach.call(box.querySelectorAll(".agent-message"), function (msg) {
-      var bubble = msg.querySelector(".agent-bubble");
-      if (!bubble || bubble.__agTyping) return;
-      if (/思考中|正在|加载中|…/.test(bubble.textContent || "")) {
-        bubble.__agTyping = true;
-        var dots = document.createElement("span");
-        dots.className = "ag-typing";
-        dots.innerHTML = "<i></i><i></i><i></i>";
-        bubble.appendChild(dots);
-      }
-    });
-    // 空态插画
+    if (box) {
+      var msgs = box.querySelectorAll(".agent-message");
+      if (msgs.length === lastAgentMsgCount) return;
+      lastAgentMsgCount = msgs.length;
+      Array.prototype.forEach.call(msgs, function (msg) {
+        var bubble = msg.querySelector(".agent-bubble");
+        if (!bubble || bubble.__agTyping) return;
+        if (/思考中|正在|加载中|…/.test(bubble.textContent || "")) {
+          bubble.__agTyping = true;
+          var dots = document.createElement("span");
+          dots.className = "ag-typing";
+          dots.innerHTML = "<i></i><i></i><i></i>";
+          bubble.appendChild(dots);
+        }
+      });
+    }
+    // 空态插画（静态元素，只装饰一次，避免每次全页扫描）
+    if (emptyStatesDone) return;
+    emptyStatesDone = true;
     Array.prototype.forEach.call(document.querySelectorAll(".empty-state"), function (el) {
       if (el.__agDeco) return;
       el.__agDeco = true;
@@ -547,18 +567,29 @@
       try { fn(); } catch (e) {}
     });
 
-    // app.js 每 5 秒刷新，这里跟随刷新装饰
+    // 安全网：跟随 app.js 的 5 秒刷新节奏补一次装饰。
+    // 各装饰函数内部已有守卫（__agDeco / __agSig / 消息数 / 空态标记），
+    // 数据没变化时基本零开销。
     setInterval(function () {
-      [decoratePlots, decorateSensors, decorateAgent, updateMetrics].forEach(function (fn) {
+      [decoratePlots, decorateAgent, updateMetrics].forEach(function (fn) {
         try { fn(); } catch (e) {}
       });
-    }, 2000);
+    }, 5000);
 
-    var mo = new MutationObserver(function () {
-      try { decoratePlots(); decorateSensors(); decorateAgent(); updateMetrics(); } catch (e) {}
+    // 性能关键修复：只在「每 5 秒被 app.js 重建的容器」上监听直接子节点变化，
+    // 不再监听整个 .shell 子树。旧写法在每次刷新、每次装饰写 DOM 时都会触发回调，
+    // 每次回调都跑 4 个全量 querySelectorAll 扫描 + getComputedStyle，
+    // 主线程被反复打断——这就是「操作时明显变卡」的主要来源。
+    var moRefresh = new MutationObserver(function () {
+      try { decoratePlots(); updateMetrics(); } catch (e) {}
     });
-    var shell = document.querySelector(".shell");
-    if (shell) mo.observe(shell, { childList: true, subtree: true });
+    [document.querySelector("#plots-strip"), document.querySelector("#telemetry-table")]
+      .forEach(function (el) { if (el) moRefresh.observe(el, { childList: true }); });
+    var moAgent = new MutationObserver(function () {
+      try { decorateAgent(); } catch (e) {}
+    });
+    var agentBox = document.querySelector("#agent-messages");
+    if (agentBox) moAgent.observe(agentBox, { childList: true });
   }
 
   if (document.readyState === "loading") {
