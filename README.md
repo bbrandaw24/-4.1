@@ -107,6 +107,7 @@
 | v15.0.5 | 2026-08-30 | `2b286a7` | perf(theme)：删除全屏 `fractalNoise` 噪点 fixed 层与全站入场动画（软件渲染下每帧整屏重绘造成持续卡顿） |
 | v15.0.6 | 2026-08-30 | `c1d49fa` | perf(theme)：地块条卡片（每 5s 重建一次）不再播放入场动画，消除周期性重绘开销 |
 | v15.1 | 2026-08-30 | `a082a81` | feat(sim)：**创建地块即上线**——根因是模拟器按「30s 设备发现 + 5s 传感器缓存 + 最长 60s 首帧遥测」轮询，新地块约 95 秒才首次写入 `last_seen`，前端因此显示离线；现 `POST /api/v1/devices` 创建成功后由 API 向 `farm/control/new_plot` 广播事件，模拟器订阅该主题后立即发现该地块并推送首帧遥测，绕过轮询。实测新地块 **0.33 秒上线**（原约 95 秒） |
+| v15.2 | 2026-08-30 | `待提交` | perf(web)：**操作卡顿修复**——「设备页操作明显比原版卡」的根因是 `enhance.js` 用 MutationObserver 监听整个 `.shell` 子树，任何 DOM 变更（每 5 秒的整块 innerHTML 刷新、每秒的水泵状态、以及装饰函数自身写 DOM）都会触发回调，每次回调都跑 4 个全量 `querySelectorAll` 扫描 + 每张指标卡 2 次 `getComputedStyle`（触发样式重算与布局抖动）。修法：① 观察者改为只挂在每 5 秒被重建的 `#plots-strip` / `#telemetry-table` / `#agent-messages` 上、且只看直接子节点（不监听子树），装饰即时跟上且不再级联；② `getComputedStyle` 的 color 结果按元素缓存，只在首次读取；③ sparkline 增加数据签名守卫（`__agSig`），样本数据没变就不重建 SVG 字符串；④ `decorateAgent` 加消息数守卫、空态插画改为一次性装饰（去掉每次全页扫描 `.empty-state`）；⑤ 装饰定时器 2s → 5s 与刷新节奏对齐；⑥ 移除深色主题下 `.chart-panel canvas` 的 CSS `filter`（画布每 5 秒重画都要额外做一次离屏栅格化，辉光改由 canvas 内部 `ctx.shadowBlur` 提供）。PWA 缓存 `smartagri-v3` → `v4`，前端资源版本 `v15-themes` → `v15-perf` |
 
 ## 系统组成
 
