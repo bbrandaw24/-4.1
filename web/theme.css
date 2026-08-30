@@ -274,7 +274,11 @@ body::before {
   transition: transform var(--ag-t), box-shadow var(--ag-t), border-color var(--ag-t);
 }
 
-:root[data-theme="dark"] .panel,
+/* 注意：#sensor-add-dialog / #plot-add-dialog 是 .panel.sensors-panel 内部的
+   position:fixed 弹窗。transform / backdrop-filter / overflow:hidden 都会让该面板
+   变成 fixed 的包含块，导致弹窗被裁剪或定位错乱（表现为无法添加/删除地块）。
+   因此这些属性对 .sensors-panel 一律用 :not(.sensors-panel) 排除。 */
+:root[data-theme="dark"] .panel:not(.sensors-panel),
 :root[data-theme="dark"] .metric,
 :root[data-theme="dark"] .notice,
 :root[data-theme="dark"] .preview-card,
@@ -285,14 +289,20 @@ body::before {
   border: 1px solid var(--ag-glass-stroke) !important;
   box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important;
 }
+/* 传感器面板：保留玻璃配色，但禁用 backdrop-filter（否则内部弹窗失效） */
+:root[data-theme="dark"] .panel.sensors-panel {
+  background: var(--ag-glass-bg) !important;
+  border: 1px solid var(--ag-glass-stroke) !important;
+  box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important;
+}
 
-.panel:hover,
+.panel:not(.sensors-panel):hover,
 .metric:hover,
 .notice:hover {
   transform: translateY(-3px);
   box-shadow: var(--ag-sh-3) !important;
 }
-:root[data-theme="dark"] .panel:hover,
+:root[data-theme="dark"] .panel:not(.sensors-panel):hover,
 :root[data-theme="dark"] .metric:hover {
   box-shadow: var(--ag-sh-3), var(--ag-glow) !important;
 }
@@ -302,8 +312,8 @@ body::before {
 .eyebrow { color: var(--ag-green) !important; }
 .agent-sub, .panel-heading p { color: var(--ag-muted) !important; }
 
-/* 面板角落叶片装饰 */
-.panel { position: relative; overflow: hidden; }
+/* 面板角落叶片装饰（不在 .panel 上用 overflow:hidden，避免裁剪内部 fixed 弹窗） */
+.panel { position: relative; }
 .panel > .ag-leaf-deco {
   position: absolute;
   right: -18px;
@@ -312,6 +322,8 @@ body::before {
   height: 96px;
   opacity: .10;
   pointer-events: none;
+  border-radius: 0 0 var(--ag-r-lg) 0;
+  overflow: hidden;
 }
 :root[data-theme="dark"] .panel > .ag-leaf-deco { opacity: .18; }
 
@@ -558,9 +570,11 @@ input:focus, select:focus, textarea:focus {
   backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
-  z-index: 60;
+  z-index: 90;
   animation: agFade .18s var(--ag-ease);
 }
+/* 确保 .hidden 始终生效（避免任何 !important 覆盖导致弹窗常驻挡住点击） */
+.sensor-add-dialog.hidden { display: none !important; }
 .sensor-add-dialog .dialog-body {
   background: var(--ag-surface) !important;
   border: 1px solid var(--ag-line) !important;
