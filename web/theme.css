@@ -712,21 +712,15 @@ button.action:active, .action:active { transform: scale(.97); }
 .badge.muted { background: var(--ag-line-soft) !important; color: var(--ag-muted) !important; border-color: var(--ag-line) !important; }
 
 /* ============================ 入场动画（纯 CSS 交错） ============================ */
-/* 入场动画只用于数量有限的卡片（.metric/.plots-strip）。
-   不对 .route-panel > * 全量生效：app.js 每 5s 重渲染会反复重放动画，
-   软件渲染设备上会持续整屏重绘导致卡死。 */
-.metric, .plots-strip > *, .trend-summary > div {
+/* 入场动画只用于不重建的 .metric（app.js 仅改其文本，节点常驻）。
+   .plots-strip 卡片每 5s 被整体重建，动画会反复重放，不参与。 */
+.metric {
   animation: agFadeUp .5s var(--ag-ease) both;
 }
 .metric:nth-child(1) { animation-delay: .04s }
 .metric:nth-child(2) { animation-delay: .09s }
 .metric:nth-child(3) { animation-delay: .14s }
 .metric:nth-child(4) { animation-delay: .19s }
-.plots-strip > *:nth-child(1) { animation-delay: .04s }
-.plots-strip > *:nth-child(2) { animation-delay: .08s }
-.plots-strip > *:nth-child(3) { animation-delay: .12s }
-.plots-strip > *:nth-child(4) { animation-delay: .16s }
-.plots-strip > *:nth-child(n+5) { animation-delay: .2s }
 @keyframes agFadeUp { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
 
 @media (prefers-reduced-motion: reduce) {
