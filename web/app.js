@@ -754,6 +754,8 @@ async function refreshUserPermissions() {
       Auth.setSession(Auth.getToken(), data.user);
       state.user = data.user;
       applyRole();
+      bindUsersActions();
+      if (Auth.hasPermission("list_users")) loadUsers();
       // Re-render the sensor board with the freshest permissions so the
       // connect/disconnect/delete/add buttons enable as soon as /auth/me
       // returns, without waiting for the next refresh() round.
@@ -1219,11 +1221,122 @@ function bindBrokerActions() {
   form.addEventListener("input", () => { form.dataset.touched = "1"; });
 }
 
+// --- Account management (manager: view / edit / delete farmer accounts) ----
+const ROLE_LABELS_FRONT = { guest: "游客", farmer: "农户", manager: "管理者" };
+
+function setUsersHint(text, kind = "") {
+  const el = $("#users-hint");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove("error", "success");
+  if (kind) el.classList.add(kind);
+}
+
+function renderUsers(users) {
+  const list = $("#users-list");
+  if (!list) return;
+  if (!users || !users.length) {
+    list.innerHTML = '<p class="sensor-hint">暂无账户。</p>';
+    return;
+  }
+  const me = state.user ? String(state.user.user_id) : null;
+  list.innerHTML = users.map((u) => {
+    const isSelf = String(u.id) === me;
+    const isManager = u.role === "manager";
+    const badge = ROLE_LABELS_FRONT[u.role] || u.role;
+    return `<div class="user-row" data-uid="${u.id}">
+      <div class="user-info">
+        <strong>${u.display_name || u.username}</strong>
+        <span class="user-sub">@${u.username} · ${new Date(u.created_at).toLocaleString()}</span>
+      </div>
+      <span class="user-role ${u.role}">${badge}</span>
+      <div class="user-actions">
+        <select class="user-role-select" data-uid="${u.id}" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可修改" : isSelf ? "不能修改自己的角色" : "修改角色"}">
+          <option value="farmer" ${u.role === "farmer" ? "selected" : ""}>农户</option>
+          <option value="manager" ${u.role === "manager" ? "selected" : ""} ${isManager ? "" : "disabled"}>管理者</option>
+        </select>
+        <button class="user-delete" data-action="delete-user" data-uid="${u.id}" data-name="${u.display_name || u.username}" type="button" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可删除" : isSelf ? "不能删除自己的账户" : "删除该账户"}">删除</button>
+      </div>
+    </div>`;
+  }).join("");
+  list.querySelectorAll(".user-role-select").forEach((select) => {
+    select.addEventListener("change", () => {
+      const uid = select.dataset.uid;
+      updateUserRole(uid, select.value);
+    });
+  });
+}
+
+async function loadUsers() {
+  try {
+    const response = await Auth.request("/api/v1/auth/users", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    renderUsers(data.items || []);
+  } catch (error) {
+    setUsersHint(`加载账户失败：${error.message || error}`, "error");
+  }
+}
+
+async function updateUserRole(uid, role) {
+  try {
+    const response = await Auth.request(`/api/v1/auth/users/${uid}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    setUsersHint("角色已更新", "success");
+    loadUsers();
+  } catch (error) {
+    setUsersHint(`修改失败：${error.message || error}`, "error");
+    loadUsers();
+  }
+}
+
+async function deleteUserById(uid, name) {
+  if (!confirm(`确定删除账户「${name}」？删除后该农户将无法登录，不可恢复。`)) return;
+  try {
+    const response = await Auth.request(`/api/v1/auth/users/${uid}`, { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    setUsersHint(`已删除账户「${data.deleted || name}」`, "success");
+    loadUsers();
+  } catch (error) {
+    setUsersHint(`删除失败：${error.message || error}`, "error");
+  }
+}
+
+function bindUsersActions() {
+  const panel = $("#users-panel");
+  const list = $("#users-list");
+  const refreshBtn = $("#users-refresh");
+  if (!panel || !list) return;
+  // Visibility: only managers (list_users) see the panel.
+  const canManage = Auth.hasPermission("list_users");
+  panel.hidden = !canManage;
+  if (!canManage) return;
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.dataset.bound = "1";
+    refreshBtn.addEventListener("click", loadUsers);
+  }
+  if (!list.dataset.bound) {
+    list.dataset.bound = "1";
+    list.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-action='delete-user']");
+      if (!target || target.disabled) return;
+      deleteUserById(target.dataset.uid, target.dataset.name);
+    });
+  }
+}
+
 if (window.lucide) window.lucide.createIcons();
 bindBrokerActions();
+bindUsersActions();
 loadBrokerPresets();
 loadBroker();
 refreshUserPermissions();
+if (Auth.hasPermission("list_users")) loadUsers();
 // Bind sensor-board actions up front, NOT only after the first successful
 // refresh(): on slow links refresh() can fail for minutes and the click
 // delegation never gets attached, leaving every sensor button dead.
