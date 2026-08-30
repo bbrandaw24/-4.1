@@ -557,6 +557,8 @@ input:focus, select:focus, textarea:focus {
 .sensor-card-actions button:hover { transform: translateY(-1px); box-shadow: var(--ag-sh-1); }
 .plot-remove { border-radius: var(--ag-r-sm) !important; transition: transform var(--ag-t); }
 .plot-remove:hover { transform: translateY(-1px); }
+.plot-add-sensor { border-radius: var(--ag-r-sm) !important; transition: transform var(--ag-t), box-shadow var(--ag-t), background var(--ag-t); }
+.plot-add-sensor:hover { transform: translateY(-1px); box-shadow: var(--ag-sh-1); }
 
 /* 弹窗：遮罩淡入 + 缩放入场 */
 .sensor-add-dialog {
