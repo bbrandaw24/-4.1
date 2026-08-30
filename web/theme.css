@@ -463,7 +463,9 @@ body {
   background: transparent !important;
   height: 260px !important;
 }
-:root[data-theme="dark"] .chart-panel canvas { filter: drop-shadow(0 0 10px rgba(85, 198, 123, .18)); }
+/* 性能：不给 canvas 加 filter。画布每 5 秒重画一次，CSS filter 会让浏览器对整块
+   画布额外做一次离屏栅格化，深色下累积成本明显。辉光改由 drawEnhanced 内部的
+   ctx.shadowBlur 实现，效果保留但省掉这一层。 */
 .chart-wrap { position: relative; }
 .ag-chart-tip {
   position: absolute;
