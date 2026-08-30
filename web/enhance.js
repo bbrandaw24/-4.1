@@ -393,10 +393,16 @@
       }
       var key = metricKey(metric);
       var samples = (typeof state !== "undefined" && state.samples) ? state.samples : [];
-      if (key && samples.length > 1) {
-        var color = getComputedStyle(metric).color;
-        host.innerHTML = sparkSvg(samples.map(function (s) { return s[key]; }), color);
-        host.style.color = color;
+      // 关键：仅在内容真正变化时写 DOM。
+      // 无条件 innerHTML 会在 MutationObserver 回调里再次触发 Observer，
+      // 形成无限循环把主线程吃满 → 页面点击全部失效。
+      var svg = (key && samples.length > 1)
+        ? sparkSvg(samples.map(function (s) { return s[key]; }), getComputedStyle(metric).color)
+        : "";
+      if (host.__agSvg !== svg) {
+        host.__agSvg = svg;
+        host.innerHTML = svg;
+        host.style.color = svg ? getComputedStyle(metric).color : "";
       }
       // 状态标签：依据目标区间判定
       var span = metric.querySelector("span:not(.ag-spark)");
@@ -412,10 +418,13 @@
           if (value < lo) status = "low";
           else if (value > hi) status = "high";
         }
-        if (status) metric.setAttribute("data-status", status);
-        else metric.removeAttribute("data-status");
+        if (metric.__agStatus !== status) {
+          metric.__agStatus = status;
+          if (status) metric.setAttribute("data-status", status);
+          else metric.removeAttribute("data-status");
+        }
 
-        // 数字滚动动画
+        // 数字滚动动画（值变化才触发；动画期间的写入不再递归触发重绘）
         if (strong.__agLast !== value && Number.isFinite(value)) {
           var from = Number.isFinite(strong.__agLast) ? strong.__agLast : value;
           strong.__agLast = value;
