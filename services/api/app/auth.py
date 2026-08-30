@@ -125,6 +125,29 @@ def list_users():
     return [dict(row) for row in rows]
 
 
+def get_user_by_id(uid):
+    conn = _connect()
+    row = conn.execute(
+        "SELECT id, username, role, display_name, created_at FROM users WHERE id=?", (uid,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_user(uid):
+    """Delete a user by id. Returns ('ok'|'not_found'|'cannot_delete', row or None)."""
+    target = get_user_by_id(uid)
+    if target is None:
+        return "not_found", None
+    if target["role"] == "manager":
+        return "cannot_delete", target
+    conn = _connect()
+    conn.execute("DELETE FROM users WHERE id=?", (uid,))
+    conn.commit()
+    conn.close()
+    return "ok", target
+
+
 # --- token helpers ----------------------------------------------------------
 def issue_token(payload):
     return URLSafeTimedSerializer(AUTH_SECRET).dumps(payload)
@@ -220,3 +243,46 @@ def register_auth_routes(app):
     @require_auth("list_users")
     def auth_users():
         return jsonify(items=list_users(), count=len(list_users()))
+
+    @app.patch("/api/v1/auth/users/<int:uid>")
+    @require_auth("list_users")
+    def auth_patch_user(uid):
+        """Update a non-manager account's role / display_name (manager accounts are protected)."""
+        body = request.get_json(silent=True) or {}
+        target = get_user_by_id(uid)
+        if target is None:
+            return jsonify(error="user_not_found"), 404
+        if target["role"] == "manager":
+            return jsonify(error="cannot_edit_manager"), 403
+        updates = []
+        params = []
+        new_role = (body.get("role") or "").strip()
+        if new_role:
+            if new_role not in ALLOWED_REGISTER_ROLES:
+                return jsonify(error="role_not_allowed"), 400
+            updates.append("role=?")
+            params.append(new_role)
+        display_name = body.get("display_name")
+        if display_name is not None:
+            updates.append("display_name=?")
+            params.append((display_name or "").strip() or None)
+        if not updates:
+            return jsonify(error="no_updates"), 400
+        conn = _connect()
+        try:
+            conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE id=?", (*params, uid))
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify(user=get_user_by_id(uid))
+
+    @app.delete("/api/v1/auth/users/<int:uid>")
+    @require_auth("list_users")
+    def auth_delete_user(uid):
+        """Delete a farmer/guest account. Manager accounts cannot be deleted."""
+        status, target = delete_user(uid)
+        if status == "not_found":
+            return jsonify(error="user_not_found"), 404
+        if status == "cannot_delete":
+            return jsonify(error="cannot_delete_manager"), 403
+        return jsonify(deleted=target["username"], user_id=target["id"])
