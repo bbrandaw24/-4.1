@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="auth.css?v=v15.3.1">
   <link rel="stylesheet" href="agent.css">
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
-  <link rel="stylesheet" href="sensor.css?v=v15.3">
+  <link rel="stylesheet" href="sensor.css?v=v15.3.3">
   <link rel="stylesheet" href="day13.css">
   <link rel="stylesheet" href="theme.css?v=v15-perf">
 </head>
@@ -144,6 +144,11 @@
           </div>
         </div>
       </article>
+      <article class="panel users-panel" id="users-panel" data-perm="list_users" hidden>
+        <div class="panel-heading"><div><p class="eyebrow">ACCOUNTS</p><h2>账户管理</h2><p class="agent-sub">查看平台账户列表；农户账户可修改角色/显示名或删除，管理者账户受保护不可删除。</p></div><button class="notify-button" id="users-refresh" type="button">刷新</button></div>
+        <div class="users-list" id="users-list"><span class="sensor-hint">加载中…</span></div>
+        <p class="sensor-hint" id="users-hint"></p>
+      </article>
     </section>
 
     <section class="route-panel" data-view="agent">
@@ -252,7 +257,7 @@
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day16-beijing-gateway"></script>
-  <script src="app.js?v=v15.3"></script>
+  <script src="app.js?v=v15.3.3"></script>
   <script src="kitten.js?v=day16-kitten"></script>
   <script src="agent.js?v=day16-kitten"></script>
   <script src="enhance.js?v=v15-perf"></script>
