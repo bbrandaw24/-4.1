@@ -285,7 +285,8 @@ body::before {
 :root[data-theme="dark"] .trend-summary,
 :root[data-theme="dark"] .plots-strip > * {
   background: var(--ag-glass-bg) !important;
-  backdrop-filter: blur(var(--ag-blur)) saturate(140%);
+  /* 性能红线：卡片禁用 backdrop-filter。几十个全屏实时模糊会把
+     GPU 进程挂死（Edge/WebView 实测），表现为整页无响应、点击失效。 */
   border: 1px solid var(--ag-glass-stroke) !important;
   box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important;
 }
@@ -536,7 +537,7 @@ input:focus, select:focus, textarea:focus {
   overflow: hidden;
   transition: transform var(--ag-t), box-shadow var(--ag-t);
 }
-:root[data-theme="dark"] .sensor-group { background: var(--ag-glass-bg) !important; backdrop-filter: blur(var(--ag-blur)) saturate(140%); border-color: var(--ag-glass-stroke) !important; box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important; }
+:root[data-theme="dark"] .sensor-group { background: var(--ag-glass-bg) !important; border-color: var(--ag-glass-stroke) !important; box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important; }
 .sensor-group:hover { transform: translateY(-2px); box-shadow: var(--ag-sh-2) !important; }
 :root[data-theme="dark"] .sensor-group:hover { box-shadow: var(--ag-sh-2), var(--ag-glow) !important; }
 
@@ -566,8 +567,7 @@ input:focus, select:focus, textarea:focus {
 .sensor-add-dialog {
   position: fixed !important;
   inset: 0;
-  background: rgba(12, 24, 17, .45) !important;
-  backdrop-filter: blur(3px);
+  background: rgba(12, 24, 17, .55) !important;
   display: grid;
   place-items: center;
   z-index: 90;
@@ -610,7 +610,7 @@ input:focus, select:focus, textarea:focus {
   border-color: transparent;
   border-bottom-right-radius: 6px !important;
 }
-:root[data-theme="dark"] .agent-message.agent .agent-bubble { background: rgba(16, 42, 29, .8) !important; backdrop-filter: blur(8px); border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="dark"] .agent-message.agent .agent-bubble { background: rgba(16, 42, 29, .8) !important; border-color: var(--ag-glass-stroke) !important; }
 :root[data-theme="dark"] .agent-message.user .agent-bubble { box-shadow: var(--ag-glow); }
 .agent-bubble::after {
   content: "";
