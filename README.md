@@ -111,7 +111,9 @@
 | v15.3 | 2026-08-30 | `d543c91` | fix(web)：**删除地块无反应 + 添加传感器只对第一个地块生效**。① 删除无反应的根因：`#sensors-board` 的点击委托处理器里有一行 `if (!sensorId) return;` 一刀切守卫，而「删除地块」按钮只带 `data-device` 不带 `data-sensor`，每次点击都被提前拦截，`remove-plot` 分支永远走不到（连 confirm 弹窗都不出现）；改为按 action 分流——传感器动作（toggle/remove）才要求 `sensorId`，地块动作（remove-plot / add-sensor）改用 `deviceId`。② 添加传感器只对第一个地块生效的根因：全局唯一的「+ 添加传感器」按钮写死取 `state.device`（主视图当前选中地块，默认第一个），传感器面板平铺所有地块却没有每地块自己的添加按钮；改为每个地块卡片 header 新增独立的「+ 添加传感器」按钮（`data-action="add-sensor" data-device=...`），并配 `.plot-add-sensor` 样式。PWA 缓存 `smartagri-v4` → `v5`，`app.js` / `sensor.css` 版本串 `day16-sensors` → `v15.3` |
 | v15.3.1 | 2026-08-30 | `3bcd865` | fix(web)：**农户（farmer）灌溉控制按钮点不动**——farmer 有 `control_pump` 权限（登录页也写着"控制灌溉"）但没有 `manage_rules`，而 `applyRole()` 用 `manage_rules` 给整个 `.control-panel` 加 `.locked`，`auth.css` 里 `.control-panel.locked .control-actions { pointer-events:none }` 把启动/停止水泵按钮一并锁死 → 按钮可见、`disabled=false`，但真实鼠标点击无任何反应。修法：`.locked` 只锁规则配置区（`.automation-fields`），水泵启停按钮改由 JS 按 `control_pump` 权限 `disabled` 控制。浏览器实测（Edge + agent-browser）：farmer 点击停止→待机、启动→运行中均正常，模式切换/阈值仍正确禁用。PWA 缓存 `smartagri-v5` → `v6`，`auth.css` 版本串 `v15.3.1` |
 | v15.3.2 | 2026-08-30 | `c6879db` | feat(api)：**农户（farmer）开放自动灌溉规则权限**——此前 farmer 只有 `control_pump`（手动启停水泵）没有 `manage_rules`，自动/手动模式切换与阈值配置在农户视角全部灰置。用户确认需求后，`auth.py` 角色权限表给 farmer 增加 `manage_rules`（仅影响灌溉规则 PUT 接口，无副作用）。实测：farmer 登录后手动/自动按钮 `disabled:false`、阈值可改；点击「自动」→ UI「已启用自动灌溉，规则由服务端执行」、后端规则保存成功；后端自动执行链路本身验证正常（orange 湿度 35% < 40% 自动 start，pump running，事件记录完整）。需 rebuild api 容器生效，前端无需改动 |
-| v15.3.3 | 2026-08-30 | （见提交） | feat(auth)：**账户管理**——管理者新增「账户管理」面板（设备页底部，`list_users` 权限可见）：① 查看全部账户（用户名/显示名/角色/创建时间，`GET /api/v1/auth/users` 已有）；② 修改农户账户角色（农户↔管理者，新增 `PATCH /api/v1/auth/users/<uid>`，管理者账户与本人受保护）；③ 删除农户账户（新增 `DELETE /api/v1/auth/users/<uid>`，管理者账户不可删、带 confirm 确认）。后端 `auth.py` 新增 `get_user_by_id`/`delete_user` 与两个端点；前端 `app.js` 新增 `renderUsers/loadUsers/updateUserRole/deleteUserById/bindUsersActions`，index.html 设备页新增 `.users-panel`，sensor.css/theme.css 配样式。PWA 缓存 `smartagri-v6` → `v7`，`app.js`/`sensor.css` 版本串 `v15.3` → `v15.3.3`。保护规则：内置 admin（id=1）不可编辑/删除；管理者账户不可删除；农户↔管理者角色可双向切换，但降级管理者时需保留至少 1 名管理者（`last_manager_protected`） |
+| v15.3.3 | 2026-08-30 | （见提交） | feat(auth)：**账户管理**——管理者新增「账户管理」面板（设备页底部，`list_users` 权限可见）：① 查看全部账户（用户名/显示名/角色/创建时间，`GET /api/v1/auth/users` 已有）；② 修改农户账户角色（农户↔管理者，新增 `PATCH /api/v1/auth/users/<uid>`，管理者账户与本人受保护）；③ 删除农户账户（新增 `DELETE /api/v1/auth/users/<uid>`，管理者账户不可删、带 confirm 确认）。后端 `auth.py` 新增 `get_user_by_id`/`delete_user` 与两个端点；前端 `app.js` 新增 `renderUsers/loadUsers/updateUserRole/deleteUserById/bindUsersActions`，index.html 设备页新增 `.users-panel`，sensor.css/theme.css 配样式。PWA 缓存 `smartagri-v6` → `v7`，`app.js`/`sensor.css` 版本串 `v15.3` → `v15.3.3` |
+| v16.0 | 2026-08-31 | `d1a03b0` | feat(web)：**v16 前端大版本升级**（本轮「全面升级 + 解决卡顿 + 开放式创建」）——① 性能：轮询调度器 `AG.every`（页面隐藏自动暂停、任务防重入、异常隔离不中断其他任务）+ 差量渲染（遥测表/传感器板/图表 strip 全部签名门控，样本不变不重建 DOM）+ 分级轮询间隔（水泵 5s / 告警 10s / 规则 20s / AI 30s / 告警日志 30s / Broker 60s / 权限 120s）；② 新功能：设置抽屉（主题/刷新频率）、顶栏告警角标、多地块趋势对比叠加、遥测与告警 CSV 导出、告警过滤、相对时间显示、登录页演示账号一键进入；③ 美观：本地 `icons.js` 图标库替换被浏览器拦截的 CDN lucide、双主题（自然/深色）贯穿、移动端底部导航；④ 其他：移除 unpkg 外部依赖、PWA 离线页 `offline.html`、Google Fonts 非阻塞加载。PWA 缓存 `smartagri-v7` → `v8` |
+| v16.0.1 | 2026-08-31 | `687298f` | fix(web)：login.html 补 `icon-192.png` favicon / apple-touch-icon 声明，消除浏览器兜底请求 favicon.ico 的 404 |
 
 ## 系统组成
 
@@ -157,10 +159,12 @@ Mosquitto -> Flask API -> SQLite/MySQL
 | 板块 | 功能 |
 | --- | --- |
 | 概览 | 多地块总览（3 卡：名称/作物/湿度/温度/在线态）、「当前地块」下拉切换（全局生效）、关键指标、灌溉控制（水泵启停 + 自动规则）、**现场图像批量上传组件**（多选/预览/进度/校验/重试）、**草莓成熟度识别**（上传后自动，四类概率 + 阈值判定 + AI 状态） |
-| 趋势 | 最近 10 小时土壤湿度/温度/光照曲线（SQLite 持久化，重启不丢） |
-| 设备 | **传感器管理（Day 16）**：每块地 5 类虚拟硬件（土壤温度/pH/氮磷钾/空气湿度/电导率），实时值 + 状态徽标，可连接/断开/删除/添加；断开即停止推送，添加即在云端创建并开始上报；仅农户/管理者可操作 |
-| 告警记录 | 系统告警历史（低湿/高湿/高温，SQLite 持久化，触发/恢复去重），30s 自动刷新 |
+| 趋势 | 最近 10 小时土壤湿度/温度/光照曲线（SQLite 持久化，重启不丢），**多地块对比叠加**、1h/6h/10h 窗口切换、CSV 导出 |
+| 设备 | **传感器管理（Day 16）**：每块地 5 类虚拟硬件（土壤温度/pH/氮磷钾/空气湿度/电导率），实时值 + 状态徽标，可连接/断开/删除/添加；断开即停止推送，添加即在云端创建并开始上报；仅农户/管理者可操作。**账户管理（v15.3.3）**：管理者可查看/改角色/删除农户账户 |
+| 告警记录 | 系统告警历史（低湿/高湿/高温，SQLite 持久化，触发/恢复去重），30s 自动刷新，**顶栏实时告警角标 + 过滤 + CSV 导出** |
 | 智能体问答 | 双模式：知识库问答（云端 53 篇灌溉/农事文档 + 实时遥测合成，全员可用）/ Luna 模式（接入 Luna 模型，农户/管理者可用）；可开关思考模式、选思考强度（中/低）、折叠展示思维链；Luna 小猫娘动态形象随状态切换 |
+
+**v16 全局增强（2026-08-31）**：性能——轮询调度器（页面隐藏暂停、任务防重入、异常隔离）+ 差量渲染（样本不变不重建 DOM）+ 分级刷新间隔（5s~120s）；交互——设置抽屉（主题/刷新频率）、双主题（自然/深色）贯穿全站、移动端底部导航、相对时间显示；图标——本地图标库替代被浏览器拦截的 CDN lucide，移除 unpkg 外部依赖。登录页支持演示账号一键进入（管理者/农户）。PWA 缓存 v8，含离线页。
 
 登录账号（本地演示种子）：`admin/admin123`（管理者）、`farmer/farmer123`（农户）、`guest`（游客一键进入，仅知识库问答）。
 
