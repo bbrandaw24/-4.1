@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>智慧农业 · 登录</title>
   <meta name="theme-color" content="#faf7f0">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-  <link rel="stylesheet" href="login.css">
-  <link rel="stylesheet" href="theme.css?v=v15-perf">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <link rel="stylesheet" href="login.css?v=v16">
+  <link rel="stylesheet" href="v16.css?v=v16">
+  <link rel="stylesheet" href="theme.css?v=v16">
   <script>
     // 登录页沿用主界面主题，避免登录后视觉跳变（先于渲染执行，防闪烁）
     (function () {
@@ -55,9 +55,14 @@
 
       <button class="submit guest-enter" id="guest-enter" hidden><i data-lucide="log-in"></i> 以游客身份进入</button>
       <p class="hint" id="demo-hint">演示账号：admin / admin123（管理者），farmer / farmer123（农户）</p>
+      <div class="ag-quickfill">
+        <button type="button" class="ag-btn" data-u="admin" data-p="admin123" data-r="manager">管理者演示</button>
+        <button type="button" class="ag-btn" data-u="farmer" data-p="farmer123" data-r="farmer">农户演示</button>
+      </div>
     </section>
   </main>
-  <script src="auth.js?v=day16-beijing-gateway"></script>
-  <script src="login.js"></script>
+  <script src="auth.js?v=v16"></script>
+  <script src="icons.js?v=v16"></script>
+  <script src="login.js?v=v16"></script>
 </body>
 </html>
