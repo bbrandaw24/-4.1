@@ -1,0 +1,395 @@
+/* dashboard.css - 智慧农业数据大屏 / v15.4.0 */
+
+/* 进入数据屏视图时，外层 shell 切为深色沉浸式背景 */
+body.dashboard-active {
+  background: #020617;
+}
+body.dashboard-active .shell {
+  max-width: 100%;
+  padding: 0;
+}
+body.dashboard-active .intro,
+body.dashboard-active .metric-grid,
+body.dashboard-active .notice,
+body.dashboard-active .workspace,
+body.dashboard-active .route-panel:not([data-view="dashboard"]) {
+  display: none !important;
+}
+
+.dashboard-shell {
+  min-height: calc(100vh - 72px);
+  background: radial-gradient(ellipse at 50% 0%, #0b1a3a 0%, #020617 55%, #00030a 100%);
+  color: #e0f2fe;
+  padding: 18px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-family: "DM Sans", "Noto Sans SC", "PingFang SC", sans-serif;
+  overflow-x: hidden;
+}
+
+/* 顶部标题栏 */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(14, 165, 233, 0.35);
+  padding-bottom: 14px;
+  position: relative;
+}
+.dashboard-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #0ea5e9, #22d3ee, transparent);
+  box-shadow: 0 0 8px #0ea5e9;
+}
+.dashboard-title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.dashboard-title h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #e0f2fe;
+  text-shadow: 0 0 14px rgba(14, 165, 233, 0.6);
+}
+.dashboard-title .sub {
+  font-size: 11px;
+  color: #38bdf8;
+  letter-spacing: 0.18em;
+  opacity: 0.9;
+}
+.dashboard-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  color: #7dd3fc;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.45);
+}
+
+/* KPI 顶栏 */
+.dashboard-kpi {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.kpi-card {
+  background: rgba(8, 28, 56, 0.55);
+  border: 1px solid rgba(14, 165, 233, 0.28);
+  border-radius: 10px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(4px);
+}
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(14,165,233,0.45), transparent 40%, transparent 60%, rgba(34,211,238,0.35));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.kpi-card .label {
+  font-size: 11px;
+  color: #93c5fd;
+  letter-spacing: 0.1em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kpi-card .label svg {
+  width: 14px;
+  height: 14px;
+  stroke: #38bdf8;
+}
+.kpi-card .value {
+  font-size: 32px;
+  font-weight: 700;
+  margin-top: 6px;
+  color: #f0f9ff;
+  text-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+}
+.kpi-card .unit {
+  font-size: 12px;
+  color: #7dd3fc;
+  margin-left: 4px;
+  font-weight: 500;
+}
+.kpi-card .trend {
+  font-size: 11px;
+  color: #86efac;
+  margin-top: 4px;
+}
+.kpi-card .trend.down {
+  color: #fca5a5;
+}
+
+/* 主体三列 */
+.dashboard-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 1fr;
+  gap: 14px;
+  min-height: 0;
+}
+.dashboard-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+/* 通用面板 */
+.dash-panel {
+  background: rgba(8, 28, 56, 0.5);
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 10px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.dash-panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  border-top: 2px solid #22d3ee;
+  border-left: 2px solid #22d3ee;
+  border-radius: 10px 0 0 0;
+  opacity: 0.7;
+}
+.dash-panel::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border-bottom: 2px solid #0ea5e9;
+  border-right: 2px solid #0ea5e9;
+  border-radius: 0 0 10px 0;
+  opacity: 0.7;
+}
+.dash-panel .panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #bae6fd;
+  letter-spacing: 0.08em;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dash-panel .panel-title svg {
+  width: 15px;
+  height: 15px;
+  stroke: #38bdf8;
+}
+
+/* 地块列表 */
+.plot-list {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+}
+.plot-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(14, 165, 233, 0.12);
+}
+.plot-row:last-child { border-bottom: none; }
+.plot-row .name {
+  font-size: 13px;
+  color: #e0f2fe;
+  font-weight: 600;
+}
+.plot-row .crop {
+  font-size: 10px;
+  color: #93c5fd;
+  background: rgba(14, 165, 233, 0.12);
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+.plot-row .status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #86efac;
+}
+.plot-row .status.off { color: #94a3b8; }
+.plot-row .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 8px #4ade80;
+}
+.plot-row .status.off .status-dot {
+  background: #64748b;
+  box-shadow: none;
+}
+
+/* 传感器读数网格 */
+.sensor-readout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.readout {
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  position: relative;
+}
+.readout .name {
+  font-size: 11px;
+  color: #93c5fd;
+  letter-spacing: 0.06em;
+}
+.readout .num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f0f9ff;
+  margin-top: 4px;
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+}
+.readout .num.small { font-size: 16px; }
+.readout .unit {
+  font-size: 10px;
+  color: #7dd3fc;
+}
+.readout.warn { border-color: rgba(251, 146, 60, 0.5); }
+.readout.warn .num { color: #fed7aa; text-shadow: 0 0 10px rgba(251,146,60,0.4); }
+
+/* 中心 Canvas */
+.dash-canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 260px;
+  background: radial-gradient(circle at center, rgba(14,165,233,0.08) 0%, transparent 70%);
+  border-radius: 10px;
+  overflow: hidden;
+}
+#dashboard-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.canvas-overlay .center-ring {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  border: 2px solid rgba(34, 211, 238, 0.35);
+  display: grid;
+  place-items: center;
+  position: relative;
+  animation: dash-spin 18s linear infinite;
+}
+.canvas-overlay .center-ring::before {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  border-radius: 50%;
+  border: 1px dashed rgba(14, 165, 233, 0.25);
+  animation: dash-spin 32s linear infinite reverse;
+}
+.canvas-overlay .core-label {
+  text-align: center;
+}
+.canvas-overlay .core-label strong {
+  display: block;
+  font-size: 28px;
+  color: #e0f2fe;
+  text-shadow: 0 0 18px rgba(56, 189, 248, 0.55);
+}
+.canvas-overlay .core-label small {
+  font-size: 10px;
+  color: #7dd3fc;
+  letter-spacing: 0.1em;
+}
+
+@keyframes dash-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 告警滚动区 */
+.alert-stream {
+  overflow-y: auto;
+  flex: 1;
+  font-size: 12px;
+}
+.alert-stream .empty {
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+  padding: 24px 0;
+}
+.alert-item {
+  display: flex;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(14, 165, 233, 0.1);
+  align-items: flex-start;
+}
+.alert-item .time {
+  color: #7dd3fc;
+  font-size: 10px;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+.alert-item .text {
+  color: #e0f2fe;
+  line-height: 1.35;
+}
+.alert-item.warn .text { color: #fed7aa; }
+.alert-item.error .text { color: #fecaca; }
+
+/* 底部趋势条 */
+.dashboard-footer {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 980px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-kpi { grid-template-columns: repeat(2, 1fr); }
+  .dashboard-footer { grid-template-columns: 1fr; }
+  .dash-panel { min-height: 220px; }
+}
+@media (max-width: 560px) {
+  .dashboard-kpi { grid-template-columns: 1fr; }
+  .dashboard-title h1 { font-size: 18px; }
+}
