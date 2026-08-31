@@ -231,10 +231,15 @@ function renderDevice(device) {
   setMeter("#soil-meter", moisture);
   setMeter("#temperature-meter", Number(climate.air_temperature_c) * 3.2);
   setMeter("#light-meter", Number(climate.light_lux) / 500);
-  state.moisture.push(moisture);
-  if (state.moisture.length > HISTORY_LIMIT) state.moisture.shift();
-  state.samples.push({ timestamp: device.telemetry?.soil?.timestamp || device.telemetry?.climate?.timestamp || new Date().toISOString(), moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
-  if (state.samples.length > HISTORY_LIMIT) state.samples.shift();
+  // v16: 采样去重——同一遥测时间戳不重复入列（避免 5s 轮询产生大量重复点）
+  const sampleTs = device.telemetry?.soil?.timestamp || device.telemetry?.climate?.timestamp || new Date().toISOString();
+  const lastSample = state.samples[state.samples.length - 1];
+  if (!lastSample || lastSample.timestamp !== sampleTs) {
+    state.moisture.push(moisture);
+    if (state.moisture.length > HISTORY_LIMIT) state.moisture.shift();
+    state.samples.push({ timestamp: sampleTs, moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
+    if (state.samples.length > HISTORY_LIMIT) state.samples.shift();
+  }
   const rows = [
     ["土壤温度", fmt(soil.temperature_c, 1, " °C"), "18–28 °C"],
     ["pH", fmt(soil.ph, 2), "5.8–6.8"],
@@ -242,7 +247,15 @@ function renderDevice(device) {
     ["空气湿度", fmt(climate.air_humidity_pct, 1, " %"), "45–90 %"],
     ["电导率", fmt(soil.conductivity_ms_cm, 2, " mS/cm"), "0.4–1.8"],
   ];
-  $("#telemetry-table").innerHTML = rows.map(([name, value, range]) => `<div class="telemetry-row"><span class="name">${name}</span><span class="value">${value}</span><span class="range">${range}</span></div>`).join("");
+  // v16: 差量渲染——数据没变就不重写表格，避免每 5s 全量 innerHTML 造成的布局抖动
+  const tableSig = rows.map((row) => row.join("|")).join("#");
+  const tableEl = $("#telemetry-table");
+  if (tableEl) {
+    if (tableEl.__agSig !== tableSig) {
+      tableEl.__agSig = tableSig;
+      tableEl.innerHTML = rows.map(([name, value, range]) => `<div class="telemetry-row"><span class="name">${name}</span><span class="value">${value}</span><span class="range">${range}</span></div>`).join("");
+    }
+  }
   // 设备详情面板元素（device-page-*）在部分页面布局中不存在，空值保护避免刷新中断
   if ($("#device-page-name")) $("#device-page-name").textContent = device.device_id;
   if ($("#device-page-id")) $("#device-page-id").textContent = device.device_id;
@@ -365,7 +378,14 @@ async function refresh() {
     if (addBtn) addBtn.disabled = !Auth.hasPermission("manage_sensors");
     // Connection pill is owned by probeHealthz; refresh success no longer
     // flips the pill, so a slow /devices cannot mask a healthy API.
-    $("#last-update").textContent = new Date().toLocaleTimeString();
+    // v16: 记录 ISO 时间，供顶栏「相对时间」显示（如“12 秒前”）
+    const lastUpd = $("#last-update");
+    if (lastUpd) {
+      const stamp = new Date();
+      lastUpd.dataset.ts = stamp.toLocaleTimeString("zh-CN", { hour12: false });
+      lastUpd.dataset.iso = stamp.toISOString();
+      lastUpd.textContent = lastUpd.dataset.ts;
+    }
   } catch (error) {
     // Refresh failure only shows the error in the device-status slot; the
     // top-right pill stays under healthz control.
@@ -415,6 +435,15 @@ function renderPlotsStrip(items) {
   const strip = $("#plots-strip");
   if (!strip) return;
   $("#plots-count").textContent = `${items.length} 个地块`;
+  // v16: 差量渲染签名——值/在线状态/选中项都没变化就不重建 DOM 与重绑事件
+  const sig = `${selectedDeviceId || ""}|` + items.map((item) => {
+    const soil = item.telemetry?.soil?.payload || {};
+    const climate = item.telemetry?.climate?.payload || {};
+    return [item.device_id, item.last_seen || "", item.plot?.name || "", item.plot?.crop || "",
+      String(soil.moisture_pct ?? ""), String(climate.air_temperature_c ?? ""), String(climate.light_lux ?? "")].join("|");
+  }).join("#");
+  if (strip.__agSig === sig) return;
+  strip.__agSig = sig;
   strip.innerHTML = items.map((item) => {
     const soil = item.telemetry?.soil?.payload || {};
     const climate = item.telemetry?.climate?.payload || {};
@@ -432,12 +461,14 @@ function renderPlotsStrip(items) {
         <div><span>温度</span><b class="${tempOk ? "ok" : "warn"}">${fmt(temp, 1, "°C")}</b></div>
         <div><span>光照</span><b>${fmt(climate.light_lux, 0, "")}</b></div>
       </div>
-      <div class="plot-card-foot"><span class="plot-status ${online ? "on" : "off"}"></span><span>${online ? "在线" : "离线"}</span><small>${online ? new Date(item.last_seen).toLocaleTimeString() : "—"}</small></div>
+      <div class="plot-card-foot"><span class="plot-status ${online ? "on" : "off"}"></span><span>${online ? "在线" : "离线"}</span><small data-seen="${online ? item.last_seen : ""}">${online ? new Date(item.last_seen).toLocaleTimeString() : "—"}</small></div>
     </article>`;
   }).join("");
   strip.querySelectorAll(".plot-card").forEach((card) => {
     card.addEventListener("click", () => selectDevice(card.dataset.device));
   });
+  // 通知 v16 UI 层同步对比选择器（新增地块后对比 chips 要跟着更新）
+  if (window.AGSyncCompareBar) window.AGSyncCompareBar();
 }
 
 async function refreshAlertLog() {
@@ -820,7 +851,7 @@ function renderSensorCard(sensor) {
     <div class="sensor-card-head">${icon}<span>${meta.name}</span></div>
     <div class="sensor-value">${formatted}<span class="sensor-unit">${unitText}</span></div>
     <span class="sensor-status ${sensor.status}">${isConnected ? "已连接" : "已断开"}</span>
-    <div class="sensor-last-seen">最近上报 ${lastSeen}</div>
+    <div class="sensor-last-seen" data-seen="${sensor.last_seen || ""}">最近上报 ${lastSeen}</div>
     <div class="sensor-card-actions">
       <button class="toggle" data-action="toggle" data-sensor="${sensor.id}" data-status="${sensor.status}" ${canManage ? "" : "disabled"}>${isConnected ? "断开" : "连接"}</button>
       <button class="remove" data-action="remove" data-sensor="${sensor.id}" ${canManage ? "" : "disabled"}>删除</button>
@@ -837,7 +868,14 @@ function renderSensorsBoard(devices) {
   }
   const canManage = Auth.hasPermission("manage_sensors");
   const BUILTIN_PLOTS = ["sim-plot-apple", "sim-plot-pear", "sim-plot-orange"];
-  board.innerHTML = devices.map((device) => {
+  // v16: 差量渲染签名——地块/传感器状态与读数没变就不重建整块面板
+  const sig = (canManage ? "m" : "v") + "|" + devices.map((device) => {
+    const perms = (device.sensors || []).map((sensor) => sensor.id + ":" + sensor.status + (sensor.value ? JSON.stringify(sensor.value) : "|" + (sensor.last_seen || "")));
+    return device.device_id + "|" + (device.last_seen || "") + "|" + perms.join(",");
+  }).join("#");
+  if (board.__agSig === sig) return;
+  board.__agSig = sig;
+  const htmlContent = devices.map((device) => {
     const sensors = (device.sensors || []).slice().sort((a, b) =>
       SENSOR_TYPE_ORDER.indexOf(a.type) - SENSOR_TYPE_ORDER.indexOf(b.type));
     const plot = device.plot || {};
@@ -861,6 +899,7 @@ function renderSensorsBoard(devices) {
       <div class="sensor-grid">${sensors.map(renderSensorCard).join("") || '<div class="sensor-hint" style="padding:18px">该地块暂无传感器，点击"+ 添加传感器"创建。</div>'}</div>
     </section>`;
   }).join("");
+  board.innerHTML = htmlContent;
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -1251,9 +1290,9 @@ function renderUsers(users) {
       </div>
       <span class="user-role ${u.role}">${badge}</span>
       <div class="user-actions">
-        <select class="user-role-select" data-uid="${u.id}" ${isManager ? "disabled" : ""} title="${isManager ? "管理者账户不可修改" : "修改角色（农户/管理者可双向切换，需保留至少 1 名管理者）"}">
+        <select class="user-role-select" data-uid="${u.id}" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可修改" : isSelf ? "不能修改自己的角色" : "修改角色"}">
           <option value="farmer" ${u.role === "farmer" ? "selected" : ""}>农户</option>
-          <option value="manager" ${u.role === "manager" ? "selected" : ""}>管理者</option>
+          <option value="manager" ${u.role === "manager" ? "selected" : ""} ${isManager ? "" : "disabled"}>管理者</option>
         </select>
         <button class="user-delete" data-action="delete-user" data-uid="${u.id}" data-name="${u.display_name || u.username}" type="button" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可删除" : isSelf ? "不能删除自己的账户" : "删除该账户"}">删除</button>
       </div>
@@ -1346,12 +1385,24 @@ refreshAiStatus();
 refreshAlertLog();
 probeHealthz();
 setRoute(params.get("view") || "overview");
-setInterval(refresh, 5000);
-setInterval(probeHealthz, 10000);
-setInterval(() => { if (state.device) refreshHistory(state.device.device_id); }, 60000);
-setInterval(refreshPumpStatus, 1000);
-setInterval(refreshAlerts, 5000);
-setInterval(refreshAiStatus, 15000);
-setInterval(refreshAlertLog, 30000);
-setInterval(loadBroker, 30000);
-setInterval(refreshUserPermissions, 60000);
+// v16: 集中调度（可见性感知 + 请求去重），节奏大幅降低、页面隐藏时自动暂停
+//   - 设备/遥测：跟随设置（默认 5s），改设置即换节奏
+//   - 水泵：5s（原 1s 过载）；启动确认期间可由 R 键手动补刷
+//   - 告警 10s / 规则 20s / AI 30s / 告警日志 30s / broker 60s / 权限 120s
+if (window.AG) {
+  AG.registerRefresh(refresh);
+  AG.every({ ms: 10000, fn: probeHealthz });
+  AG.every({ ms: 60000, fn: function () { if (state.device) return refreshHistory(state.device.device_id); } });
+  AG.every({ ms: 5000, fn: refreshPumpStatus });
+  AG.every({ ms: 10000, fn: refreshAlerts });
+  AG.every({ ms: 20000, fn: refreshRules });
+  AG.every({ ms: 30000, fn: refreshAiStatus });
+  AG.every({ ms: 30000, fn: refreshAlertLog });
+  AG.every({ ms: 60000, fn: loadBroker });
+  AG.every({ ms: 120000, fn: refreshUserPermissions });
+} else {
+  // 兜底：AG 未加载时退回基础轮询
+  setInterval(refresh, 5000);
+  setInterval(refreshPumpStatus, 5000);
+  setInterval(probeHealthz, 10000);
+}
