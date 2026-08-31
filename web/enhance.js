@@ -559,6 +559,14 @@
     });
   }
 
+  /* v16：暴露主题/重绘接口给 v16-ui.js 的设置抽屉使用（保持单一来源） */
+  window.AGTheme = {
+    applyTheme: applyTheme,
+    currentTheme: currentTheme,
+    redrawAllCharts: redrawAllCharts,
+    drawEnhanced: drawEnhanced,
+  };
+
   /* ---------------- 启动 ---------------- */
   function boot() {
     try { initThemeToggle(); } catch (e) {}
