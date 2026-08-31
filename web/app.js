@@ -1251,9 +1251,9 @@ function renderUsers(users) {
       </div>
       <span class="user-role ${u.role}">${badge}</span>
       <div class="user-actions">
-        <select class="user-role-select" data-uid="${u.id}" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可修改" : isSelf ? "不能修改自己的角色" : "修改角色"}">
+        <select class="user-role-select" data-uid="${u.id}" ${isManager ? "disabled" : ""} title="${isManager ? "管理者账户不可修改" : "修改角色（农户/管理者可双向切换，需保留至少 1 名管理者）"}">
           <option value="farmer" ${u.role === "farmer" ? "selected" : ""}>农户</option>
-          <option value="manager" ${u.role === "manager" ? "selected" : ""} ${isManager ? "" : "disabled"}>管理者</option>
+          <option value="manager" ${u.role === "manager" ? "selected" : ""}>管理者</option>
         </select>
         <button class="user-delete" data-action="delete-user" data-uid="${u.id}" data-name="${u.display_name || u.username}" type="button" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可删除" : isSelf ? "不能删除自己的账户" : "删除该账户"}">删除</button>
       </div>
