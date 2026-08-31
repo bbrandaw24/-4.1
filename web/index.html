@@ -12,7 +12,8 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="day08.css">
   <link rel="stylesheet" href="auth.css?v=v15.3.1">
@@ -20,15 +21,13 @@
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
   <link rel="stylesheet" href="sensor.css?v=v15.3.3">
   <link rel="stylesheet" href="day13.css">
-  <link rel="stylesheet" href="theme.css?v=v16">
-  <link rel="stylesheet" href="v16.css?v=v16">
+  <link rel="stylesheet" href="theme.css?v=v15-perf">
+  <link rel="stylesheet" href="dashboard.css?v=v15.4.0">
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" title="智慧农业"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M12 20V10"/><path d="M12 10c0-3.3-2.4-5.6-6-6 .2 3.6 2.3 6 5 6.6"/><path d="M12 13c0-2.2 1.7-3.8 4.4-4.1-.2 2.4-1.6 4-3.5 4.4"/></svg></span><div><strong>温室运行台</strong><small>SMART AGRICULTURE / OPERATIONS</small></div></div>
-    <div class="topbar-actions"><div class="connection"><span class="pulse" id="connection-dot"></span><span id="connection-label">正在连接 API</span><button class="icon-button" id="refresh-button" title="立即刷新"><i data-lucide="refresh-cw"></i></button></div><button class="icon-button" id="alert-badge" type="button" title="查看告警" aria-label="告警"><i data-lucide="bell-ring"></i><span class="ag-alert-count">0</span></button>
-      <button class="icon-button" id="settings-btn" type="button" title="设置" aria-label="设置"><i data-lucide="settings"></i></button>
-      <div class="user-chip"><span id="role-badge">--</span><button class="icon-button" id="logout-button" title="退出登录"><i data-lucide="log-out"></i></button></div></div>
+    <div class="topbar-actions"><div class="connection"><span class="pulse" id="connection-dot"></span><span id="connection-label">正在连接 API</span><button class="icon-button" id="refresh-button" title="立即刷新"><i data-lucide="refresh-cw"></i></button></div><div class="user-chip"><span id="role-badge">--</span><button class="icon-button" id="logout-button" title="退出登录"><i data-lucide="log-out"></i></button></div></div>
   </header>
 
   <main class="shell">
@@ -44,6 +43,7 @@
       <button class="nav-item" data-route="trends"><i data-lucide="chart-spline"></i><span>趋势</span></button>
       <button class="nav-item" data-route="devices"><i data-lucide="cpu"></i><span>设备</span></button>
       <button class="nav-item" data-route="agent"><i data-lucide="message-circle"></i><span>智能体问答</span></button>
+      <button class="nav-item" data-route="dashboard"><i data-lucide="monitor"></i><span>数据屏幕</span></button>
     </nav>
 
     <section class="metric-grid route-panel" data-view="overview" aria-label="关键指标">
@@ -69,12 +69,6 @@
     <section class="route-panel" data-view="overview">
       <article class="panel alert-log-panel">
         <div class="panel-heading"><div><p class="eyebrow">ALERT LOG</p><h2>告警记录</h2><p class="agent-sub">系统告警历史（云端 SQLite 持久化），可追溯问题。</p></div><button class="notify-button" id="alert-log-refresh" type="button">刷新</button></div>
-        <div class="ag-alert-tools">
-          <span class="ag-filter-btn active" data-filter="all">全部</span>
-          <span class="ag-filter-btn" data-filter="warning">提示</span>
-          <span class="ag-filter-btn" data-filter="critical">严重</span>
-          <button class="ag-btn ag-export" id="ag-alert-export" type="button">导出</button>
-        </div>
         <div class="alert-log-list" id="alert-log-list"><span class="alert-empty">暂无告警记录</span></div>
       </article>
     </section>
@@ -82,11 +76,6 @@
     <section class="notice route-panel" data-view="overview"><i data-lucide="scan-line"></i><div><strong>AI 识别准备区</strong><p id="ai-status-copy">正在查询模型状态...</p></div><span class="badge muted" id="ai-status-badge">CHECKING</span></section>
 
     <section class="route-panel" data-view="trends">
-      <div class="ag-compare-head">
-        <div class="ag-compare-bar" id="ag-compare-bar"></div>
-        <button class="ag-btn ag-export" id="ag-export-csv" type="button">导出 CSV</button>
-      </div>
-      <div class="ag-compare-legend" id="ag-compare-legend"></div>
       <div class="trend-grid">
         <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">SOIL MOISTURE</p><h2>土壤湿度趋势</h2></div><span class="badge" id="trend-moisture-value">--</span></div><canvas id="moisture-chart" width="900" height="260" role="img" aria-label="土壤湿度趋势图，纵轴为百分比，横轴为采样时间"></canvas></article>
         <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">CLIMATE</p><h2>温度与光照</h2></div><span class="badge" id="trend-temperature-value">--</span></div><canvas id="climate-chart" width="900" height="260" role="img" aria-label="温度与光照趋势图，左纵轴为摄氏度，右纵轴为千光照，横轴为采样时间"></canvas></article>
@@ -267,21 +256,122 @@
         <p class="agent-meta" id="agent-meta">登录后即可对话。回答含云端知识库引用与实时数据。</p>
       </article>
     </section>
+
+    <section class="route-panel dashboard-shell" data-view="dashboard" aria-label="数据大屏">
+      <header class="dashboard-header">
+        <div class="dashboard-title">
+          <h1>智慧农业大数据平台</h1>
+          <span class="sub">SMART AGRICULTURE BIG DATA SCREEN</span>
+        </div>
+        <div class="dashboard-clock" id="dashboard-clock">--:--:--</div>
+      </header>
+
+      <div class="dashboard-kpi">
+        <div class="kpi-card">
+          <div class="label"><i data-lucide="map-pin"></i> 总地块数</div>
+          <div class="value"><span id="kpi-plots">--</span><span class="unit">块</span></div>
+          <div class="trend">实时在线监测</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label"><i data-lucide="radio"></i> 在线传感器</div>
+          <div class="value"><span id="kpi-sensors">--</span><span class="unit">个</span></div>
+          <div class="trend">5 类土壤 / 气候指标</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label"><i data-lucide="droplets"></i> 平均土壤湿度</div>
+          <div class="value"><span id="kpi-moisture">--</span><span class="unit">%</span></div>
+          <div class="trend" id="kpi-moisture-trend">目标区间 40–65%</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label"><i data-lucide="thermometer"></i> 平均空气温度</div>
+          <div class="value"><span id="kpi-temp">--</span><span class="unit">°C</span></div>
+          <div class="trend" id="kpi-temp-trend">舒适区间 18–28°C</div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="dashboard-col">
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="layout-grid"></i> 地块在线状态</h3>
+            <div class="plot-list" id="dash-plot-list"><div class="empty">加载中…</div></div>
+          </article>
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="scan-line"></i> 告警信息</h3>
+            <div class="alert-stream" id="dash-alert-stream"><div class="empty">暂无告警</div></div>
+          </article>
+        </div>
+
+        <div class="dashboard-col">
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="activity"></i> 实时数据脉动</h3>
+            <div class="dash-canvas-wrap">
+              <canvas id="dashboard-canvas"></canvas>
+              <div class="canvas-overlay">
+                <div class="center-ring">
+                  <div class="core-label">
+                    <strong id="dash-core-value">--</strong>
+                    <small>土壤湿度均值</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+          <div class="dashboard-footer">
+            <article class="dash-panel">
+              <h3 class="panel-title"><i data-lucide="sun"></i> 光照强度</h3>
+              <div class="readout">
+                <div class="num small" id="dash-light">--</div>
+                <div class="unit">lux</div>
+              </div>
+            </article>
+            <article class="dash-panel">
+              <h3 class="panel-title"><i data-lucide="wind"></i> 空气湿度</h3>
+              <div class="readout">
+                <div class="num small" id="dash-humidity">--</div>
+                <div class="unit">%</div>
+              </div>
+            </article>
+            <article class="dash-panel">
+              <h3 class="panel-title"><i data-lucide="gauge"></i> 土壤 pH</h3>
+              <div class="readout">
+                <div class="num small" id="dash-ph">--</div>
+                <div class="unit">酸碱度</div>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="dashboard-col">
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="server"></i> 土壤指标详情</h3>
+            <div class="sensor-readout-grid" id="dash-soil-grid">
+              <div class="readout"><div class="name">土壤温度</div><div class="num">--</div><div class="unit">°C</div></div>
+              <div class="readout"><div class="name">电导率</div><div class="num">--</div><div class="unit">mS/cm</div></div>
+              <div class="readout"><div class="name">氮</div><div class="num">--</div><div class="unit">mg/kg</div></div>
+              <div class="readout"><div class="name">磷</div><div class="num">--</div><div class="unit">mg/kg</div></div>
+              <div class="readout"><div class="name">钾</div><div class="num">--</div><div class="unit">mg/kg</div></div>
+              <div class="readout"><div class="name">盐分</div><div class="num">--</div><div class="unit">g/L</div></div>
+            </div>
+          </article>
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="history"></i> 最近遥测时间</h3>
+            <div class="alert-stream" id="dash-telemetry-log"><div class="empty">等待数据…</div></div>
+          </article>
+        </div>
+      </div>
+    </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
-  <script src="auth.js?v=v16"></script>
-  <script src="icons.js?v=v16"></script>
-  <script src="v16-core.js?v=v16"></script>
-  <script src="app.js?v=v16"></script>
-  <script src="kitten.js?v=v16"></script>
-  <script src="agent.js?v=v16"></script>
-  <script src="enhance.js?v=v16"></script>
-  <script src="v16-ui.js?v=v16"></script>
+  <script src="auth.js?v=day16-beijing-gateway"></script>
+  <script src="app.js?v=v15.4.0"></script>
+  <script src="kitten.js?v=day16-kitten"></script>
+  <script src="agent.js?v=day16-kitten"></script>
+  <script src="enhance.js?v=v15-perf"></script>
   <script>
     // PWA：注册 Service Worker（离线缓存 + 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js?v=v16').catch(function (err) {
+        navigator.serviceWorker.register('sw.js').catch(function (err) {
           console.warn('[PWA] service worker 注册失败:', err);
         });
       });
