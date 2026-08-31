@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F2A1D">
+  <title>智慧农业 · 网络未连接</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(1200px 600px at 50% -10%, #0e2a1b, #0b1a12);
+      color: #e8f6ed;
+    }
+    .card {
+      text-align: center;
+      padding: 40px 30px;
+      max-width: 420px;
+    }
+    .logo {
+      width: 84px;
+      height: 84px;
+      margin: 0 auto 22px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(160deg, #1b4d33, #12301f);
+      box-shadow: 0 14px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
+      color: #6ef2a0;
+    }
+    h1 { font-size: 22px; margin-bottom: 10px; }
+    p { font-size: 14px; line-height: 1.7; color: #9fb9a7; margin-bottom: 26px; }
+    button {
+      border: 0;
+      background: #226b46;
+      color: #fff;
+      font-size: 15px;
+      padding: 12px 26px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: transform .2s, box-shadow .2s;
+      box-shadow: 0 10px 24px rgba(34,107,70,.4);
+    }
+    button:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(34,107,70,.5); }
+    .hint { margin-top: 18px; font-size: 12px; color: #5f7d6b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="44" height="44">
+        <path d="M3 20h18"/><path d="M12 20V10"/><path d="M12 10c0-3.3-2.4-5.6-6-6 .2 3.6 2.3 6 5 6.6"/><path d="M12 13c0-2.2 1.7-3.8 4.4-4.1-.2 2.4-1.6 4-3.5 4.4"/>
+      </svg>
+    </div>
+    <h1>网络未连接</h1>
+    <p>当前无法访问温室运行台服务器。<br>请检查网络后重试，连接恢复后数据会自动刷新。</p>
+    <button id="retry" type="button">重新连接</button>
+    <p class="hint">智慧农业 · 温室运行台</p>
+  </div>
+  <script>
+    document.getElementById('retry').addEventListener('click', function () {
+      window.location.reload();
+    });
+    window.addEventListener('online', function () { window.location.reload(); });
+  </script>
+</body>
+</html>
