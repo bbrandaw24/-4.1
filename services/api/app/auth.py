@@ -134,6 +134,14 @@ def get_user_by_id(uid):
     return dict(row) if row else None
 
 
+def count_managers():
+    conn = _connect()
+    try:
+        return conn.execute("SELECT COUNT(*) AS c FROM users WHERE role='manager'").fetchone()["c"]
+    finally:
+        conn.close()
+
+
 def delete_user(uid):
     """Delete a user by id. Returns ('ok'|'not_found'|'cannot_delete', row or None)."""
     target = get_user_by_id(uid)
@@ -247,19 +255,25 @@ def register_auth_routes(app):
     @app.patch("/api/v1/auth/users/<int:uid>")
     @require_auth("list_users")
     def auth_patch_user(uid):
-        """Update a non-manager account's role / display_name (manager accounts are protected)."""
+        """Update an account's role / display_name.
+
+        The built-in admin account (id=1) is protected; a manager account may
+        be demoted only if at least one manager would remain.
+        """
         body = request.get_json(silent=True) or {}
         target = get_user_by_id(uid)
         if target is None:
             return jsonify(error="user_not_found"), 404
-        if target["role"] == "manager":
-            return jsonify(error="cannot_edit_manager"), 403
+        if uid == 1:
+            return jsonify(error="cannot_edit_builtin_admin"), 403
         updates = []
         params = []
         new_role = (body.get("role") or "").strip()
         if new_role:
             if new_role not in ALLOWED_REGISTER_ROLES:
                 return jsonify(error="role_not_allowed"), 400
+            if target["role"] == "manager" and new_role != "manager" and count_managers() <= 1:
+                return jsonify(error="last_manager_protected"), 403
             updates.append("role=?")
             params.append(new_role)
         display_name = body.get("display_name")
