@@ -201,7 +201,8 @@ function renderTrendPanels() {
 }
 
 function setRoute(route) {
-  const nextRoute = ["overview", "trends", "devices", "agent"].includes(route) ? route : "overview";
+  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard"].includes(route) ? route : "overview";
+  document.body.classList.toggle("dashboard-active", nextRoute === "dashboard");
   document.querySelectorAll("[data-view]").forEach((panel) => {
     panel.hidden = panel.dataset.view !== nextRoute;
   });
@@ -214,6 +215,9 @@ function setRoute(route) {
   if (nextRoute === "trends") {
     if (state.device) refreshHistory(state.device.device_id, true);
     renderTrendPanels();
+  }
+  if (nextRoute === "dashboard") {
+    renderDashboard(true);
   }
 }
 
@@ -231,15 +235,10 @@ function renderDevice(device) {
   setMeter("#soil-meter", moisture);
   setMeter("#temperature-meter", Number(climate.air_temperature_c) * 3.2);
   setMeter("#light-meter", Number(climate.light_lux) / 500);
-  // v16: 采样去重——同一遥测时间戳不重复入列（避免 5s 轮询产生大量重复点）
-  const sampleTs = device.telemetry?.soil?.timestamp || device.telemetry?.climate?.timestamp || new Date().toISOString();
-  const lastSample = state.samples[state.samples.length - 1];
-  if (!lastSample || lastSample.timestamp !== sampleTs) {
-    state.moisture.push(moisture);
-    if (state.moisture.length > HISTORY_LIMIT) state.moisture.shift();
-    state.samples.push({ timestamp: sampleTs, moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
-    if (state.samples.length > HISTORY_LIMIT) state.samples.shift();
-  }
+  state.moisture.push(moisture);
+  if (state.moisture.length > HISTORY_LIMIT) state.moisture.shift();
+  state.samples.push({ timestamp: device.telemetry?.soil?.timestamp || device.telemetry?.climate?.timestamp || new Date().toISOString(), moisture, temperature: Number(climate.air_temperature_c), light: Number(climate.light_lux) });
+  if (state.samples.length > HISTORY_LIMIT) state.samples.shift();
   const rows = [
     ["土壤温度", fmt(soil.temperature_c, 1, " °C"), "18–28 °C"],
     ["pH", fmt(soil.ph, 2), "5.8–6.8"],
@@ -247,15 +246,7 @@ function renderDevice(device) {
     ["空气湿度", fmt(climate.air_humidity_pct, 1, " %"), "45–90 %"],
     ["电导率", fmt(soil.conductivity_ms_cm, 2, " mS/cm"), "0.4–1.8"],
   ];
-  // v16: 差量渲染——数据没变就不重写表格，避免每 5s 全量 innerHTML 造成的布局抖动
-  const tableSig = rows.map((row) => row.join("|")).join("#");
-  const tableEl = $("#telemetry-table");
-  if (tableEl) {
-    if (tableEl.__agSig !== tableSig) {
-      tableEl.__agSig = tableSig;
-      tableEl.innerHTML = rows.map(([name, value, range]) => `<div class="telemetry-row"><span class="name">${name}</span><span class="value">${value}</span><span class="range">${range}</span></div>`).join("");
-    }
-  }
+  $("#telemetry-table").innerHTML = rows.map(([name, value, range]) => `<div class="telemetry-row"><span class="name">${name}</span><span class="value">${value}</span><span class="range">${range}</span></div>`).join("");
   // 设备详情面板元素（device-page-*）在部分页面布局中不存在，空值保护避免刷新中断
   if ($("#device-page-name")) $("#device-page-name").textContent = device.device_id;
   if ($("#device-page-id")) $("#device-page-id").textContent = device.device_id;
@@ -378,14 +369,9 @@ async function refresh() {
     if (addBtn) addBtn.disabled = !Auth.hasPermission("manage_sensors");
     // Connection pill is owned by probeHealthz; refresh success no longer
     // flips the pill, so a slow /devices cannot mask a healthy API.
-    // v16: 记录 ISO 时间，供顶栏「相对时间」显示（如“12 秒前”）
-    const lastUpd = $("#last-update");
-    if (lastUpd) {
-      const stamp = new Date();
-      lastUpd.dataset.ts = stamp.toLocaleTimeString("zh-CN", { hour12: false });
-      lastUpd.dataset.iso = stamp.toISOString();
-      lastUpd.textContent = lastUpd.dataset.ts;
-    }
+    $("#last-update").textContent = new Date().toLocaleTimeString();
+    // Keep the big-data screen in sync whenever new telemetry arrives.
+    renderDashboard(false);
   } catch (error) {
     // Refresh failure only shows the error in the device-status slot; the
     // top-right pill stays under healthz control.
@@ -435,15 +421,6 @@ function renderPlotsStrip(items) {
   const strip = $("#plots-strip");
   if (!strip) return;
   $("#plots-count").textContent = `${items.length} 个地块`;
-  // v16: 差量渲染签名——值/在线状态/选中项都没变化就不重建 DOM 与重绑事件
-  const sig = `${selectedDeviceId || ""}|` + items.map((item) => {
-    const soil = item.telemetry?.soil?.payload || {};
-    const climate = item.telemetry?.climate?.payload || {};
-    return [item.device_id, item.last_seen || "", item.plot?.name || "", item.plot?.crop || "",
-      String(soil.moisture_pct ?? ""), String(climate.air_temperature_c ?? ""), String(climate.light_lux ?? "")].join("|");
-  }).join("#");
-  if (strip.__agSig === sig) return;
-  strip.__agSig = sig;
   strip.innerHTML = items.map((item) => {
     const soil = item.telemetry?.soil?.payload || {};
     const climate = item.telemetry?.climate?.payload || {};
@@ -461,14 +438,12 @@ function renderPlotsStrip(items) {
         <div><span>温度</span><b class="${tempOk ? "ok" : "warn"}">${fmt(temp, 1, "°C")}</b></div>
         <div><span>光照</span><b>${fmt(climate.light_lux, 0, "")}</b></div>
       </div>
-      <div class="plot-card-foot"><span class="plot-status ${online ? "on" : "off"}"></span><span>${online ? "在线" : "离线"}</span><small data-seen="${online ? item.last_seen : ""}">${online ? new Date(item.last_seen).toLocaleTimeString() : "—"}</small></div>
+      <div class="plot-card-foot"><span class="plot-status ${online ? "on" : "off"}"></span><span>${online ? "在线" : "离线"}</span><small>${online ? new Date(item.last_seen).toLocaleTimeString() : "—"}</small></div>
     </article>`;
   }).join("");
   strip.querySelectorAll(".plot-card").forEach((card) => {
     card.addEventListener("click", () => selectDevice(card.dataset.device));
   });
-  // 通知 v16 UI 层同步对比选择器（新增地块后对比 chips 要跟着更新）
-  if (window.AGSyncCompareBar) window.AGSyncCompareBar();
 }
 
 async function refreshAlertLog() {
@@ -851,7 +826,7 @@ function renderSensorCard(sensor) {
     <div class="sensor-card-head">${icon}<span>${meta.name}</span></div>
     <div class="sensor-value">${formatted}<span class="sensor-unit">${unitText}</span></div>
     <span class="sensor-status ${sensor.status}">${isConnected ? "已连接" : "已断开"}</span>
-    <div class="sensor-last-seen" data-seen="${sensor.last_seen || ""}">最近上报 ${lastSeen}</div>
+    <div class="sensor-last-seen">最近上报 ${lastSeen}</div>
     <div class="sensor-card-actions">
       <button class="toggle" data-action="toggle" data-sensor="${sensor.id}" data-status="${sensor.status}" ${canManage ? "" : "disabled"}>${isConnected ? "断开" : "连接"}</button>
       <button class="remove" data-action="remove" data-sensor="${sensor.id}" ${canManage ? "" : "disabled"}>删除</button>
@@ -868,14 +843,7 @@ function renderSensorsBoard(devices) {
   }
   const canManage = Auth.hasPermission("manage_sensors");
   const BUILTIN_PLOTS = ["sim-plot-apple", "sim-plot-pear", "sim-plot-orange"];
-  // v16: 差量渲染签名——地块/传感器状态与读数没变就不重建整块面板
-  const sig = (canManage ? "m" : "v") + "|" + devices.map((device) => {
-    const perms = (device.sensors || []).map((sensor) => sensor.id + ":" + sensor.status + (sensor.value ? JSON.stringify(sensor.value) : "|" + (sensor.last_seen || "")));
-    return device.device_id + "|" + (device.last_seen || "") + "|" + perms.join(",");
-  }).join("#");
-  if (board.__agSig === sig) return;
-  board.__agSig = sig;
-  const htmlContent = devices.map((device) => {
+  board.innerHTML = devices.map((device) => {
     const sensors = (device.sensors || []).slice().sort((a, b) =>
       SENSOR_TYPE_ORDER.indexOf(a.type) - SENSOR_TYPE_ORDER.indexOf(b.type));
     const plot = device.plot || {};
@@ -899,7 +867,6 @@ function renderSensorsBoard(devices) {
       <div class="sensor-grid">${sensors.map(renderSensorCard).join("") || '<div class="sensor-hint" style="padding:18px">该地块暂无传感器，点击"+ 添加传感器"创建。</div>'}</div>
     </section>`;
   }).join("");
-  board.innerHTML = htmlContent;
   if (window.lucide) window.lucide.createIcons();
 }
 
@@ -1290,9 +1257,9 @@ function renderUsers(users) {
       </div>
       <span class="user-role ${u.role}">${badge}</span>
       <div class="user-actions">
-        <select class="user-role-select" data-uid="${u.id}" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可修改" : isSelf ? "不能修改自己的角色" : "修改角色"}">
+        <select class="user-role-select" data-uid="${u.id}" ${isManager ? "disabled" : ""} title="${isManager ? "管理者账户不可修改" : "修改角色（农户/管理者可双向切换，需保留至少 1 名管理者）"}">
           <option value="farmer" ${u.role === "farmer" ? "selected" : ""}>农户</option>
-          <option value="manager" ${u.role === "manager" ? "selected" : ""} ${isManager ? "" : "disabled"}>管理者</option>
+          <option value="manager" ${u.role === "manager" ? "selected" : ""}>管理者</option>
         </select>
         <button class="user-delete" data-action="delete-user" data-uid="${u.id}" data-name="${u.display_name || u.username}" type="button" ${isManager || isSelf ? "disabled" : ""} title="${isManager ? "管理者账户不可删除" : isSelf ? "不能删除自己的账户" : "删除该账户"}">删除</button>
       </div>
@@ -1369,6 +1336,278 @@ function bindUsersActions() {
   }
 }
 
+// --- v15.4.0: big data screen ----------------------------------------------
+const DASH_SENSOR_LABELS = {
+  soil_temperature: "土壤温度",
+  soil_ph: "土壤 pH",
+  soil_npk: "氮磷钾",
+  air_humidity: "空气湿度",
+  soil_conductivity: "电导率",
+};
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[ch]));
+}
+
+function latestPayload(device, kind) {
+  const history = Array.isArray(device?.history) ? device.history : [];
+  let best = null;
+  for (const entry of history) {
+    if (entry?.kind !== kind) continue;
+    if (!best || String(entry.timestamp) > String(best.timestamp)) best = entry;
+  }
+  return best?.payload || {};
+}
+
+function dashAvg(values) {
+  const nums = values.filter((n) => Number.isFinite(n));
+  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+}
+
+function dashNum(el, value, digits = 1, fallback = "--") {
+  if (!el) return;
+  el.textContent = Number.isFinite(value) ? value.toFixed(digits) : fallback;
+}
+
+function isDeviceOnline(device) {
+  if (!device?.last_seen) return false;
+  const elapsed = (Date.now() - new Date(device.last_seen).getTime()) / 1000;
+  return Number.isFinite(elapsed) && elapsed < 90;
+}
+
+// Plot display metadata lives under device.plot (name/crop), not on the device itself.
+function dashPlotName(device) {
+  const plot = device?.plot || {};
+  return plot.name || device?.device_id || "未知地块";
+}
+
+function dashPlotCrop(device) {
+  return (device?.plot || {}).crop || "—";
+}
+
+function renderDashboard(force) {
+  const shell = document.querySelector(".dashboard-shell");
+  if (!shell || shell.hidden) return; // only render while the screen is visible
+  const devices = state.allDevices || [];
+  if (!devices.length) {
+    const list = $("#dash-plot-list");
+    if (list) list.innerHTML = '<div class="empty">等待设备数据…</div>';
+    return;
+  }
+
+  const soils = devices.map((d) => latestPayload(d, "soil"));
+  const climates = devices.map((d) => latestPayload(d, "climate"));
+  const avgMoisture = dashAvg(soils.map((s) => Number(s.moisture_pct)));
+  const avgTemp = dashAvg(climates.map((c) => Number(c.air_temperature_c)));
+  const avgHumidity = dashAvg(climates.map((c) => Number(c.air_humidity_pct)));
+  const avgLight = dashAvg(climates.map((c) => Number(c.light_lux)));
+  const avgPh = dashAvg(soils.map((s) => Number(s.ph)));
+
+  // --- KPI row ---
+  const onlineSensors = devices.reduce(
+    (sum, d) => sum + (d.sensors || []).filter((s) => s.status === "connected").length, 0
+  );
+  $("#kpi-plots").textContent = String(devices.length);
+  $("#kpi-sensors").textContent = String(onlineSensors);
+  dashNum($("#kpi-moisture"), avgMoisture, 1);
+  dashNum($("#kpi-temp"), avgTemp, 1);
+
+  const moistureTrend = $("#kpi-moisture-trend");
+  if (moistureTrend) {
+    const low = Number.isFinite(avgMoisture) && avgMoisture < 40;
+    const high = Number.isFinite(avgMoisture) && avgMoisture > 65;
+    moistureTrend.textContent = low ? "偏低 · 建议灌溉" : high ? "偏高 · 注意排水" : "目标区间 40–65%";
+    moistureTrend.classList.toggle("down", low || high);
+  }
+  const tempTrend = $("#kpi-temp-trend");
+  if (tempTrend) {
+    const low = Number.isFinite(avgTemp) && avgTemp < 18;
+    const high = Number.isFinite(avgTemp) && avgTemp > 28;
+    tempTrend.textContent = low ? "偏低 · 注意保温" : high ? "偏高 · 注意通风" : "舒适区间 18–28°C";
+    tempTrend.classList.toggle("down", low || high);
+  }
+  dashNum($("#dash-core-value"), avgMoisture, 1);
+
+  // --- plot status list ---
+  const plotList = $("#dash-plot-list");
+  if (plotList) {
+    plotList.innerHTML = devices.map((d) => {
+      const online = isDeviceOnline(d);
+      const name = escapeHtml(dashPlotName(d));
+      const crop = escapeHtml(dashPlotCrop(d));
+      return `<div class="plot-row">
+        <div><div class="name">${name}</div></div>
+        <span class="crop">${crop}</span>
+        <span class="status ${online ? "" : "off"}"><i class="status-dot"></i>${online ? "在线" : "离线"}</span>
+      </div>`;
+    }).join("");
+  }
+
+  // --- derived alerts (thresholds applied to live telemetry) ---
+  const alertStream = $("#dash-alert-stream");
+  if (alertStream) {
+    const alerts = [];
+    devices.forEach((d) => {
+      const soil = latestPayload(d, "soil");
+      const climate = latestPayload(d, "climate");
+      const label = dashPlotName(d);
+      const m = Number(soil.moisture_pct);
+      const t = Number(climate.air_temperature_c);
+      if (Number.isFinite(m) && m < 40) alerts.push({ level: "warn", text: `${label}：土壤湿度 ${m.toFixed(1)}% 低于 40%，建议灌溉` });
+      if (Number.isFinite(m) && m > 65) alerts.push({ level: "warn", text: `${label}：土壤湿度 ${m.toFixed(1)}% 高于 65%，注意排水` });
+      if (Number.isFinite(t) && t > 28) alerts.push({ level: "warn", text: `${label}：气温 ${t.toFixed(1)}°C 偏高，建议通风` });
+      if (Number.isFinite(t) && t < 18) alerts.push({ level: "warn", text: `${label}：气温 ${t.toFixed(1)}°C 偏低，注意保温` });
+      if (!isDeviceOnline(d)) alerts.push({ level: "error", text: `${label}：设备离线，未收到近期遥测` });
+    });
+    alertStream.innerHTML = alerts.length
+      ? alerts.map((a) => `<div class="alert-item ${a.level}">
+          <span class="time">${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          <span class="text">${escapeHtml(a.text)}</span>
+        </div>`).join("")
+      : '<div class="empty">全部地块指标正常</div>';
+  }
+
+  // --- footer readouts ---
+  dashNum($("#dash-light"), avgLight, 0);
+  dashNum($("#dash-humidity"), avgHumidity, 1);
+  dashNum($("#dash-ph"), avgPh, 2);
+
+  // --- soil detail grid ---
+  const soilGrid = $("#dash-soil-grid");
+  if (soilGrid) {
+    const cells = [
+      ["土壤温度", dashAvg(soils.map((s) => Number(s.temperature_c))), "°C", 1],
+      ["电导率", dashAvg(soils.map((s) => Number(s.conductivity_ms_cm))), "mS/cm", 2],
+      ["氮", dashAvg(soils.map((s) => Number(s.nitrogen_mg_kg))), "mg/kg", 0],
+      ["磷", dashAvg(soils.map((s) => Number(s.phosphorus_mg_kg))), "mg/kg", 0],
+      ["钾", dashAvg(soils.map((s) => Number(s.potassium_mg_kg))), "mg/kg", 0],
+      ["盐分", dashAvg(soils.map((s) => Number(s.salinity_g_l))), "g/L", 3],
+    ];
+    soilGrid.innerHTML = cells.map(([name, val, unit, digits]) => {
+      const text = Number.isFinite(val) ? val.toFixed(digits) : "--";
+      return `<div class="readout"><div class="name">${name}</div>
+        <div class="num">${text}</div><div class="unit">${unit}</div></div>`;
+    }).join("");
+  }
+
+  // --- recent telemetry log ---
+  const log = $("#dash-telemetry-log");
+  if (log) {
+    const rows = [];
+    devices.forEach((d) => {
+      const history = Array.isArray(d.history) ? d.history : [];
+      const last = history[history.length - 1];
+      if (!last?.timestamp) return;
+      const label = dashPlotName(d);
+      rows.push({ ts: new Date(last.timestamp), label, kind: last.kind });
+    });
+    rows.sort((a, b) => b.ts - a.ts);
+    log.innerHTML = rows.length
+      ? rows.slice(0, 12).map((r) => `<div class="alert-item">
+          <span class="time">${r.ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+          <span class="text">${escapeHtml(r.label)} · ${r.kind === "soil" ? "土壤" : "气候"}遥测</span>
+        </div>`).join("")
+      : '<div class="empty">等待数据…</div>';
+  }
+
+  if (force && window.lucide) window.lucide.createIcons();
+}
+
+function updateDashboardClock() {
+  const clock = $("#dashboard-clock");
+  if (!clock) return;
+  clock.textContent = new Date().toLocaleString("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+}
+
+// Canvas: pulsing telemetry rings driven by live moisture samples.
+function startDashboardCanvas() {
+  const canvas = $("#dashboard-canvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  let phase = 0;
+  let width = 0;
+  let height = 0;
+
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    width = rect.width;
+    height = rect.height;
+    canvas.width = Math.max(1, Math.floor(width * dpr));
+    canvas.height = Math.max(1, Math.floor(height * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener("resize", resize);
+
+  function frame() {
+    phase += 0.012;
+    ctx.clearRect(0, 0, width, height);
+    const cx = width / 2;
+    const cy = height / 2;
+
+    // concentric pulse rings
+    for (let i = 0; i < 4; i += 1) {
+      const t = (phase + i * 0.25) % 1;
+      const radius = 40 + t * (Math.min(width, height) * 0.5);
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(34, 211, 238, ${(1 - t) * 0.32})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+
+    // radial spokes
+    ctx.strokeStyle = "rgba(14, 165, 233, 0.14)";
+    ctx.lineWidth = 1;
+    for (let a = 0; a < 12; a += 1) {
+      const angle = (a / 12) * Math.PI * 2 + phase * 0.25;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(angle) * Math.min(width, height) * 0.46, cy + Math.sin(angle) * Math.min(width, height) * 0.46);
+      ctx.stroke();
+    }
+
+    // data points: one per plot, distance reflects its moisture level
+    const devices = state.allDevices || [];
+    const points = devices.map((d, idx) => {
+      const soil = latestPayload(d, "soil");
+      const m = Number(soil.moisture_pct);
+      const ratio = Number.isFinite(m) ? Math.min(1, Math.max(0, m / 100)) : 0.4;
+      const angle = (idx / Math.max(1, devices.length)) * Math.PI * 2 - Math.PI / 2 + phase * 0.6;
+      const radius = 55 + ratio * (Math.min(width, height) * 0.3);
+      return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius, m };
+    });
+
+    if (points.length > 1) {
+      ctx.beginPath();
+      points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+
+    points.forEach((p) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(125, 211, 252, 0.95)";
+      ctx.shadowColor = "rgba(56, 189, 248, 0.9)";
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
 if (window.lucide) window.lucide.createIcons();
 bindBrokerActions();
 bindUsersActions();
@@ -1385,24 +1624,16 @@ refreshAiStatus();
 refreshAlertLog();
 probeHealthz();
 setRoute(params.get("view") || "overview");
-// v16: 集中调度（可见性感知 + 请求去重），节奏大幅降低、页面隐藏时自动暂停
-//   - 设备/遥测：跟随设置（默认 5s），改设置即换节奏
-//   - 水泵：5s（原 1s 过载）；启动确认期间可由 R 键手动补刷
-//   - 告警 10s / 规则 20s / AI 30s / 告警日志 30s / broker 60s / 权限 120s
-if (window.AG) {
-  AG.registerRefresh(refresh);
-  AG.every({ ms: 10000, fn: probeHealthz });
-  AG.every({ ms: 60000, fn: function () { if (state.device) return refreshHistory(state.device.device_id); } });
-  AG.every({ ms: 5000, fn: refreshPumpStatus });
-  AG.every({ ms: 10000, fn: refreshAlerts });
-  AG.every({ ms: 20000, fn: refreshRules });
-  AG.every({ ms: 30000, fn: refreshAiStatus });
-  AG.every({ ms: 30000, fn: refreshAlertLog });
-  AG.every({ ms: 60000, fn: loadBroker });
-  AG.every({ ms: 120000, fn: refreshUserPermissions });
-} else {
-  // 兜底：AG 未加载时退回基础轮询
-  setInterval(refresh, 5000);
-  setInterval(refreshPumpStatus, 5000);
-  setInterval(probeHealthz, 10000);
-}
+setInterval(refresh, 5000);
+setInterval(probeHealthz, 10000);
+setInterval(() => { if (state.device) refreshHistory(state.device.device_id); }, 60000);
+setInterval(refreshPumpStatus, 1000);
+setInterval(refreshAlerts, 5000);
+setInterval(refreshAiStatus, 15000);
+setInterval(refreshAlertLog, 30000);
+setInterval(loadBroker, 30000);
+setInterval(refreshUserPermissions, 60000);
+// v15.4.0: big data screen — clock tick + canvas animation start
+updateDashboardClock();
+setInterval(updateDashboardClock, 1000);
+startDashboardCanvas();
