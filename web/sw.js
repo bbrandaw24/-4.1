@@ -9,13 +9,8 @@ const APP_SHELL = [
   './',
   './index.html',
   './login.html',
-  './offline.html',
   './theme.css',
-  './v16.css',
   './enhance.js',
-  './v16-ui.js',
-  './icons.js',
-  './v16-core.js',
   './styles.css',
   './day08.css',
   './auth.css',
@@ -23,6 +18,7 @@ const APP_SHELL = [
   './kitten.css',
   './sensor.css',
   './day13.css',
+  './dashboard.css',
   './app.js',
   './auth.js',
   './agent.js',
@@ -70,10 +66,8 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => {
-        // v16：离线时页面跳转给友好离线页，静态资源回退缓存
-        if (req.mode === 'navigate') return caches.match('./offline.html');
-        return caches.match(req).then((hit) => hit || caches.match('./index.html'));
-      })
+      .catch(() =>
+        caches.match(req).then((hit) => hit || caches.match('./index.html'))
+      )
   );
 });
