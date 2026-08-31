@@ -218,6 +218,9 @@ function setRoute(route) {
   }
   if (nextRoute === "dashboard") {
     renderDashboard(true);
+    if (typeof window.__dashResize === "function") {
+      setTimeout(window.__dashResize, 50); // re-measure after the view is shown
+    }
   }
 }
 
@@ -1535,6 +1538,9 @@ function startDashboardCanvas() {
 
   function resize() {
     const rect = canvas.parentElement.getBoundingClientRect();
+    // Skip when the dashboard view is hidden (rect collapses to 0) — the
+    // ResizeObserver will re-fire once the view becomes visible.
+    if (!rect.width || !rect.height) return;
     const dpr = window.devicePixelRatio || 1;
     width = rect.width;
     height = rect.height;
@@ -1542,8 +1548,17 @@ function startDashboardCanvas() {
     canvas.height = Math.max(1, Math.floor(height * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  resize();
-  window.addEventListener("resize", resize);
+  // Hidden views report 0x0 at boot; observe the wrapper so the canvas
+  // re-measures the moment the dashboard route becomes visible/resized.
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(canvas.parentElement);
+    window.addEventListener("resize", resize);
+  } else {
+    window.addEventListener("resize", resize);
+    resize();
+  }
+  window.__dashResize = resize;
 
   function frame() {
     phase += 0.012;
