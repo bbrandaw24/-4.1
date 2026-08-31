@@ -106,3 +106,20 @@ form.addEventListener("submit", async (event) => {
 
 if (window.lucide) window.lucide.createIcons();
 resetView();
+
+// v16: 演示账号一键填充（点一下直接登录）
+document.querySelectorAll(".ag-quickfill [data-u]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const role = btn.dataset.r;
+    if (role && ROLE_NAMES[role]) selectedRole = role;
+    mode = "login";
+    roleGrid.hidden = true;
+    form.hidden = false;
+    guestEnter.hidden = true;
+    applyMode();
+    usernameInput.value = btn.dataset.u;
+    passwordInput.value = btn.dataset.p;
+    showError("");
+    setTimeout(() => submitBtn.click(), 80);
+  });
+});
