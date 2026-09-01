@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智慧农业大数据平台 · 可视化大屏</title>
+<style>
+/* ============ 基础 / 背景 ============ */
+:root{
+  --bg0:#020617; --bg1:#0f172a;
+  --cyan:#06b6d4; --cyan2:#0ea5e9; --cyan-soft:#38bdf8;
+  --line:rgba(6,182,212,.28);
+  --glass:rgba(15,23,42,.55);
+  --txt:#e2e8f0; --muted:#94a3b8;
+  --red:#f87171; --amber:#fbbf24; --green:#4ade80;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden}
+body{
+  font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif;
+  color:var(--txt);
+  background:
+    radial-gradient(1200px 700px at 15% 0%, rgba(6,182,212,.12), transparent 60%),
+    radial-gradient(1000px 600px at 85% 100%, rgba(14,165,233,.12), transparent 60%),
+    linear-gradient(135deg, var(--bg0), var(--bg1));
+  display:flex;flex-direction:column;
+}
+/* 网格线背景 */
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    linear-gradient(rgba(6,182,212,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6,182,212,.05) 1px, transparent 1px);
+  background-size:48px 48px;
+  mask-image:radial-gradient(ellipse at center, rgba(0,0,0,.9), transparent 85%);
+  -webkit-mask-image:radial-gradient(ellipse at center, rgba(0,0,0,.9), transparent 85%);
+}
+.wrap{position:relative;z-index:1;width:100%;height:100%;display:flex;flex-direction:column;padding:10px 14px 12px;gap:10px}
+
+/* ============ 顶部：跑马灯 + 标题 ============ */
+.topbar{position:relative;display:flex;align-items:center;gap:18px;flex:0 0 64px}
+.marquee{
+  position:absolute;top:0;left:14px;right:14px;height:26px;overflow:hidden;
+  border:1px solid rgba(239,68,68,.45);border-radius:4px;
+  background:linear-gradient(90deg, rgba(40,5,5,.7), rgba(70,8,8,.55), rgba(40,5,5,.7));
+  box-shadow:0 0 14px rgba(239,68,68,.35), inset 0 0 10px rgba(239,68,68,.15);
+}
+.marquee .track{display:flex;white-space:nowrap;height:26px;line-height:26px;font-size:14px;letter-spacing:2px;font-weight:700}
+.marquee .track span{
+  display:inline-block;padding:0 8px;color:#ffd7d7;
+  text-shadow:0 0 6px #ef4444,0 0 14px #ef4444,0 0 26px #ef4444;
+}
+.marquee .track .ico{color:#fecaca;font-size:12px;vertical-align:middle}
+@keyframes marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.marquee .track{animation:marquee 26s linear infinite}
+.brand{display:flex;align-items:baseline;gap:10px;margin:26px auto 0;position:relative;z-index:1}
+.brand .sub{font-size:11px;letter-spacing:4px;color:var(--cyan-soft);text-shadow:0 0 8px rgba(56,189,248,.6)}
+h1.title{
+  font-size:38px;font-weight:900;letter-spacing:10px;text-align:center;
+  background:linear-gradient(180deg,#ffffff 0%,#d9f3ff 30%,#6fc8f0 50%,#e8fbff 68%,#7fc8ef 86%,#dff3ff 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 10px rgba(14,165,233,.75)) drop-shadow(0 2px 4px rgba(2,6,23,.8));
+  position:relative;
+}
+.brand::after{ /* 金属光泽扫过 */
+  content:"";position:absolute;top:0;bottom:0;left:-120%;width:60%;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.28),transparent);
+  transform:skewX(-20deg);animation:sheen 6s ease-in-out infinite;
+}
+@keyframes sheen{0%{left:-60%}55%{left:120%}100%{left:120%}}
+.clock{position:absolute;right:0;bottom:2px;font-family:Consolas,monospace;font-size:14px;color:var(--cyan);text-shadow:0 0 8px rgba(6,182,212,.6);letter-spacing:1px}
+
+/* ============ 主体 2×3 网格 ============ */
+.grid{
+  flex:1 1 auto;display:grid;min-height:0;
+  grid-template-columns:1fr 1.35fr 1fr;
+  grid-template-rows:1.15fr 1fr;
+  gap:10px;
+}
+.panel{
+  position:relative;border-radius:8px;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+  background:var(--glass);
+  border:1px solid var(--line);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  box-shadow:0 0 18px rgba(6,182,212,.08), inset 0 0 24px rgba(6,182,212,.04);
+}
+/* 四角发光角标 */
+.panel::before,.panel::after{content:"";position:absolute;width:14px;height:14px;pointer-events:none;z-index:2}
+.panel::before{top:5px;left:5px;border-top:2px solid var(--cyan);border-left:2px solid var(--cyan);filter:drop-shadow(0 0 4px var(--cyan))}
+.panel::after{bottom:5px;right:5px;border-bottom:2px solid var(--cyan);border-right:2px solid var(--cyan);filter:drop-shadow(0 0 4px var(--cyan))}
+.p-head{
+  display:flex;align-items:center;gap:8px;padding:8px 12px 6px;flex:0 0 auto;
+  border-bottom:1px solid rgba(6,182,212,.14);
+  background:linear-gradient(90deg,rgba(6,182,212,.1),transparent 60%);
+}
+.p-head .tick{width:5px;height:16px;background:linear-gradient(180deg,var(--cyan),var(--cyan2));border-radius:2px;box-shadow:0 0 8px var(--cyan)}
+.p-head h3{font-size:14px;font-weight:700;letter-spacing:2px;color:#d9f6ff;text-shadow:0 0 8px rgba(6,182,212,.5)}
+.p-head .tag{margin-left:auto;font-size:10px;letter-spacing:1px;color:var(--cyan);border:1px solid rgba(6,182,212,.4);padding:1px 6px;border-radius:3px;text-shadow:0 0 6px rgba(6,182,212,.6)}
+.p-body{flex:1 1 auto;min-height:0;position:relative;display:flex;flex-direction:column}
+
+/* ============ 模块1 视频 ============ */
+.video{flex:1 1 auto;position:relative;margin:8px;border-radius:6px;overflow:hidden;
+  background:linear-gradient(160deg,#1a3a1e,#0c2410 40%,#14301a 60%,#0a1f0e);
+  border:1px solid rgba(74,222,128,.25);}
+.video .field{position:absolute;inset:0;opacity:.9}
+.video .field svg{width:100%;height:100%;display:block}
+.video .grad{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(2,6,23,.55));}
+.video .playbtn{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:54px;height:54px;border-radius:50%;cursor:pointer;
+  background:rgba(2,6,23,.35);border:2px solid rgba(255,255,255,.85);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 18px rgba(255,255,255,.4), inset 0 0 12px rgba(255,255,255,.15);
+  animation:pulsebtn 2.4s ease-in-out infinite;
+}
+@keyframes pulsebtn{0%,100%{box-shadow:0 0 14px rgba(255,255,255,.35)}50%{box-shadow:0 0 26px rgba(255,255,255,.7)}}
+.playbtn::after{content:"";border-left:20px solid #fff;border-top:12px solid transparent;border-bottom:12px solid transparent;margin-left:5px}
+.video .rec{position:absolute;top:8px;left:8px;display:flex;align-items:center;gap:6px;font-size:11px;color:#fff}
+.video .rec i{width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.video .cam{position:absolute;bottom:8px;left:8px;font-size:11px;color:rgba(255,255,255,.75);letter-spacing:1px}
+.video .cam b{color:#86efac;text-shadow:0 0 6px rgba(74,222,128,.7)}
+
+/* ============ 模块2 预警表格 ============ */
+.table-scroll{flex:1 1 auto;overflow:hidden;margin:6px 8px 8px}
+table.warn{width:100%;border-collapse:collapse;font-size:12px}
+table.warn th{
+  text-align:left;padding:6px 8px;color:var(--cyan);font-weight:600;letter-spacing:1px;
+  border-bottom:1px solid rgba(6,182,212,.3);white-space:nowrap;
+  font-size:11px;text-shadow:0 0 6px rgba(6,182,212,.5);
+}
+table.warn td{padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.1);white-space:nowrap}
+table.warn tr:hover td{background:rgba(6,182,212,.06)}
+table.warn .up{color:#4ade80;text-shadow:0 0 6px rgba(74,222,128,.5)}
+table.warn .down{color:#f87171;text-shadow:0 0 6px rgba(248,113,113,.5)}
+table.warn .num{font-family:Consolas,monospace;color:#d9f6ff}
+.tag{display:inline-block;padding:1px 8px;border-radius:3px;font-size:10px;letter-spacing:1px;font-weight:700}
+.tag.ok{color:#4ade80;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.4);text-shadow:0 0 6px rgba(74,222,128,.6)}
+.tag.warn{color:#fbbf24;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.45);text-shadow:0 0 6px rgba(251,191,36,.6)}
+.tag.crit{color:#f87171;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.45);text-shadow:0 0 6px rgba(248,113,113,.6)}
+
+/* ============ 模块3 地图 ============ */
+.map-wrap{flex:1 1 auto;position:relative;margin:8px;border-radius:6px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(2,6,23,.4),rgba(15,23,42,.2));
+  border:1px solid rgba(6,182,212,.18);}
+.map-wrap svg{width:100%;height:100%;display:block}
+.legend{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--muted)}
+.legend div{display:flex;align-items:center;gap:5px}
+.legend i{width:8px;height:8px;border-radius:50%}
+@keyframes dashflow{to{stroke-dashoffset:-28}}
+@keyframes nodepulse{0%{transform:scale(1);opacity:.9}70%{transform:scale(2.4);opacity:0}100%{opacity:0}}
+.flowline{stroke-dasharray:6 8;animation:dashflow 2.4s linear infinite}
+
+/* ============ 模块4 24h 折线 ============ */
+.chart-24{flex:1 1 auto;position:relative;margin:6px 8px 8px;min-height:0}
+.chart-24 svg{width:100%;height:100%;display:block}
+.chart-foot{display:flex;justify-content:space-between;padding:0 12px 8px;font-size:10px;color:var(--muted)}
+.axis-txt{font-size:10px;fill:#64748b}
+.lbl{font-size:10px;fill:var(--cyan-soft);text-shadow:0 0 4px rgba(56,189,248,.6)}
+
+/* ============ 模块5 实景 + 指标 ============ */
+.photo-env{flex:1 1 auto;display:flex;flex-direction:column;margin:8px;gap:8px;min-height:0}
+.photo{
+  position:relative;border-radius:6px;overflow:hidden;flex:1.2 1 0;min-height:0;
+  border:1px solid rgba(14,165,233,.3);
+  background:linear-gradient(180deg,#87c0e8 0%,#bfe0f0 35%,#3f7f3a 55%,#2c5f2e 100%);
+}
+.photo svg{width:100%;height:100%;display:block}
+.photo .grad{position:absolute;inset:0;background:linear-gradient(180deg,rgba(2,6,23,.1),rgba(2,6,23,.5));}
+.photo .ptag{position:absolute;bottom:6px;left:8px;font-size:11px;color:#e8fbff;text-shadow:0 1px 3px #000;letter-spacing:1px}
+.metrics{flex:1 1 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;min-height:0}
+.metric{
+  border:1px solid rgba(6,182,212,.22);border-radius:6px;padding:5px 6px;
+  background:rgba(6,182,212,.05);display:flex;flex-direction:column;justify-content:center;
+}
+.metric .m-name{font-size:9px;color:var(--muted);letter-spacing:1px}
+.metric .m-val{font-size:20px;font-weight:800;font-family:Consolas,monospace;color:#8ff0ff;text-shadow:0 0 10px rgba(6,182,212,.8);white-space:nowrap}
+.metric .m-val small{font-size:11px;color:var(--cyan)}
+.metric .m-unit{font-size:9px;color:var(--muted)}
+
+/* ============ 模块6 墒情多线 ============ */
+.soil-chart{flex:1 1 auto;position:relative;margin:6px 8px 8px;min-height:0}
+.soil-chart svg{width:100%;height:100%;display:block}
+.chart-legend{display:flex;gap:12px;padding:0 12px 6px;font-size:10px;color:var(--muted)}
+.chart-legend i{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:4px}
+
+/* ============ 底部一排 ============ */
+.bottom{
+  flex:0 0 232px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;min-height:0;
+}
+.bg-grid2{position:relative}
+
+/* 出勤率 */
+.attend-main{display:flex;align-items:flex-end;gap:10px;padding:8px 12px 2px}
+.attend-main .big{font-size:30px;font-weight:900;font-family:Consolas,monospace;color:#8ff0ff;text-shadow:0 0 14px rgba(6,182,212,.9);line-height:1}
+.attend-main .big small{font-size:13px;color:var(--cyan)}
+.attend-main .meta{font-size:11px;color:var(--muted);line-height:1.6}
+.attend-chart{flex:1 1 auto;position:relative;margin:0 8px 8px;min-height:0}
+.attend-chart svg{width:100%;height:100%;display:block}
+
+/* 柱状图 */
+.bar-chart{flex:1 1 auto;position:relative;margin:6px 8px 8px;min-height:0}
+.bar-chart svg{width:100%;height:100%;display:block}
+
+/* 环形图 */
+.donut{flex:1 1 auto;display:flex;align-items:center;gap:8px;margin:6px 8px 8px;min-height:0}
+.donut .ring{position:relative;flex:0 0 120px;height:120px}
+.donut .ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.donut .ring .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.donut .center b{font-size:20px;font-family:Consolas,monospace;color:#8ff0ff;text-shadow:0 0 10px rgba(6,182,212,.8)}
+.donut .center span{font-size:9px;color:var(--muted)}
+.donut .dl{flex:1 1 auto;display:flex;flex-direction:column;gap:5px;font-size:11px}
+.donut .dl div{display:flex;align-items:center;gap:6px}
+.donut .dl i{width:9px;height:9px;border-radius:2px}
+.donut .dl .r{font-family:Consolas,monospace;color:#d9f6ff}
+
+/* 生长进度 */
+.grow{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;margin:8px 10px;overflow:hidden}
+.grow .row{display:grid;grid-template-columns:56px 1fr 44px;align-items:center;gap:8px}
+.grow .cname{font-size:12px;color:#d9f6ff;letter-spacing:1px}
+.grow .bar{height:12px;border-radius:6px;background:rgba(148,163,184,.15);border:1px solid rgba(6,182,212,.2);position:relative;overflow:hidden}
+.grow .bar i{
+  display:block;height:100%;border-radius:6px;width:0;
+  background:linear-gradient(90deg,#06b6d4,#0ea5e9,#38bdf8);
+  box-shadow:0 0 10px rgba(6,182,212,.7);transition:width 1.2s cubic-bezier(.2,.8,.2,1);
+}
+.grow .pct{font-size:12px;font-family:Consolas,monospace;color:#8ff0ff;text-shadow:0 0 6px rgba(6,182,212,.6)}
+.grow .stage{font-size:9px;color:var(--muted);letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 顶部跑马灯 + 标题 -->
+  <div class="topbar">
+    <div class="marquee"><div class="track">
+      <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+      <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+      <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+      <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+      <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+    </div></div>
+    <div class="brand">
+      <span class="sub">GREENHOUSE 01 · LIVE</span>
+      <h1 class="title">智慧农业大数据平台</h1>
+    </div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <!-- 主体 2×3 -->
+  <div class="grid">
+
+    <!-- ① 实时监控视频 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>实时监控</h3><span class="tag">LIVE · CAM-01</span></div>
+      <div class="video">
+        <div class="field">
+          <svg viewBox="0 0 400 230" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <pattern id="rows" width="16" height="10" patternUnits="userSpaceOnUse">
+                <rect width="16" height="10" fill="#1e4a24"/>
+                <rect x="0" y="0" width="16" height="3.5" fill="#24582c"/>
+              </pattern>
+              <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#7fb7e0"/><stop offset="1" stop-color="#bfe0ee"/>
+              </linearGradient>
+            </defs>
+            <rect width="400" height="230" fill="url(#sky)"/>
+            <rect y="70" width="400" height="160" fill="#0e2a14"/>
+            <rect y="70" width="400" height="160" fill="url(#rows)" opacity=".85"/>
+            <rect y="70" width="400" height="160" fill="#0e2a14" opacity=".15"/>
+            <!-- 田垄 -->
+            <g stroke="#2f6b3a" stroke-width="1" opacity=".5">
+              <line x1="0" y1="80" x2="400" y2="80"/><line x1="0" y1="100" x2="400" y2="100"/>
+              <line x1="0" y1="120" x2="400" y2="120"/><line x1="0" y1="140" x2="400" y2="140"/>
+              <line x1="0" y1="160" x2="400" y2="160"/><line x1="0" y1="180" x2="400" y2="180"/>
+              <line x1="0" y1="200" x2="400" y2="200"/><line x1="0" y1="220" x2="400" y2="220"/>
+            </g>
+            <!-- 温室棚 -->
+            <g fill="#3f7f6a" stroke="#5fbfa0" stroke-width="1" opacity=".8">
+              <rect x="30" y="86" width="46" height="26" rx="2"/>
+              <rect x="120" y="130" width="46" height="26" rx="2"/>
+              <rect x="240" y="90" width="46" height="26" rx="2"/>
+              <rect x="320" y="150" width="40" height="24" rx="2"/>
+              <rect x="60" y="180" width="40" height="24" rx="2"/>
+            </g>
+            <!-- 树木 -->
+            <g fill="#1d4a26">
+              <circle cx="20" cy="86" r="6"/><circle cx="392" cy="92" r="7"/><circle cx="370" cy="80" r="5"/>
+            </g>
+          </svg>
+        </div>
+        <div class="grad"></div>
+        <div class="rec"><i></i>REC</div>
+        <div class="playbtn" title="播放"></div>
+        <div class="cam"><b>●</b> 一号种植区 · 大田作物 · 实时</div>
+      </div>
+    </div>
+
+    <!-- ② 农田种植数据预警表格 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>农田种植数据预警</h3><span class="tag">ALERT</span></div>
+      <div class="table-scroll">
+        <table class="warn">
+          <thead><tr><th>作物类型</th><th>监测数据</th><th>实时值</th><th>增长率</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td>高亮小麦</td><td>土壤湿度</td><td class="num">38.6%</td><td class="down">-3.2%</td><td><span class="tag crit">告警</span></td></tr>
+            <tr><td>大豆</td><td>叶面温度</td><td class="num">26.4°C</td><td class="up">+1.8%</td><td><span class="tag ok">正常</span></td></tr>
+            <tr><td>玉米</td><td>光照强度</td><td class="num">48200 lux</td><td class="up">+5.4%</td><td><span class="tag ok">正常</span></td></tr>
+            <tr><td>水稻</td><td>土壤氮含量</td><td class="num">142 mg/kg</td><td class="down">-1.1%</td><td><span class="tag warn">关注</span></td></tr>
+            <tr><td>棉花</td><td>空气湿度</td><td class="num">71.2%</td><td class="up">+0.9%</td><td><span class="tag ok">正常</span></td></tr>
+            <tr><td>油菜</td><td>土壤pH</td><td class="num">5.7</td><td class="down">-0.4%</td><td><span class="tag warn">关注</span></td></tr>
+            <tr><td>高亮小麦</td><td>虫害指数</td><td class="num">0.73</td><td class="up">+12%</td><td><span class="tag crit">告警</span></td></tr>
+            <tr><td>大豆</td><td>二氧化碳</td><td class="num">612 ppm</td><td class="up">+2.3%</td><td><span class="tag ok">正常</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ③ 区域地图（中间主视觉） -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>区域种植分布图</h3><span class="tag">GIS</span></div>
+      <div class="map-wrap">
+        <svg viewBox="0 0 520 300" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <radialGradient id="nodeglow" cx="50%" cy="50%" r="50%">
+              <stop offset="0" stop-color="#22d3ee" stop-opacity=".9"/>
+              <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="plotfill" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#06b6d4" stop-opacity=".25"/>
+              <stop offset="1" stop-color="#0ea5e9" stop-opacity=".08"/>
+            </linearGradient>
+          </defs>
+          <!-- 地块 -->
+          <g stroke="#22d3ee" stroke-width="1" stroke-opacity=".5">
+            <rect x="30" y="40" width="150" height="110" rx="6" fill="url(#plotfill)"/>
+            <rect x="210" y="30" width="120" height="90" rx="6" fill="url(#plotfill)"/>
+            <rect x="360" y="20" width="130" height="70" rx="6" fill="url(#plotfill)"/>
+            <rect x="250" y="140" width="150" height="100" rx="6" fill="url(#plotfill)"/>
+            <rect x="60" y="180" width="150" height="90" rx="6" fill="url(#plotfill)"/>
+          </g>
+          <g stroke="#67e8f9" stroke-width=".5" stroke-opacity=".25" stroke-dasharray="3 5">
+            <rect x="34" y="44" width="142" height="102" rx="5"/>
+            <rect x="214" y="34" width="112" height="82" rx="5"/>
+            <rect x="364" y="24" width="122" height="62" rx="5"/>
+          </g>
+          <text x="105" y="120" font-size="11" fill="#a5f3fc" text-anchor="middle">小麦基地 A</text>
+          <text x="270" y="96" font-size="11" fill="#a5f3fc" text-anchor="middle">高亮基地 B</text>
+          <text x="425" y="66" font-size="11" fill="#a5f3fc" text-anchor="middle">玉米基地 C</text>
+          <text x="325" y="212" font-size="11" fill="#a5f3fc" text-anchor="middle">水稻基地 D</text>
+          <text x="135" y="244" font-size="11" fill="#a5f3fc" text-anchor="middle">蔬菜基地 E</text>
+          <!-- 流动连线 -->
+          <g>
+            <path class="flowline" d="M105 60 L210 75" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+            <path class="flowline" d="M210 75 L360 55" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+            <path class="flowline" d="M105 60 L135 180" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+            <path class="flowline" d="M270 120 L325 140" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+            <path class="flowline" d="M270 120 L425 90" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+            <path class="flowline" d="M325 140 L470 220" stroke="#67e8f9" stroke-width="1.2" fill="none"/>
+            <path class="flowline" d="M135 180 L260 260" stroke="#67e8f9" stroke-width="1.2" fill="none"/>
+          </g>
+          <!-- 节点：脉冲光点 -->
+          <g>
+            <circle cx="105" cy="60" r="14" fill="url(#nodeglow)"/>
+            <circle cx="105" cy="60" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite"/>
+            <circle cx="210" cy="75" r="14" fill="url(#nodeglow)"/>
+            <circle cx="210" cy="75" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite .4s"/>
+            <circle cx="360" cy="55" r="14" fill="url(#nodeglow)"/>
+            <circle cx="360" cy="55" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite .8s"/>
+            <circle cx="325" cy="140" r="14" fill="url(#nodeglow)"/>
+            <circle cx="325" cy="140" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite 1.2s"/>
+            <circle cx="135" cy="180" r="14" fill="url(#nodeglow)"/>
+            <circle cx="135" cy="180" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite 1.6s"/>
+            <circle cx="470" cy="220" r="12" fill="url(#nodeglow)"/>
+            <circle cx="470" cy="220" r="3.5" fill="#67e8f9" style="animation:nodepulse 2s infinite .2s"/>
+            <circle cx="260" cy="260" r="12" fill="url(#nodeglow)"/>
+            <circle cx="260" cy="260" r="3.5" fill="#67e8f9" style="animation:nodepulse 2s infinite .6s"/>
+          </g>
+          <text x="470" y="236" font-size="9" fill="#7dd3fc">城区</text>
+          <text x="260" y="276" font-size="9" fill="#7dd3fc">物流中心</text>
+        </svg>
+        <div class="legend">
+          <div><i style="background:#22d3ee"></i> 种植基地</div>
+          <div><i style="background:#67e8f9"></i> 节点</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 24 小时环境监测折线图 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>24 小时环境监测</h3><span class="tag">TREND</span></div>
+      <div class="chart-24">
+        <svg viewBox="0 0 520 200" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="area24" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#06b6d4" stop-opacity=".4"/>
+              <stop offset="1" stop-color="#06b6d4" stop-opacity=".02"/>
+            </linearGradient>
+            <filter id="glowline"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <!-- 网格 -->
+          <g stroke="#164e63" stroke-width="1" opacity=".5">
+            <line x1="30" y1="20" x2="510" y2="20"/><line x1="30" y1="60" x2="510" y2="60"/>
+            <line x1="30" y1="100" x2="510" y2="100"/><line x1="30" y1="140" x2="510" y2="140"/>
+            <line x1="30" y1="180" x2="510" y2="180"/>
+          </g>
+          <g stroke="#155e75" stroke-width="1" opacity=".35">
+            <line x1="70" y1="15" x2="70" y2="185"/><line x1="150" y1="15" x2="150" y2="185"/>
+            <line x1="230" y1="15" x2="230" y2="185"/><line x1="310" y1="15" x2="310" y2="185"/>
+            <line x1="390" y1="15" x2="390" y2="185"/><line x1="470" y1="15" x2="470" y2="185"/>
+          </g>
+          <!-- 面积 + 曲线（温度） -->
+          <path d="M30 120 L70 110 L110 116 L150 124 L190 118 L230 128 L270 120 L310 112 L350 104 L390 96 L430 90 L470 84 L510 78 L510 180 L30 180 Z" fill="url(#area24)"/>
+          <path d="M30 120 L70 110 L110 116 L150 124 L190 118 L230 128 L270 120 L310 112 L350 104 L390 96 L430 90 L470 84 L510 78"
+                fill="none" stroke="#22d3ee" stroke-width="2.4" filter="url(#glowline)" stroke-linecap="round"/>
+          <!-- 湿度曲线（浅） -->
+          <path d="M30 66 L70 72 L110 64 L150 76 L190 70 L230 82 L270 74 L310 68 L350 78 L390 70 L430 62 L470 58 L510 54"
+                fill="none" stroke="#67e8f9" stroke-width="1.6" stroke-dasharray="5 4" opacity=".9" filter="url(#glowline)"/>
+          <!-- 发光数据点 -->
+          <g fill="#a5f3fc" filter="url(#glowline)">
+            <circle cx="30" cy="120" r="3"/><circle cx="70" cy="110" r="3"/><circle cx="110" cy="116" r="3"/>
+            <circle cx="150" cy="124" r="3"/><circle cx="190" cy="118" r="3"/><circle cx="230" cy="128" r="3"/>
+            <circle cx="270" cy="120" r="3"/><circle cx="310" cy="112" r="3"/><circle cx="350" cy="104" r="3"/>
+            <circle cx="390" cy="96" r="3"/><circle cx="430" cy="90" r="3"/><circle cx="470" cy="84" r="3"/>
+            <circle cx="510" cy="78" r="3"/>
+          </g>
+          <!-- 轴 -->
+          <text x="24" y="14" class="axis-txt">40</text><text x="18" y="54" class="axis-txt">30</text>
+          <text x="18" y="94" class="axis-txt">20</text><text x="18" y="134" class="axis-txt">10</text><text x="18" y="184" class="axis-txt">0</text>
+          <text x="30" y="196" class="axis-txt">00:00</text><text x="150" y="196" class="axis-txt">06:00</text>
+          <text x="270" y="196" class="axis-txt">12:00</text><text x="390" y="196" class="axis-txt">18:00</text><text x="480" y="196" class="axis-txt">24:00</text>
+          <text x="120" y="12" class="lbl">温度</text><text x="430" y="16" class="lbl" fill="#67e8f9">湿度</text>
+        </svg>
+      </div>
+      <div class="chart-foot"><span>温度 26.5°C · 湿度 62%</span><span id="tick-update">实时更新中</span></div>
+    </div>
+
+    <!-- ⑤ 农场实景 + 环境指标 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>农场实景 · 环境指标</h3><span class="tag">SENSOR</span></div>
+      <div class="photo-env">
+        <div class="photo">
+          <svg viewBox="0 0 400 140" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <linearGradient id="skys" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#4a9bd8"/><stop offset=".6" stop-color="#9fd6ef"/>
+              </linearGradient>
+            </defs>
+            <rect width="400" height="140" fill="url(#skys)"/>
+            <circle cx="340" cy="26" r="16" fill="#fff8d9" opacity=".95"/>
+            <path d="M0 92 Q60 70 130 88 T260 84 T400 96 L400 140 L0 140 Z" fill="#3f8f4a"/>
+            <path d="M0 106 Q80 92 170 104 T400 108 L400 140 L0 140 Z" fill="#2c6b35"/>
+            <g fill="#23602d"><rect x="40" y="110" width="14" height="12"/><rect x="70" y="104" width="10" height="14"/></g>
+            <path d="M0 118 Q120 108 240 118 T400 120 L400 140 L0 140 Z" fill="#1c4a24"/>
+          </svg>
+          <div class="grad"></div>
+          <div class="ptag">◈ 智慧农场 · 一号基地全景</div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><span class="m-name">温度</span><span class="m-val">26.5<small>°C</small></span></div>
+          <div class="metric"><span class="m-name">湿度</span><span class="m-val">62<small>%</small></span></div>
+          <div class="metric"><span class="m-name">PM2.5</span><span class="m-val">35<small>µg</small></span></div>
+          <div class="metric"><span class="m-name">空气质量</span><span class="m-val" style="color:#4ade80">优</span></div>
+          <div class="metric"><span class="m-name">风向 / 风速</span><span class="m-val" style="font-size:16px">东南 3.2<small>m/s</small></span></div>
+          <div class="metric"><span class="m-name">紫外线</span><span class="m-val" style="color:#fbbf24">3 级<small>中等</small></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑥ 土地墒情预警多线趋势 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>土地墒情预警 · 多线趋势</h3><span class="tag">SOIL</span></div>
+      <div class="chart-legend">
+        <span><i style="background:#22d3ee"></i>表层 10cm</span>
+        <span><i style="background:#38bdf8"></i>中层 30cm</span>
+        <span><i style="background:#a78bfa"></i>深层 60cm</span>
+      </div>
+      <div class="soil-chart">
+        <svg viewBox="0 0 520 190" preserveAspectRatio="none">
+          <defs>
+            <filter id="glowsoil"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <g stroke="#164e63" stroke-width="1" opacity=".5">
+            <line x1="30" y1="18" x2="510" y2="18"/><line x1="30" y1="56" x2="510" y2="56"/>
+            <line x1="30" y1="94" x2="510" y2="94"/><line x1="30" y1="132" x2="510" y2="132"/>
+            <line x1="30" y1="170" x2="510" y2="170"/>
+          </g>
+          <!-- 表层 -->
+          <path d="M30 40 L110 36 L190 44 L270 34 L350 50 L430 38 L510 30"
+                fill="none" stroke="#22d3ee" stroke-width="2.2" filter="url(#glowsoil)"/>
+          <path d="M30 40 L110 36 L190 44 L270 34 L350 50 L430 38 L510 30"
+                fill="none" stroke="none"/>
+          <!-- 中层 -->
+          <path d="M30 70 L110 64 L190 74 L270 60 L350 80 L430 68 L510 62"
+                fill="none" stroke="#38bdf8" stroke-width="2" filter="url(#glowsoil)"/>
+          <!-- 深层 -->
+          <path d="M30 100 L110 94 L190 104 L270 92 L350 108 L430 98 L510 92"
+                fill="none" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6 4" filter="url(#glowsoil)"/>
+          <!-- 预警区 -->
+          <rect x="30" y="120" width="480" height="50" fill="#f87171" opacity=".08"/>
+          <line x1="30" y1="132" x2="510" y2="132" stroke="#f87171" stroke-width="1" stroke-dasharray="4 5" opacity=".6"/>
+          <text x="440" y="130" font-size="9" fill="#f87171">预警线</text>
+          <g fill="#a5f3fc">
+            <circle cx="30" cy="40" r="2.6"/><circle cx="110" cy="36" r="2.6"/><circle cx="190" cy="44" r="2.6"/>
+            <circle cx="270" cy="34" r="2.6"/><circle cx="350" cy="50" r="2.6"/><circle cx="430" cy="38" r="2.6"/><circle cx="510" cy="30" r="2.6"/>
+          </g>
+          <text x="30" y="180" class="axis-txt">6/01</text><text x="110" y="180" class="axis-txt">6/05</text>
+          <text x="190" y="180" class="axis-txt">6/09</text><text x="270" y="180" class="axis-txt">6/13</text>
+          <text x="350" y="180" class="axis-txt">6/17</text><text x="430" y="180" class="axis-txt">6/21</text><text x="500" y="180" class="axis-txt">6/25</text>
+          <text x="120" y="12" class="lbl">土壤含水率 %</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部一排 -->
+  <div class="bottom">
+
+    <!-- ⑦ 人员出勤率 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>人员出勤率</h3><span class="tag">STAFF</span></div>
+      <div class="attend-main">
+        <div class="big">96.8<small>%</small></div>
+        <div class="meta">当日出勤率<br>实到 <b style="color:#8ff0ff">232</b> / 应到 <b style="color:#d9f6ff">240</b> 人</div>
+      </div>
+      <div class="attend-chart">
+        <svg viewBox="0 0 300 120" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="attarea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#0ea5e9" stop-opacity=".45"/><stop offset="1" stop-color="#0ea5e9" stop-opacity=".02"/>
+            </linearGradient>
+          </defs>
+          <g stroke="#155e75" stroke-width="1" opacity=".35">
+            <line x1="10" y1="20" x2="290" y2="20"/><line x1="10" y1="60" x2="290" y2="60"/><line x1="10" y1="100" x2="290" y2="100"/>
+          </g>
+          <path d="M10 70 L50 60 L90 66 L130 46 L170 52 L210 34 L250 40 L290 22 L290 100 L10 100 Z" fill="url(#attarea)"/>
+          <path d="M10 70 L50 60 L90 66 L130 46 L170 52 L210 34 L250 40 L290 22"
+                fill="none" stroke="#38bdf8" stroke-width="2.2"/>
+          <g fill="#a5f3fc"><circle cx="10" cy="70" r="2.4"/><circle cx="50" cy="60" r="2.4"/><circle cx="90" cy="66" r="2.4"/>
+            <circle cx="130" cy="46" r="2.4"/><circle cx="170" cy="52" r="2.4"/><circle cx="210" cy="34" r="2.4"/>
+            <circle cx="250" cy="40" r="2.4"/><circle cx="290" cy="22" r="3.4"/></g>
+          <text x="10" y="112" class="axis-txt">周一</text><text x="210" y="112" class="axis-txt">周五</text><text x="278" y="112" class="axis-txt">今日</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- ⑧ 土地使用面积分组柱状图 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>土地使用面积</h3><span class="tag">AREA</span></div>
+      <div class="bar-chart">
+        <svg viewBox="0 0 300 150" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="b1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#0e7490"/></linearGradient>
+            <linearGradient id="b2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
+          </defs>
+          <g stroke="#155e75" stroke-width="1" opacity=".35">
+            <line x1="34" y1="15" x2="290" y2="15"/><line x1="34" y1="50" x2="290" y2="50"/>
+            <line x1="34" y1="85" x2="290" y2="85"/><line x1="34" y1="120" x2="290" y2="120"/>
+          </g>
+          <!-- 分组柱：左 规划 右 实际 -->
+          <rect x="44" y="60" width="14" height="60" fill="url(#b2)"/>
+          <rect x="62" y="42" width="14" height="78" fill="url(#b1)"/>
+          <rect x="94" y="70" width="14" height="50" fill="url(#b2)"/>
+          <rect x="112" y="52" width="14" height="68" fill="url(#b1)"/>
+          <rect x="144" y="48" width="14" height="72" fill="url(#b2)"/>
+          <rect x="162" y="34" width="14" height="86" fill="url(#b1)"/>
+          <rect x="194" y="74" width="14" height="46" fill="url(#b2)"/>
+          <rect x="212" y="58" width="14" height="62" fill="url(#b1)"/>
+          <rect x="244" y="66" width="14" height="54" fill="url(#b2)"/>
+          <rect x="262" y="50" width="14" height="70" fill="url(#b1)"/>
+          <text x="54" y="135" class="axis-txt">小麦</text><text x="104" y="135" class="axis-txt">大豆</text>
+          <text x="154" y="135" class="axis-txt">玉米</text><text x="204" y="135" class="axis-txt">水稻</text><text x="254" y="135" class="axis-txt">菜地</text>
+          <text x="120" y="10" class="lbl">种植面积（亩）</text>
+        </svg>
+      </div>
+      <div class="chart-foot"><span><i style="display:inline-block;width:10px;height:10px;background:#06b6d4;margin-right:4px"></i>实际</span><span><i style="display:inline-block;width:10px;height:10px;background:#38bdf8;margin-right:4px"></i>规划</span></div>
+    </div>
+
+    <!-- ⑨ 农作物种类占比环形图 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>农作物种类占比</h3><span class="tag">RATIO</span></div>
+      <div class="donut">
+        <div class="ring">
+          <svg viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="46" fill="none" stroke="#0f2a33" stroke-width="14"/>
+            <circle cx="60" cy="60" r="46" fill="none" stroke="#06b6d4" stroke-width="14"
+              stroke-dasharray="289 289" stroke-linecap="butt" stroke-dashoffset="0"
+              style="filter:drop-shadow(0 0 6px #06b6d4)"/>
+            <circle cx="60" cy="60" r="46" fill="none" stroke="#0ea5e9" stroke-width="14"
+              stroke-dasharray="72 289" stroke-dashoffset="-289"/>
+            <circle cx="60" cy="60" r="46" fill="none" stroke="#a78bfa" stroke-width="14"
+              stroke-dasharray="45 289" stroke-dashoffset="-361"/>
+            <circle cx="60" cy="60" r="46" fill="none" stroke="#4ade80" stroke-width="14"
+              stroke-dasharray="27 289" stroke-dashoffset="-406"/>
+          </svg>
+          <div class="center"><b>3500</b><span>总亩数</span></div>
+        </div>
+        <div class="dl">
+          <div><i style="background:#06b6d4"></i>高亮小麦 <span class="r">64%</span></div>
+          <div><i style="background:#0ea5e9"></i>大豆 <span class="r">16%</span></div>
+          <div><i style="background:#a78bfa"></i>玉米 <span class="r">10%</span></div>
+          <div><i style="background:#4ade80"></i>其他 <span class="r">10%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑩ 农作物生长进度 -->
+    <div class="panel">
+      <div class="p-head"><span class="tick"></span><h3>农作物生长进度</h3><span class="tag">GROWTH</span></div>
+      <div class="grow">
+        <div class="row"><span class="cname">高亮</span><div class="bar"><i data-w="82"></i></div><span class="pct">82%</span></div>
+        <div class="row"><span class="cname">大豆</span><div class="bar"><i data-w="64"></i></div><span class="pct">64%</span></div>
+        <div class="row"><span class="cname">玉米</span><div class="bar"><i data-w="47"></i></div><span class="pct">47%</span></div>
+        <div class="row"><span class="cname">水稻</span><div class="bar"><i data-w="38"></i></div><span class="pct">38%</span></div>
+        <div class="row"><span class="cname">棉花</span><div class="bar"><i data-w="26"></i></div><span class="pct">26%</span></div>
+      </div>
+      <div class="chart-foot"><span class="stage">灌浆期 · 长势良好</span><span class="stage" id="grow-date"></span></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  // 时钟
+  var clock=document.getElementById('clock');
+  function tick(){
+    var d=new Date();
+    var p=function(n){return (n<10?'0':'')+n};
+    clock.textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+  }
+  tick();setInterval(tick,1000);
+
+  // 生长进度条加载动画
+  document.querySelectorAll('.grow .bar i').forEach(function(bar){
+    var w=bar.getAttribute('data-w');
+    setTimeout(function(){bar.style.width=w+'%';},150);
+  });
+
+  // 日期
+  var gd=document.getElementById('grow-date');
+  if(gd){
+    var d=new Date();
+    gd.textContent=d.getFullYear()+'-'+((d.getMonth()+1)<10?'0':'')+(d.getMonth()+1)+'-'+(d.getDate()<10?'0':'')+d.getDate();
+  }
+
+  // 实时指标轻量跳动（每 8 秒微调温湿度）
+  setInterval(function(){
+    var vals=document.querySelectorAll('.metric .m-val');
+    if(vals.length<2)return;
+    var t=26.5+(Math.random()*0.6-0.3);
+    var h=62+(Math.random()*2-1);
+    vals[0].innerHTML=t.toFixed(1)+'<small>°C</small>';
+    vals[1].innerHTML=h.toFixed(0)+'<small>%</small>';
+  },8000);
+})();
+</script>
+</body>
+</html>
