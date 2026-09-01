@@ -11,10 +11,11 @@
   var root = document.documentElement;
 
   /* ---------------- 1. 主题切换 ---------------- */
+  var THEMES = ["nature", "dark", "hud"];
   function currentTheme() {
     var saved = null;
     try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
-    if (saved === "nature" || saved === "dark") return saved;
+    if (THEMES.indexOf(saved) >= 0) return saved;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "nature";
   }
 
@@ -22,16 +23,18 @@
     root.setAttribute("data-theme", theme);
     var btn = document.getElementById("ag-theme-toggle");
     if (btn) {
-      btn.setAttribute("title", theme === "dark" ? "切换到自然清新主题" : "切换到深色数据大屏");
-      btn.innerHTML =
-        (theme === "dark"
-          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
-          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>') +
-        "<span>" + (theme === "dark" ? "深色大屏" : "自然清新") + "</span>";
+      var nextLabel = theme === "nature" ? "深色数据大屏" : theme === "dark" ? "科技蓝 HUD" : "自然清新主题";
+      btn.setAttribute("title", "切换主题（当前：" + theme + "）→ " + nextLabel);
+      var icon = theme === "dark"
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>'
+        : theme === "hud"
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>';
+      btn.innerHTML = icon + "<span>" + (theme === "dark" ? "深色大屏" : theme === "hud" ? "科技蓝" : "自然清新") + "</span>";
     }
     // 同步 PWA/移动端地址栏配色（跟随当前主题）
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", theme === "dark" ? "#0b1a12" : "#faf7f0");
+    if (meta) meta.setAttribute("content", theme === "dark" ? "#0b1a12" : theme === "hud" ? "#020617" : "#faf7f0");
     // 主题变化后重绘图表以套用新配色
     try { redrawAllCharts(); } catch (e) {}
   }
@@ -45,7 +48,9 @@
     btn.id = "ag-theme-toggle";
     btn.className = "ag-theme-toggle";
     btn.addEventListener("click", function () {
-      var next = root.getAttribute("data-theme") === "dark" ? "nature" : "dark";
+      var cur = root.getAttribute("data-theme");
+      var idx = THEMES.indexOf(cur);
+      var next = THEMES[(idx + 1) % THEMES.length];
       try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
       applyTheme(next);
     });
@@ -63,7 +68,7 @@
     return v || fallback;
   }
 
-  function isDark() { return root.getAttribute("data-theme") === "dark"; }
+  function isDark() { return root.getAttribute("data-theme") !== "nature"; }
 
   function niceDomain(values) {
     var nums = values.filter(function (v) { return Number.isFinite(v); });
