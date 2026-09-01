@@ -22,7 +22,7 @@
   <link rel="stylesheet" href="sensor.css?v=v15.3.3">
   <link rel="stylesheet" href="day13.css">
   <link rel="stylesheet" href="theme.css?v=v15-perf">
-  <link rel="stylesheet" href="dashboard.css?v=v15.4.0">
+  <link rel="stylesheet" href="dashboard.css?v=v16.1">
 </head>
 <body>
   <header class="topbar">
@@ -258,6 +258,14 @@
     </section>
 
     <section class="route-panel dashboard-shell" data-view="dashboard" aria-label="数据大屏">
+      <div class="led-marquee"><div class="track">
+        <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+        <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+        <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+        <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+        <span>🔔 如需帮助，请拨打 027-67883697</span><span>　|　</span>
+      </div></div>
+
       <header class="dashboard-header">
         <div class="dashboard-title">
           <h1>智慧农业大数据平台</h1>
@@ -290,20 +298,180 @@
       </div>
 
       <div class="dashboard-grid">
+        <!-- 左列：视频 + 预警表格 -->
         <div class="dashboard-col">
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="video"></i> 实时监控</h3>
+            <div class="dash-video">
+              <div class="field-svg">
+                <svg viewBox="0 0 420 240" preserveAspectRatio="xMidYMid slice">
+                  <defs>
+                    <pattern id="dash-rows" width="16" height="10" patternUnits="userSpaceOnUse">
+                      <rect width="16" height="10" fill="#1e4a24"/>
+                      <rect x="0" y="0" width="16" height="3.5" fill="#24582c"/>
+                    </pattern>
+                    <linearGradient id="dash-sky" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#7fb7e0"/><stop offset="1" stop-color="#bfe0ee"/>
+                    </linearGradient>
+                  </defs>
+                  <rect width="420" height="240" fill="url(#dash-sky)"/>
+                  <rect y="72" width="420" height="168" fill="#0e2a14"/>
+                  <rect y="72" width="420" height="168" fill="url(#dash-rows)" opacity=".85"/>
+                  <g stroke="#2f6b3a" stroke-width="1" opacity=".5">
+                    <line x1="0" y1="82" x2="420" y2="82"/><line x1="0" y1="102" x2="420" y2="102"/>
+                    <line x1="0" y1="122" x2="420" y2="122"/><line x1="0" y1="142" x2="420" y2="142"/>
+                    <line x1="0" y1="162" x2="420" y2="162"/><line x1="0" y1="182" x2="420" y2="182"/>
+                    <line x1="0" y1="202" x2="420" y2="202"/><line x1="0" y1="222" x2="420" y2="222"/>
+                  </g>
+                  <g fill="#3f7f6a" stroke="#5fbfa0" stroke-width="1" opacity=".8">
+                    <rect x="32" y="88" width="48" height="26" rx="2"/>
+                    <rect x="126" y="132" width="48" height="26" rx="2"/>
+                    <rect x="250" y="92" width="48" height="26" rx="2"/>
+                    <rect x="332" y="152" width="42" height="24" rx="2"/>
+                    <rect x="64" y="184" width="42" height="24" rx="2"/>
+                  </g>
+                  <g fill="#1d4a26">
+                    <circle cx="20" cy="88" r="6"/><circle cx="410" cy="94" r="7"/><circle cx="388" cy="82" r="5"/>
+                  </g>
+                </svg>
+              </div>
+              <div class="vid-grad"></div>
+              <div class="rec"><i></i>REC</div>
+              <div class="playbtn" title="播放"></div>
+              <div class="cam"><b>●</b> 一号种植区 · 大田作物 · 实时</div>
+            </div>
+          </article>
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="triangle-alert"></i> 农田种植数据预警</h3>
+            <div class="dash-table-scroll">
+              <table class="warn">
+                <thead><tr><th>作物类型</th><th>监测数据</th><th>实时值</th><th>增长率</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td>高亮小麦</td><td>土壤湿度</td><td class="num">38.6%</td><td class="down">-3.2%</td><td><span class="tag crit">告警</span></td></tr>
+                  <tr><td>大豆</td><td>叶面温度</td><td class="num">26.4°C</td><td class="up">+1.8%</td><td><span class="tag ok">正常</span></td></tr>
+                  <tr><td>玉米</td><td>光照强度</td><td class="num">48200 lux</td><td class="up">+5.4%</td><td><span class="tag ok">正常</span></td></tr>
+                  <tr><td>水稻</td><td>土壤氮含量</td><td class="num">142 mg/kg</td><td class="down">-1.1%</td><td><span class="tag warn">关注</span></td></tr>
+                  <tr><td>棉花</td><td>空气湿度</td><td class="num">71.2%</td><td class="up">+0.9%</td><td><span class="tag ok">正常</span></td></tr>
+                  <tr><td>油菜</td><td>土壤 pH</td><td class="num">5.7</td><td class="down">-0.4%</td><td><span class="tag warn">关注</span></td></tr>
+                  <tr><td>高亮小麦</td><td>虫害指数</td><td class="num">0.73</td><td class="up">+12%</td><td><span class="tag crit">告警</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
           <article class="dash-panel">
             <h3 class="panel-title"><i data-lucide="layout-grid"></i> 地块在线状态</h3>
             <div class="plot-list" id="dash-plot-list"><div class="empty">加载中…</div></div>
           </article>
-          <article class="dash-panel">
-            <h3 class="panel-title"><i data-lucide="scan-line"></i> 告警信息</h3>
-            <div class="alert-stream" id="dash-alert-stream"><div class="empty">暂无告警</div></div>
-          </article>
         </div>
 
+        <!-- 中列：地图 + 24h 折线 + 实时脉动 -->
         <div class="dashboard-col">
           <article class="dash-panel">
-            <h3 class="panel-title"><i data-lucide="activity"></i> 实时数据脉动</h3>
+            <h3 class="panel-title"><i data-lucide="map"></i> 区域种植分布图</h3>
+            <div class="dash-map">
+              <svg viewBox="0 0 520 280" preserveAspectRatio="xMidYMid meet">
+                <defs>
+                  <radialGradient id="dash-nodeglow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0" stop-color="#22d3ee" stop-opacity=".9"/>
+                    <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+                  </radialGradient>
+                  <linearGradient id="dash-plotfill" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#06b6d4" stop-opacity=".25"/>
+                    <stop offset="1" stop-color="#0ea5e9" stop-opacity=".08"/>
+                  </linearGradient>
+                </defs>
+                <g stroke="#22d3ee" stroke-width="1" stroke-opacity=".5">
+                  <rect x="30" y="36" width="150" height="110" rx="6" fill="url(#dash-plotfill)"/>
+                  <rect x="210" y="26" width="120" height="90" rx="6" fill="url(#dash-plotfill)"/>
+                  <rect x="360" y="18" width="130" height="70" rx="6" fill="url(#dash-plotfill)"/>
+                  <rect x="250" y="136" width="150" height="100" rx="6" fill="url(#dash-plotfill)"/>
+                  <rect x="60" y="176" width="150" height="90" rx="6" fill="url(#dash-plotfill)"/>
+                </g>
+                <g stroke="#67e8f9" stroke-width=".5" stroke-opacity=".25" stroke-dasharray="3 5">
+                  <rect x="34" y="40" width="142" height="102" rx="5"/>
+                  <rect x="214" y="30" width="112" height="82" rx="5"/>
+                  <rect x="364" y="22" width="122" height="62" rx="5"/>
+                </g>
+                <text x="105" y="116" font-size="11" fill="#a5f3fc" text-anchor="middle">小麦基地 A</text>
+                <text x="270" y="92" font-size="11" fill="#a5f3fc" text-anchor="middle">高亮基地 B</text>
+                <text x="425" y="64" font-size="11" fill="#a5f3fc" text-anchor="middle">玉米基地 C</text>
+                <text x="325" y="208" font-size="11" fill="#a5f3fc" text-anchor="middle">水稻基地 D</text>
+                <text x="135" y="240" font-size="11" fill="#a5f3fc" text-anchor="middle">蔬菜基地 E</text>
+                <g>
+                  <path class="flowline" d="M105 56 L210 72" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+                  <path class="flowline" d="M210 72 L360 54" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+                  <path class="flowline" d="M105 56 L135 176" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+                  <path class="flowline" d="M270 116 L325 136" stroke="#22d3ee" stroke-width="1.5" fill="none"/>
+                  <path class="flowline" d="M325 136 L470 210" stroke="#67e8f9" stroke-width="1.2" fill="none"/>
+                  <path class="flowline" d="M135 176 L260 250" stroke="#67e8f9" stroke-width="1.2" fill="none"/>
+                </g>
+                <g>
+                  <circle cx="105" cy="56" r="14" fill="url(#dash-nodeglow)"/>
+                  <circle cx="105" cy="56" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite"/>
+                  <circle cx="210" cy="72" r="14" fill="url(#dash-nodeglow)"/>
+                  <circle cx="210" cy="72" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite .4s"/>
+                  <circle cx="360" cy="54" r="14" fill="url(#dash-nodeglow)"/>
+                  <circle cx="360" cy="54" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite .8s"/>
+                  <circle cx="325" cy="136" r="14" fill="url(#dash-nodeglow)"/>
+                  <circle cx="325" cy="136" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite 1.2s"/>
+                  <circle cx="135" cy="176" r="14" fill="url(#dash-nodeglow)"/>
+                  <circle cx="135" cy="176" r="4" fill="#22d3ee" style="animation:nodepulse 2s infinite 1.6s"/>
+                  <circle cx="470" cy="210" r="12" fill="url(#dash-nodeglow)"/>
+                  <circle cx="470" cy="210" r="3.5" fill="#67e8f9" style="animation:nodepulse 2s infinite .2s"/>
+                  <circle cx="260" cy="250" r="12" fill="url(#dash-nodeglow)"/>
+                  <circle cx="260" cy="250" r="3.5" fill="#67e8f9" style="animation:nodepulse 2s infinite .6s"/>
+                </g>
+                <text x="470" y="226" font-size="9" fill="#7dd3fc">城区</text>
+                <text x="260" y="266" font-size="9" fill="#7dd3fc">物流中心</text>
+              </svg>
+              <div class="legend">
+                <div><i style="background:#22d3ee"></i> 种植基地</div>
+                <div><i style="background:#67e8f9"></i> 节点</div>
+              </div>
+            </div>
+          </article>
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="activity"></i> 24 小时环境监测</h3>
+            <div class="dash-chart">
+              <svg viewBox="0 0 520 190" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="dash-area24" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#06b6d4" stop-opacity=".4"/>
+                    <stop offset="1" stop-color="#06b6d4" stop-opacity=".02"/>
+                  </linearGradient>
+                  <filter id="dash-glowline"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                </defs>
+                <g stroke="#164e63" stroke-width="1" opacity=".5">
+                  <line x1="30" y1="18" x2="510" y2="18"/><line x1="30" y1="54" x2="510" y2="54"/>
+                  <line x1="30" y1="90" x2="510" y2="90"/><line x1="30" y1="126" x2="510" y2="126"/>
+                  <line x1="30" y1="162" x2="510" y2="162"/>
+                </g>
+                <g stroke="#155e75" stroke-width="1" opacity=".35">
+                  <line x1="70" y1="12" x2="70" y2="170"/><line x1="150" y1="12" x2="150" y2="170"/>
+                  <line x1="230" y1="12" x2="230" y2="170"/><line x1="310" y1="12" x2="310" y2="170"/>
+                  <line x1="390" y1="12" x2="390" y2="170"/><line x1="470" y1="12" x2="470" y2="170"/>
+                </g>
+                <path d="M30 108 L70 98 L110 104 L150 112 L190 106 L230 116 L270 108 L310 100 L350 92 L390 84 L430 78 L470 72 L510 66 L510 162 L30 162 Z" fill="url(#dash-area24)"/>
+                <path d="M30 108 L70 98 L110 104 L150 112 L190 106 L230 116 L270 108 L310 100 L350 92 L390 84 L430 78 L470 72 L510 66"
+                      fill="none" stroke="#22d3ee" stroke-width="2.4" filter="url(#dash-glowline)" stroke-linecap="round"/>
+                <path d="M30 54 L70 60 L110 52 L150 64 L190 58 L230 70 L270 62 L310 56 L350 66 L390 58 L430 50 L470 46 L510 42"
+                      fill="none" stroke="#67e8f9" stroke-width="1.6" stroke-dasharray="5 4" opacity=".9" filter="url(#dash-glowline)"/>
+                <g fill="#a5f3fc" filter="url(#dash-glowline)">
+                  <circle cx="30" cy="108" r="3"/><circle cx="70" cy="98" r="3"/><circle cx="110" cy="104" r="3"/>
+                  <circle cx="150" cy="112" r="3"/><circle cx="190" cy="106" r="3"/><circle cx="230" cy="116" r="3"/>
+                  <circle cx="270" cy="108" r="3"/><circle cx="310" cy="100" r="3"/><circle cx="350" cy="92" r="3"/>
+                  <circle cx="390" cy="84" r="3"/><circle cx="430" cy="78" r="3"/><circle cx="470" cy="72" r="3"/><circle cx="510" cy="66" r="3"/>
+                </g>
+                <text x="24" y="12" font-size="10" fill="#64748b">40</text><text x="24" y="48" font-size="10" fill="#64748b">30</text>
+                <text x="24" y="84" font-size="10" fill="#64748b">20</text><text x="24" y="120" font-size="10" fill="#64748b">10</text><text x="24" y="166" font-size="10" fill="#64748b">0</text>
+                <text x="30" y="180" font-size="10" fill="#64748b">00:00</text><text x="150" y="180" font-size="10" fill="#64748b">06:00</text>
+                <text x="270" y="180" font-size="10" fill="#64748b">12:00</text><text x="390" y="180" font-size="10" fill="#64748b">18:00</text><text x="480" y="180" font-size="10" fill="#64748b">24:00</text>
+                <text x="120" y="12" font-size="10" fill="#38bdf8">温度</text><text x="430" y="18" font-size="10" fill="#67e8f9">湿度</text>
+              </svg>
+            </div>
+          </article>
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="radar"></i> 实时数据脉动</h3>
             <div class="dash-canvas-wrap">
               <canvas id="dashboard-canvas"></canvas>
               <div class="canvas-overlay">
@@ -316,32 +484,75 @@
               </div>
             </div>
           </article>
-          <div class="dashboard-footer">
-            <article class="dash-panel">
-              <h3 class="panel-title"><i data-lucide="sun"></i> 光照强度</h3>
-              <div class="readout">
-                <div class="num small" id="dash-light">--</div>
-                <div class="unit">lux</div>
-              </div>
-            </article>
-            <article class="dash-panel">
-              <h3 class="panel-title"><i data-lucide="wind"></i> 空气湿度</h3>
-              <div class="readout">
-                <div class="num small" id="dash-humidity">--</div>
-                <div class="unit">%</div>
-              </div>
-            </article>
-            <article class="dash-panel">
-              <h3 class="panel-title"><i data-lucide="gauge"></i> 土壤 pH</h3>
-              <div class="readout">
-                <div class="num small" id="dash-ph">--</div>
-                <div class="unit">酸碱度</div>
-              </div>
-            </article>
-          </div>
         </div>
 
+        <!-- 右列：实景 + 环境指标 + 墒情 -->
         <div class="dashboard-col">
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="camera"></i> 农场实景 · 环境指标</h3>
+            <div class="dash-photo">
+              <svg viewBox="0 0 420 130" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                  <linearGradient id="dash-skys" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#4a9bd8"/><stop offset=".6" stop-color="#9fd6ef"/>
+                  </linearGradient>
+                </defs>
+                <rect width="420" height="130" fill="url(#dash-skys)"/>
+                <circle cx="356" cy="24" r="15" fill="#fff8d9" opacity=".95"/>
+                <path d="M0 86 Q60 64 130 82 T260 78 T400 90 L400 130 L0 130 Z" fill="#3f8f4a"/>
+                <path d="M0 100 Q80 86 170 98 T400 102 L400 130 L0 130 Z" fill="#2c6b35"/>
+                <g fill="#23602d"><rect x="42" y="104" width="14" height="12"/><rect x="74" y="98" width="10" height="14"/></g>
+                <path d="M0 112 Q120 102 240 112 T400 114 L400 130 L0 130 Z" fill="#1c4a24"/>
+              </svg>
+              <div class="photo-grad"></div>
+              <div class="ptag">◈ 智慧农场 · 一号基地全景</div>
+            </div>
+            <div class="env-metrics">
+              <div class="env-metric"><span class="m-name">温度</span><span class="m-val">26.5<small>°C</small></span></div>
+              <div class="env-metric"><span class="m-name">湿度</span><span class="m-val">62<small>%</small></span></div>
+              <div class="env-metric"><span class="m-name">PM2.5</span><span class="m-val">35<small>µg</small></span></div>
+              <div class="env-metric"><span class="m-name">空气质量</span><span class="m-val" style="color:#4ade80">优</span></div>
+              <div class="env-metric"><span class="m-name">风向/风速</span><span class="m-val" style="font-size:14px">东南 3.2<small>m/s</small></span></div>
+              <div class="env-metric"><span class="m-name">紫外线</span><span class="m-val" style="color:#fbbf24">3 级<small>中等</small></span></div>
+            </div>
+          </article>
+          <article class="dash-panel">
+            <h3 class="panel-title"><i data-lucide="waves"></i> 土地墒情预警 · 多线趋势</h3>
+            <div class="chart-legend">
+              <span><i style="background:#22d3ee"></i>表层 10cm</span>
+              <span><i style="background:#38bdf8"></i>中层 30cm</span>
+              <span><i style="background:#a78bfa"></i>深层 60cm</span>
+            </div>
+            <div class="dash-chart">
+              <svg viewBox="0 0 520 180" preserveAspectRatio="none">
+                <defs>
+                  <filter id="dash-glowsoil"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                </defs>
+                <g stroke="#164e63" stroke-width="1" opacity=".5">
+                  <line x1="30" y1="16" x2="510" y2="16"/><line x1="30" y1="52" x2="510" y2="52"/>
+                  <line x1="30" y1="88" x2="510" y2="88"/><line x1="30" y1="124" x2="510" y2="124"/>
+                  <line x1="30" y1="160" x2="510" y2="160"/>
+                </g>
+                <path d="M30 36 L110 32 L190 40 L270 30 L350 46 L430 34 L510 26"
+                      fill="none" stroke="#22d3ee" stroke-width="2.2" filter="url(#dash-glowsoil)"/>
+                <path d="M30 64 L110 58 L190 68 L270 54 L350 74 L430 62 L510 56"
+                      fill="none" stroke="#38bdf8" stroke-width="2" filter="url(#dash-glowsoil)"/>
+                <path d="M30 94 L110 88 L190 98 L270 86 L350 102 L430 92 L510 86"
+                      fill="none" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6 4" filter="url(#dash-glowsoil)"/>
+                <rect x="30" y="112" width="480" height="48" fill="#f87171" opacity=".08"/>
+                <line x1="30" y1="124" x2="510" y2="124" stroke="#f87171" stroke-width="1" stroke-dasharray="4 5" opacity=".6"/>
+                <text x="440" y="122" font-size="9" fill="#f87171">预警线</text>
+                <g fill="#a5f3fc">
+                  <circle cx="30" cy="36" r="2.6"/><circle cx="110" cy="32" r="2.6"/><circle cx="190" cy="40" r="2.6"/>
+                  <circle cx="270" cy="30" r="2.6"/><circle cx="350" cy="46" r="2.6"/><circle cx="430" cy="34" r="2.6"/><circle cx="510" cy="26" r="2.6"/>
+                </g>
+                <text x="30" y="174" font-size="10" fill="#64748b">6/01</text><text x="110" y="174" font-size="10" fill="#64748b">6/05</text>
+                <text x="190" y="174" font-size="10" fill="#64748b">6/09</text><text x="270" y="174" font-size="10" fill="#64748b">6/13</text>
+                <text x="350" y="174" font-size="10" fill="#64748b">6/17</text><text x="430" y="174" font-size="10" fill="#64748b">6/21</text><text x="500" y="174" font-size="10" fill="#64748b">6/25</text>
+                <text x="120" y="12" font-size="10" fill="#38bdf8">土壤含水率 %</text>
+              </svg>
+            </div>
+          </article>
           <article class="dash-panel">
             <h3 class="panel-title"><i data-lucide="server"></i> 土壤指标详情</h3>
             <div class="sensor-readout-grid" id="dash-soil-grid">
@@ -354,11 +565,128 @@
             </div>
           </article>
           <article class="dash-panel">
-            <h3 class="panel-title"><i data-lucide="history"></i> 最近遥测时间</h3>
-            <div class="alert-stream" id="dash-telemetry-log"><div class="empty">等待数据…</div></div>
+            <h3 class="panel-title"><i data-lucide="sun"></i> 光照 · 湿度 · pH</h3>
+            <div class="dashboard-footer-mini">
+              <article class="dash-panel">
+                <h3 class="panel-title"><i data-lucide="sun"></i> 光照强度</h3>
+                <div class="readout"><div class="num small" id="dash-light">--</div><div class="unit">lux</div></div>
+              </article>
+              <article class="dash-panel">
+                <h3 class="panel-title"><i data-lucide="wind"></i> 空气湿度</h3>
+                <div class="readout"><div class="num small" id="dash-humidity">--</div><div class="unit">%</div></div>
+              </article>
+              <article class="dash-panel">
+                <h3 class="panel-title"><i data-lucide="gauge"></i> 土壤 pH</h3>
+                <div class="readout"><div class="num small" id="dash-ph">--</div><div class="unit">酸碱度</div></div>
+              </article>
+            </div>
           </article>
         </div>
       </div>
+
+      <!-- 底部一排：出勤率 / 土地使用 / 占比环形 / 生长进度 -->
+      <div class="dashboard-footer">
+        <div class="dash-footer-card">
+          <h3 class="panel-title"><i data-lucide="users"></i> 人员出勤率</h3>
+          <div class="attend-main">
+            <div class="big">96.8<small>%</small></div>
+            <div class="meta">当日出勤率<br>实到 <b>232</b> / 应到 <b>240</b> 人</div>
+          </div>
+          <div class="fc-body">
+            <svg viewBox="0 0 300 110" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="dash-attarea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#0ea5e9" stop-opacity=".45"/><stop offset="1" stop-color="#0ea5e9" stop-opacity=".02"/>
+                </linearGradient>
+              </defs>
+              <g stroke="#155e75" stroke-width="1" opacity=".35">
+                <line x1="10" y1="16" x2="290" y2="16"/><line x1="10" y1="50" x2="290" y2="50"/><line x1="10" y1="84" x2="290" y2="84"/>
+              </g>
+              <path d="M10 62 L50 52 L90 58 L130 40 L170 46 L210 30 L250 36 L290 20 L290 88 L10 88 Z" fill="url(#dash-attarea)"/>
+              <path d="M10 62 L50 52 L90 58 L130 40 L170 46 L210 30 L250 36 L290 20"
+                    fill="none" stroke="#38bdf8" stroke-width="2.2"/>
+              <g fill="#a5f3fc"><circle cx="10" cy="62" r="2.4"/><circle cx="50" cy="52" r="2.4"/><circle cx="90" cy="58" r="2.4"/>
+                <circle cx="130" cy="40" r="2.4"/><circle cx="170" cy="46" r="2.4"/><circle cx="210" cy="30" r="2.4"/>
+                <circle cx="250" cy="36" r="2.4"/><circle cx="290" cy="20" r="3.4"/></g>
+              <text x="10" y="102" font-size="9" fill="#64748b">周一</text><text x="200" y="102" font-size="9" fill="#64748b">周五</text><text x="272" y="102" font-size="9" fill="#64748b">今日</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="dash-footer-card">
+          <h3 class="panel-title"><i data-lucide="bar-chart-3"></i> 土地使用面积</h3>
+          <div class="fc-body">
+            <svg viewBox="0 0 300 140" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="dash-b1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#0e7490"/></linearGradient>
+                <linearGradient id="dash-b2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient>
+              </defs>
+              <g stroke="#155e75" stroke-width="1" opacity=".35">
+                <line x1="34" y1="10" x2="290" y2="10"/><line x1="34" y1="44" x2="290" y2="44"/>
+                <line x1="34" y1="78" x2="290" y2="78"/><line x1="34" y1="112" x2="290" y2="112"/>
+              </g>
+              <rect x="44" y="54" width="14" height="58" fill="url(#dash-b2)"/>
+              <rect x="62" y="36" width="14" height="76" fill="url(#dash-b1)"/>
+              <rect x="94" y="64" width="14" height="48" fill="url(#dash-b2)"/>
+              <rect x="112" y="46" width="14" height="66" fill="url(#dash-b1)"/>
+              <rect x="144" y="42" width="14" height="70" fill="url(#dash-b2)"/>
+              <rect x="162" y="28" width="14" height="84" fill="url(#dash-b1)"/>
+              <rect x="194" y="68" width="14" height="44" fill="url(#dash-b2)"/>
+              <rect x="212" y="52" width="14" height="60" fill="url(#dash-b1)"/>
+              <rect x="244" y="60" width="14" height="52" fill="url(#dash-b2)"/>
+              <rect x="262" y="44" width="14" height="68" fill="url(#dash-b1)"/>
+              <text x="52" y="128" font-size="9" fill="#64748b">小麦</text><text x="101" y="128" font-size="9" fill="#64748b">大豆</text>
+              <text x="151" y="128" font-size="9" fill="#64748b">玉米</text><text x="201" y="128" font-size="9" fill="#64748b">水稻</text><text x="251" y="128" font-size="9" fill="#64748b">菜地</text>
+            </svg>
+          </div>
+        </div>
+
+        <div class="dash-footer-card">
+          <h3 class="panel-title"><i data-lucide="pie-chart"></i> 农作物种类占比</h3>
+          <div class="fc-body" style="display:flex;align-items:center;gap:10px">
+            <div style="position:relative;flex:0 0 96px;height:96px">
+              <svg viewBox="0 0 120 120" style="width:100%;height:100%;transform:rotate(-90deg)">
+                <circle cx="60" cy="60" r="46" fill="none" stroke="#0f2a33" stroke-width="14"/>
+                <circle cx="60" cy="60" r="46" fill="none" stroke="#06b6d4" stroke-width="14"
+                  stroke-dasharray="231 289" style="filter:drop-shadow(0 0 6px #06b6d4)"/>
+                <circle cx="60" cy="60" r="46" fill="none" stroke="#0ea5e9" stroke-width="14"
+                  stroke-dasharray="58 289" stroke-dashoffset="-231"/>
+                <circle cx="60" cy="60" r="46" fill="none" stroke="#a78bfa" stroke-width="14"
+                  stroke-dasharray="36 289" stroke-dashoffset="-289"/>
+              </svg>
+              <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+                <b style="font-size:16px;font-family:Consolas;color:#8ff0ff;text-shadow:0 0 10px rgba(6,182,212,.8)">3500</b>
+                <span style="font-size:8px;color:#64748b">总亩数</span>
+              </div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px;font-size:10px">
+              <div style="display:flex;align-items:center;gap:5px"><i style="width:9px;height:9px;border-radius:2px;background:#06b6d4"></i>高亮小麦 <span style="font-family:Consolas;color:#d9f6ff">64%</span></div>
+              <div style="display:flex;align-items:center;gap:5px"><i style="width:9px;height:9px;border-radius:2px;background:#0ea5e9"></i>大豆 <span style="font-family:Consolas;color:#d9f6ff">16%</span></div>
+              <div style="display:flex;align-items:center;gap:5px"><i style="width:9px;height:9px;border-radius:2px;background:#a78bfa"></i>玉米 <span style="font-family:Consolas;color:#d9f6ff">10%</span></div>
+              <div style="display:flex;align-items:center;gap:5px"><i style="width:9px;height:9px;border-radius:2px;background:#4ade80"></i>其他 <span style="font-family:Consolas;color:#d9f6ff">10%</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-footer-card">
+          <h3 class="panel-title"><i data-lucide="sprout"></i> 农作物生长进度</h3>
+          <div class="grow">
+            <div class="row"><span class="cname">高亮</span><div class="bar"><i data-w="82"></i></div><span class="pct">82%</span></div>
+            <div class="row"><span class="cname">大豆</span><div class="bar"><i data-w="64"></i></div><span class="pct">64%</span></div>
+            <div class="row"><span class="cname">玉米</span><div class="bar"><i data-w="47"></i></div><span class="pct">47%</span></div>
+            <div class="row"><span class="cname">水稻</span><div class="bar"><i data-w="38"></i></div><span class="pct">38%</span></div>
+            <div class="row"><span class="cname">棉花</span><div class="bar"><i data-w="26"></i></div><span class="pct">26%</span></div>
+          </div>
+        </div>
+      </div>
+
+      <article class="dash-panel">
+        <h3 class="panel-title"><i data-lucide="scan-line"></i> 告警信息 · 最近遥测</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:0">
+          <div class="alert-stream" id="dash-alert-stream"><div class="empty">暂无告警</div></div>
+          <div class="alert-stream" id="dash-telemetry-log"><div class="empty">等待数据…</div></div>
+        </div>
+      </article>
     </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
@@ -368,6 +696,24 @@
   <script src="agent.js?v=day16-kitten"></script>
   <script src="enhance.js?v=v15-perf"></script>
   <script>
+    // 数据屏：生长进度条动画（首次 + dashboard 变为可见时重新触发）
+    (function () {
+      function animateGrow() {
+        document.querySelectorAll('.grow .bar i').forEach(function (bar) {
+          var w = bar.getAttribute('data-w');
+          bar.style.width = '0%';
+          void bar.offsetWidth; // 强制 reflow，重新播放 transition
+          bar.style.width = w + '%';
+        });
+      }
+      animateGrow();
+      var shell = document.querySelector('.dashboard-shell');
+      if (shell && typeof MutationObserver !== 'undefined') {
+        new MutationObserver(function () {
+          if (!shell.hidden) animateGrow();
+        }).observe(shell, { attributes: true, attributeFilter: ['hidden'] });
+      }
+    })();
     // PWA：注册 Service Worker（离线缓存 + 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
