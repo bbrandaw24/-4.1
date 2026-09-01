@@ -24,7 +24,7 @@
     var mode = AG.settings.themeAuto ? "auto" : undefined;
     var saved = null;
     try { saved = localStorage.getItem("ag-theme"); } catch (_) {}
-    if (mode === "auto" || !(saved === "nature" || saved === "dark")) {
+    if (mode === "auto" || !(saved === "nature" || saved === "dark" || saved === "hud")) {
       // 跟随系统
       var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
       if (window.AGTheme) AGTheme.applyTheme(dark ? "dark" : "nature");
@@ -34,12 +34,13 @@
   }
 
   function setThemeOption(mode) {
-    // mode: "light" | "dark" | "auto"
+    // mode: "light" | "dark" | "hud" | "auto"
     AG.setSetting("themeAuto", mode === "auto");
     if (mode === "auto") {
       try { localStorage.removeItem("ag-theme"); } catch (_) {}
     } else {
-      try { localStorage.setItem("ag-theme", mode === "dark" ? "dark" : "nature"); } catch (_) {}
+      var map = { light: "nature", dark: "dark", hud: "hud" };
+      try { localStorage.setItem("ag-theme", map[mode] || "nature"); } catch (_) {}
     }
     applyThemeMode();
     AG.toast("主题已更新", "success");
@@ -68,6 +69,7 @@
           '<div class="ag-option-row" id="ag-opt-theme">' +
             '<label class="ag-chip" data-mode="light">浅色</label>' +
             '<label class="ag-chip" data-mode="dark">深色大屏</label>' +
+            '<label class="ag-chip" data-mode="hud">科技蓝 HUD</label>' +
             '<label class="ag-chip" data-mode="auto">跟随系统</label>' +
           '</div>' +
           '<h4>显示</h4>' +
@@ -104,13 +106,14 @@
     var themeRow = wrap.querySelector("#ag-opt-theme");
     var themeChips = themeRow.querySelectorAll(".ag-chip");
     function syncTheme() {
-      var mode = AG.settings.themeAuto ? "auto" : (rootTheme() === "dark" ? "dark" : "light");
+      var mode = AG.settings.themeAuto ? "auto" : (rootTheme() === "nature" ? "light" : rootTheme() === "hud" ? "hud" : "dark");
       themeChips.forEach(function (chip) {
         chip.classList.toggle("active", chip.dataset.mode === mode);
       });
     }
     function rootTheme() {
-      return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+      var t = document.documentElement.getAttribute("data-theme");
+      return t === "hud" ? "hud" : t === "nature" ? "nature" : "dark";
     }
     themeChips.forEach(function (chip) {
       chip.addEventListener("click", function () { setThemeOption(chip.dataset.mode); syncTheme(); });
@@ -509,7 +512,10 @@
   function syncThemeChips() {
     var wrap = $("#ag-drawer");
     if (!wrap) return;
-    var mode = AG.settings.themeAuto ? "auto" : (document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
+    var mode = AG.settings.themeAuto ? "auto" : (function () {
+      var t = document.documentElement.getAttribute("data-theme");
+      return t === "nature" ? "light" : t === "hud" ? "hud" : "dark";
+    })();
     wrap.querySelectorAll("#ag-opt-theme .ag-chip").forEach(function (chip) {
       chip.classList.toggle("active", chip.dataset.mode === mode);
     });
