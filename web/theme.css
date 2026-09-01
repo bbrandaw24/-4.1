@@ -87,7 +87,7 @@
 }
 
 /* ---------- Design Token：主题二 深色数据大屏 ---------- */
-:root[data-theme="dark"] {
+:root[data-theme="dark"] , :root[data-theme="hud"] {
   --ag-canvas: #0b1a12;
   --ag-canvas-2: #081410;
   --ag-surface: rgba(18, 42, 29, .72);
@@ -163,7 +163,7 @@ body {
    任何动画帧都会触发整屏重光栅化，软件渲染设备（App WebView/无 GPU）
    直接冻死。纸感改由 --ag-canvas 底色承担。 */
 
-:root[data-theme="dark"] body::after {
+:root[data-theme="dark"] body::after , :root[data-theme="hud"] body::after {
   content: "";
   position: fixed;
   inset: 0;
@@ -271,12 +271,12 @@ body {
    position:fixed 弹窗。transform / backdrop-filter / overflow:hidden 都会让该面板
    变成 fixed 的包含块，导致弹窗被裁剪或定位错乱（表现为无法添加/删除地块）。
    因此这些属性对 .sensors-panel 一律用 :not(.sensors-panel) 排除。 */
-:root[data-theme="dark"] .panel:not(.sensors-panel),
-:root[data-theme="dark"] .metric,
-:root[data-theme="dark"] .notice,
-:root[data-theme="dark"] .preview-card,
-:root[data-theme="dark"] .trend-summary,
-:root[data-theme="dark"] .plots-strip > * {
+:root[data-theme="dark"] .panel:not(.sensors-panel), :root[data-theme="hud"] .panel:not(.sensors-panel),
+:root[data-theme="dark"] .metric, :root[data-theme="hud"] .metric,
+:root[data-theme="dark"] .notice, :root[data-theme="hud"] .notice,
+:root[data-theme="dark"] .preview-card, :root[data-theme="hud"] .preview-card,
+:root[data-theme="dark"] .trend-summary, :root[data-theme="hud"] .trend-summary,
+:root[data-theme="dark"] .plots-strip > * , :root[data-theme="hud"] .plots-strip > * {
   background: var(--ag-glass-bg) !important;
   /* 性能红线：卡片禁用 backdrop-filter。几十个全屏实时模糊会把
      GPU 进程挂死（Edge/WebView 实测），表现为整页无响应、点击失效。 */
@@ -284,7 +284,7 @@ body {
   box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important;
 }
 /* 传感器面板：保留玻璃配色，但禁用 backdrop-filter（否则内部弹窗失效） */
-:root[data-theme="dark"] .panel.sensors-panel {
+:root[data-theme="dark"] .panel.sensors-panel , :root[data-theme="hud"] .panel.sensors-panel {
   background: var(--ag-glass-bg) !important;
   border: 1px solid var(--ag-glass-stroke) !important;
   box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important;
@@ -296,8 +296,8 @@ body {
   transform: translateY(-3px);
   box-shadow: var(--ag-sh-3) !important;
 }
-:root[data-theme="dark"] .panel:not(.sensors-panel):hover,
-:root[data-theme="dark"] .metric:hover {
+:root[data-theme="dark"] .panel:not(.sensors-panel):hover, :root[data-theme="hud"] .panel:not(.sensors-panel):hover,
+:root[data-theme="dark"] .metric:hover , :root[data-theme="hud"] .metric:hover {
   box-shadow: var(--ag-sh-3), var(--ag-glow) !important;
 }
 
@@ -319,7 +319,7 @@ body {
   border-radius: 0 0 var(--ag-r-lg) 0;
   overflow: hidden;
 }
-:root[data-theme="dark"] .panel > .ag-leaf-deco { opacity: .18; }
+:root[data-theme="dark"] .panel > .ag-leaf-deco , :root[data-theme="hud"] .panel > .ag-leaf-deco { opacity: .18; }
 
 /* ============================ 指标卡 ============================ */
 .metric-grid { gap: var(--ag-s-3) !important; margin-bottom: var(--ag-s-4) !important; }
@@ -369,7 +369,7 @@ body {
 .metric.metric-sky > .ag-spark { color: var(--ag-sky); }
 .metric.metric-amber > .ag-spark { color: var(--ag-amber); }
 .metric.metric-violet > .ag-spark { color: var(--ag-violet); }
-:root[data-theme="dark"] .metric > .ag-spark svg { filter: drop-shadow(0 0 6px currentColor); }
+:root[data-theme="dark"] .metric > .ag-spark svg , :root[data-theme="hud"] .metric > .ag-spark svg { filter: drop-shadow(0 0 6px currentColor); }
 
 /* 目标区间文字 → 彩色进度标签 */
 .metric > span:not(.ag-spark) {
@@ -412,7 +412,7 @@ body {
   background: var(--ag-dot-on) !important;
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--ag-dot-on) 18%, transparent);
 }
-:root[data-theme="dark"] .pulse { box-shadow: 0 0 8px var(--ag-dot-on), 0 0 0 4px color-mix(in srgb, var(--ag-dot-on) 20%, transparent) !important; }
+:root[data-theme="dark"] .pulse , :root[data-theme="hud"] .pulse { box-shadow: 0 0 8px var(--ag-dot-on), 0 0 0 4px color-mix(in srgb, var(--ag-dot-on) 20%, transparent) !important; }
 .pulse.off { background: var(--ag-dot-off) !important; }
 
 /* ============================ 地块卡片 ============================ */
@@ -456,7 +456,7 @@ body {
   transition: background var(--ag-t), color var(--ag-t);
 }
 .ag-chart-range button.active { background: var(--ag-green); color: #fff; }
-:root[data-theme="dark"] .ag-chart-range button.active { background: var(--ag-green); color: #04150c; box-shadow: var(--ag-glow); }
+:root[data-theme="dark"] .ag-chart-range button.active , :root[data-theme="hud"] .ag-chart-range button.active { background: var(--ag-green); color: #04150c; box-shadow: var(--ag-glow); }
 
 .chart-panel canvas {
   border-radius: var(--ag-r-md);
@@ -484,7 +484,7 @@ body {
   z-index: 5;
 }
 .ag-chart-tip.show { opacity: 1; }
-:root[data-theme="dark"] .ag-chart-tip { background: rgba(10, 30, 20, .95); border-color: var(--ag-glass-stroke); color: var(--ag-ink); }
+:root[data-theme="dark"] .ag-chart-tip , :root[data-theme="hud"] .ag-chart-tip { background: rgba(10, 30, 20, .95); border-color: var(--ag-glass-stroke); color: var(--ag-ink); }
 .ag-chart-tip b { font-variant-numeric: tabular-nums; }
 
 /* ============================ 设备页 ============================ */
@@ -496,7 +496,7 @@ body {
   border-radius: var(--ag-r-md);
   padding: 14px;
 }
-:root[data-theme="dark"] .broker-form h4 ~ * { background: rgba(12, 32, 22, .55); }
+:root[data-theme="dark"] .broker-form h4 ~ * , :root[data-theme="hud"] .broker-form h4 ~ * { background: rgba(12, 32, 22, .55); }
 .broker-form-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 @media (max-width: 850px) { .broker-form-row { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .broker-form-row { grid-template-columns: 1fr; } }
@@ -509,19 +509,19 @@ input[type="text"], input[type="number"], input[type="password"], select, textar
   padding: 9px 12px !important;
   transition: border-color var(--ag-t), box-shadow var(--ag-t);
 }
-:root[data-theme="dark"] input[type="text"],
-:root[data-theme="dark"] input[type="number"],
-:root[data-theme="dark"] input[type="password"],
-:root[data-theme="dark"] select,
-:root[data-theme="dark"] textarea { background: rgba(8, 24, 16, .7) !important; }
+:root[data-theme="dark"] input[type="text"], :root[data-theme="hud"] input[type="text"],
+:root[data-theme="dark"] input[type="number"], :root[data-theme="hud"] input[type="number"],
+:root[data-theme="dark"] input[type="password"], :root[data-theme="hud"] input[type="password"],
+:root[data-theme="dark"] select, :root[data-theme="hud"] select,
+:root[data-theme="dark"] textarea , :root[data-theme="hud"] textarea { background: rgba(8, 24, 16, .7) !important; }
 input:focus, select:focus, textarea:focus {
   outline: none !important;
   border-color: var(--ag-green) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ag-green) 22%, transparent) !important;
 }
-:root[data-theme="dark"] input:focus,
-:root[data-theme="dark"] select:focus,
-:root[data-theme="dark"] textarea:focus { box-shadow: 0 0 0 3px rgba(85, 198, 123, .28), 0 0 14px rgba(85, 198, 123, .25) !important; }
+:root[data-theme="dark"] input:focus, :root[data-theme="hud"] input:focus,
+:root[data-theme="dark"] select:focus, :root[data-theme="hud"] select:focus,
+:root[data-theme="dark"] textarea:focus , :root[data-theme="hud"] textarea:focus { box-shadow: 0 0 0 3px rgba(85, 198, 123, .28), 0 0 14px rgba(85, 198, 123, .25) !important; }
 
 /* 传感器分组与卡片（保留原有 flex 列布局，只做视觉增强） */
 .sensor-group {
@@ -532,18 +532,18 @@ input:focus, select:focus, textarea:focus {
   overflow: hidden;
   transition: transform var(--ag-t), box-shadow var(--ag-t);
 }
-:root[data-theme="dark"] .sensor-group { background: var(--ag-glass-bg) !important; border-color: var(--ag-glass-stroke) !important; box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important; }
+:root[data-theme="dark"] .sensor-group , :root[data-theme="hud"] .sensor-group { background: var(--ag-glass-bg) !important; border-color: var(--ag-glass-stroke) !important; box-shadow: var(--ag-sh-2), var(--ag-sh-inset) !important; }
 .sensor-group:hover { transform: translateY(-2px); box-shadow: var(--ag-sh-2) !important; }
-:root[data-theme="dark"] .sensor-group:hover { box-shadow: var(--ag-sh-2), var(--ag-glow) !important; }
+:root[data-theme="dark"] .sensor-group:hover , :root[data-theme="hud"] .sensor-group:hover { box-shadow: var(--ag-sh-2), var(--ag-glow) !important; }
 
 .sensor-group-header { background: var(--ag-surface-2) !important; border-bottom: 1px solid var(--ag-line) !important; }
-:root[data-theme="dark"] .sensor-group-header { background: rgba(14, 40, 27, .55) !important; }
+:root[data-theme="dark"] .sensor-group-header , :root[data-theme="hud"] .sensor-group-header { background: rgba(14, 40, 27, .55) !important; }
 
 .sensor-card {
   transition: background var(--ag-t), transform var(--ag-t) !important;
 }
 .sensor-card:hover { transform: translateY(-1px); background: var(--ag-surface-2) !important; }
-:root[data-theme="dark"] .sensor-card:hover { background: rgba(85, 198, 123, .08) !important; }
+:root[data-theme="dark"] .sensor-card:hover , :root[data-theme="hud"] .sensor-card:hover { background: rgba(85, 198, 123, .08) !important; }
 .sensor-card-head svg {
   width: 18px !important;
   height: 18px !important;
@@ -581,7 +581,7 @@ input:focus, select:focus, textarea:focus {
   min-width: 320px;
   animation: agPop .22s var(--ag-ease);
 }
-:root[data-theme="dark"] .sensor-add-dialog .dialog-body { background: linear-gradient(160deg, rgba(24, 56, 39, .95), rgba(10, 28, 19, .95)) !important; border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="dark"] .sensor-add-dialog .dialog-body , :root[data-theme="hud"] .sensor-add-dialog .dialog-body { background: linear-gradient(160deg, rgba(24, 56, 39, .95), rgba(10, 28, 19, .95)) !important; border-color: var(--ag-glass-stroke) !important; }
 @keyframes agFade { from { opacity: 0 } to { opacity: 1 } }
 @keyframes agPop { from { opacity: 0; transform: scale(.94) translateY(8px) } to { opacity: 1; transform: none } }
 
@@ -607,8 +607,8 @@ input:focus, select:focus, textarea:focus {
   border-color: transparent;
   border-bottom-right-radius: 6px !important;
 }
-:root[data-theme="dark"] .agent-message.agent .agent-bubble { background: rgba(16, 42, 29, .8) !important; border-color: var(--ag-glass-stroke) !important; }
-:root[data-theme="dark"] .agent-message.user .agent-bubble { box-shadow: var(--ag-glow); }
+:root[data-theme="dark"] .agent-message.agent .agent-bubble , :root[data-theme="hud"] .agent-message.agent .agent-bubble { background: rgba(16, 42, 29, .8) !important; border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="dark"] .agent-message.user .agent-bubble , :root[data-theme="hud"] .agent-message.user .agent-bubble { box-shadow: var(--ag-glow); }
 .agent-bubble::after {
   content: "";
   position: absolute;
@@ -633,7 +633,7 @@ button.agent-suggest {
   transition: transform var(--ag-t), box-shadow var(--ag-t), background var(--ag-t);
 }
 .agent-suggest:hover { transform: translateY(-2px); box-shadow: var(--ag-sh-2); background: var(--ag-green-soft) !important; }
-:root[data-theme="dark"] .agent-suggest { background: rgba(85, 198, 123, .10) !important; border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="dark"] .agent-suggest , :root[data-theme="hud"] .agent-suggest { background: rgba(85, 198, 123, .10) !important; border-color: var(--ag-glass-stroke) !important; }
 
 /* 输入栏一体化胶囊 */
 .agent-input-row {
@@ -646,7 +646,7 @@ button.agent-suggest {
   box-shadow: var(--ag-sh-1);
   align-items: flex-end;
 }
-:root[data-theme="dark"] .agent-input-row { background: rgba(12, 34, 23, .8) !important; border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="dark"] .agent-input-row , :root[data-theme="hud"] .agent-input-row { background: rgba(12, 34, 23, .8) !important; border-color: var(--ag-glass-stroke) !important; }
 .agent-input-row textarea {
   border: 0 !important;
   background: transparent !important;
@@ -687,7 +687,7 @@ button.agent-suggest {
 .kitten > svg { position: relative; z-index: 1; animation: agFloat 4.2s ease-in-out infinite; }
 @keyframes agBreathe { 0%, 100% { transform: scale(.92); opacity: .55 } 50% { transform: scale(1.06); opacity: .95 } }
 @keyframes agFloat { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
-:root[data-theme="dark"] .kitten::before { background: radial-gradient(circle, rgba(85, 198, 123, .32) 0%, transparent 70%); filter: blur(2px); }
+:root[data-theme="dark"] .kitten::before , :root[data-theme="hud"] .kitten::before { background: radial-gradient(circle, rgba(85, 198, 123, .32) 0%, transparent 70%); filter: blur(2px); }
 
 /* ============================ 按钮与通用 ============================ */
 button.action, .action, .notify-button, .upload-toolbar button {
@@ -701,9 +701,9 @@ button.action:active, .action:active { transform: scale(.97); }
   border-color: transparent !important;
   color: #fff;
 }
-:root[data-theme="dark"] .action.primary { color: #04150c; box-shadow: var(--ag-glow); }
+:root[data-theme="dark"] .action.primary , :root[data-theme="hud"] .action.primary { color: #04150c; box-shadow: var(--ag-glow); }
 .action.secondary, .action.ghost { background: var(--ag-surface) !important; border: 1px solid var(--ag-line) !important; color: var(--ag-ink) !important; }
-:root[data-theme="dark"] .action.secondary, :root[data-theme="dark"] .action.ghost { background: rgba(14, 38, 26, .7) !important; border-color: var(--ag-glass-stroke) !important; color: var(--ag-ink) !important; }
+:root[data-theme="dark"] .action.secondary, :root[data-theme="hud"] .action.secondary, :root[data-theme="dark"] .action.ghost , :root[data-theme="hud"] .action.ghost { background: rgba(14, 38, 26, .7) !important; border-color: var(--ag-glass-stroke) !important; color: var(--ag-ink) !important; }
 
 .badge {
   border-radius: var(--ag-r-pill) !important;
@@ -759,3 +759,98 @@ button.action:active, .action:active { transform: scale(.97); }
 }
 .users-panel .user-delete { border-radius: var(--ag-r-sm) !important; transition: transform var(--ag-t), box-shadow var(--ag-t); }
 .users-panel .user-delete:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--ag-sh-1); }
+
+
+/* ============================================================
+   Design Token：主题三 科技蓝 HUD（futuristic data screen）
+   深色科技蓝背景 #020617→#0f172a + 霓虹青蓝 #06b6d4 / #0ea5e9。
+   复用上方 dark 的组件规则（选择器已同时匹配 hud），此处仅覆盖配色与光效。
+   ============================================================ */
+:root[data-theme="hud"] {
+  --ag-canvas: #020617;
+  --ag-canvas-2: #0f172a;
+  --ag-surface: rgba(15, 23, 42, .74);
+  --ag-surface-2: rgba(10, 18, 36, .8);
+  --ag-surface-trans: rgba(15, 23, 42, .62);
+  --ag-line: rgba(6, 182, 212, .24);
+  --ag-line-soft: rgba(6, 182, 212, .13);
+
+  --ag-ink: #e2f6ff;
+  --ag-ink-2: #bcd8ea;
+  --ag-muted: #7fa3b8;
+
+  --ag-green: #22d3ee;
+  --ag-green-2: #38bdf8;
+  --ag-green-soft: rgba(34, 211, 238, .16);
+  --ag-soil: #fbbf24;
+  --ag-soil-soft: rgba(251, 191, 36, .15);
+  --ag-sky: #38bdf8;
+  --ag-sky-soft: rgba(56, 189, 248, .16);
+  --ag-amber: #fbbf24;
+  --ag-amber-soft: rgba(251, 191, 36, .15);
+  --ag-violet: #a78bfa;
+  --ag-violet-soft: rgba(167, 139, 250, .16);
+  --ag-danger: #fb7185;
+  --ag-danger-soft: rgba(251, 113, 133, .16);
+  --ag-ok: #4ade80;
+
+  --ag-dot-on: #22d3ee;
+  --ag-dot-off: #fb7185;
+
+  --ag-blur: 14px;
+  --ag-glass-bg: linear-gradient(160deg, rgba(15, 23, 42, .78) 0%, rgba(8, 15, 32, .66) 100%);
+  --ag-glass-stroke: rgba(6, 182, 212, .32);
+  --ag-glow: 0 0 18px rgba(6, 182, 212, .42);
+  --ag-num-shadow: 0 0 12px rgba(34, 211, 238, .5), 0 0 34px rgba(6, 182, 212, .22);
+  --ag-grid: rgba(6, 182, 212, .16);
+
+  --ag-bar-bg: linear-gradient(120deg, #020617 0%, #0a1628 50%, #12263a 100%);
+  --ag-bar-fg: #e2f6ff;
+  --ag-bar-muted: #7fa3b8;
+  --ag-bar-line: rgba(6, 182, 212, .28);
+
+  --ag-noise-opacity: .06;
+  --ag-chart-glow: 1;
+}
+:root[data-theme="hud"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(900px 500px at 12% -10%, rgba(6, 182, 212, .13), transparent 60%),
+    radial-gradient(700px 420px at 92% 8%, rgba(56, 189, 248, .09), transparent 60%);
+}
+:root[data-theme="hud"] .action.primary { color: #06202b; box-shadow: var(--ag-glow); }
+:root[data-theme="hud"] .action.secondary,
+:root[data-theme="hud"] .action.ghost {
+  background: rgba(15, 23, 42, .72) !important;
+  border-color: var(--ag-glass-stroke) !important;
+  color: var(--ag-ink) !important;
+}
+:root[data-theme="hud"] input[type="text"],
+:root[data-theme="hud"] input[type="number"],
+:root[data-theme="hud"] input[type="password"],
+:root[data-theme="hud"] select,
+:root[data-theme="hud"] textarea { background: rgba(9, 18, 36, .82) !important; }
+:root[data-theme="hud"] input:focus,
+:root[data-theme="hud"] select:focus,
+:root[data-theme="hud"] textarea:focus {
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .28), 0 0 14px rgba(6, 182, 212, .3) !important;
+}
+:root[data-theme="hud"] .sensor-add-dialog .dialog-body {
+  background: linear-gradient(160deg, rgba(18, 30, 54, .96), rgba(8, 16, 34, .96)) !important;
+  border-color: var(--ag-glass-stroke) !important;
+}
+:root[data-theme="hud"] .agent-message.agent .agent-bubble { background: rgba(14, 26, 46, .85) !important; border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="hud"] .agent-input-row { background: rgba(9, 18, 36, .85) !important; border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="hud"] .agent-suggest { background: rgba(34, 211, 238, .10) !important; border-color: var(--ag-glass-stroke) !important; }
+:root[data-theme="hud"] .kitten::before {
+  background: radial-gradient(circle, rgba(34, 211, 238, .32) 0%, transparent 70%);
+  filter: blur(2px);
+}
+:root[data-theme="hud"] .metric-label i[data-lucide],
+:root[data-theme="hud"] .metric-label svg { color: var(--ag-green); }
+:root[data-theme="hud"] .ag-chart-tip { background: rgba(8, 18, 36, .96); border-color: var(--ag-glass-stroke); }
+:root[data-theme="hud"] .broker-form h4 ~ * { background: rgba(8, 18, 36, .6); }
