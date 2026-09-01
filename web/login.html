@@ -16,7 +16,7 @@
     (function () {
       var t = null;
       try { t = localStorage.getItem("ag-theme"); } catch (e) {}
-      if (t !== "nature" && t !== "dark") {
+      if (t !== "nature" && t !== "dark" && t !== "hud") {
         t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "nature";
       }
       document.documentElement.setAttribute("data-theme", t);
