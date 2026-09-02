@@ -201,8 +201,7 @@ function renderTrendPanels() {
 }
 
 function setRoute(route) {
-  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard", "reports", "adopt", "farm3d"].includes(route) ? route : "overview";
-  document.body.classList.toggle("dashboard-active", nextRoute === "dashboard");
+  const nextRoute = ["overview", "trends", "devices", "agent", "reports", "adopt", "farm3d"].includes(route) ? route : "overview";
   document.querySelectorAll("[data-view]").forEach((panel) => {
     panel.hidden = panel.dataset.view !== nextRoute;
   });
@@ -215,12 +214,6 @@ function setRoute(route) {
   if (nextRoute === "trends") {
     if (state.device) refreshHistory(state.device.device_id, true);
     renderTrendPanels();
-  }
-  if (nextRoute === "dashboard") {
-    renderDashboard(true);
-    if (typeof window.__dashResize === "function") {
-      setTimeout(window.__dashResize, 50); // re-measure after the view is shown
-    }
   }
   if (nextRoute === "reports") {
     renderReports();
@@ -387,8 +380,6 @@ async function refresh() {
     // Connection pill is owned by probeHealthz; refresh success no longer
     // flips the pill, so a slow /devices cannot mask a healthy API.
     $("#last-update").textContent = new Date().toLocaleTimeString();
-    // Keep the big-data screen in sync whenever new telemetry arrives.
-    renderDashboard(false);
     // Reports view also depends on allDevices arriving after an async refresh:
     // re-render it so a direct ?view=reports load (or a slow first refresh)
     // never leaves the report card / ranking empty.
@@ -442,7 +433,7 @@ function selectDevice(deviceId) {
   window.history.replaceState({}, "", url);
   const select = $("#plot-select");
   if (select && select.value !== deviceId) select.value = deviceId;
-  // re-render the dashboard for the new plot and reset the history window
+  // reset the history window for the new plot
   state.samples = [];
   state.moisture = [];
   lastHistoryFetchAt = 0;
@@ -1655,34 +1646,41 @@ async function loadReportActions(deviceId) {
   } catch (_) { /* timeline optional */ }
 }
 
-async function renderRanking() {
+function renderRanking() {
   const wrap = $("#report-rank");
   if (!wrap) return;
-  // v15.13.0: the report ranking is the farmer points leaderboard (single
-  // total ranking, managers excluded) instead of the per-crop health PK.
-  wrap.innerHTML = '<div class="rank-empty">正在加载农户积分榜…</div>';
-  try {
-    const resp = await Auth.request("/api/v1/adoptions/leaderboard", { cache: "no-store" });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const d = await resp.json();
-    const entries = d.entries || [];
-    if (!entries.length) {
-      wrap.innerHTML = '<div class="rank-empty">还没有农户收获过作物，去「认养农场」收获赚积分上榜！</div>';
-      return;
-    }
-    const medals = ["🥇", "🥈", "🥉"];
-    const rows = entries.map((r, i) =>
-      `<div class="rank-row ${i === 0 ? "top" : ""}">
-        <span class="rank-medal">${i < 3 ? medals[i] : `${i + 1}`}</span>
-        <span class="rank-name" title="${escapeHtml(r.nickname)}">${escapeHtml(r.nickname)}</span>
-        <span class="rank-tag">${r.harvests} 次收获 · 均健 ${r.avg_health ?? "--"}</span>
-        <span class="rank-score ${r.points >= 200 ? "good" : r.points >= 100 ? "mid" : "low"}">${r.points} 分</span>
-      </div>`).join("");
-    wrap.innerHTML = `<h3 class="reports-h3">🏆 农户积分榜 <span style="font-size:11px;color:var(--muted);font-weight:500">不含管理员 · 按积分</span></h3>
-      <div class="rank-group" style="margin-bottom:0;">${rows}</div>`;
-  } catch (error) {
-    wrap.innerHTML = `<div class="rank-empty">积分榜加载失败：${escapeHtml(error.message || error)}</div>`;
+  const devices = state.allDevices || [];
+  const scored = devices.map((d) => ({ d, h: plotHealth(d) })).filter((x) => x.h.score != null);
+  const byCrop = {};
+  scored.forEach((x) => {
+    const crop = x.h.name;
+    (byCrop[crop] = byCrop[crop] || []).push(x);
+  });
+  const cropNames = Object.keys(byCrop).sort();
+  if (!cropNames.length) {
+    wrap.innerHTML = '<div class="rank-empty">还没有可评分的地块（需作物在目录中且有传感器数据）。</div>';
+    return;
   }
+  wrap.innerHTML = `<h3 class="reports-h3">🏆 同作物健康度 PK</h3>` + cropNames.map((crop) => {
+    const rows = byCrop[crop].sort((a, b) => b.h.score - a.h.score);
+    const medals = ["🥇", "🥈", "🥉"];
+    return `<div class="rank-group">
+      <div class="rank-group-head">${escapeHtml(crop)} <span>${rows.length} 块地</span></div>
+      ${rows.slice(0, 5).map((x, i) => `
+        <div class="rank-row ${i === 0 ? "top" : ""}" data-device="${x.d.device_id}">
+          <span class="rank-medal">${medals[i] || i + 1}</span>
+          <span class="rank-name">${escapeHtml((x.d.plot || {}).name || x.d.device_id)}</span>
+          <span class="rank-tag">${i === 0 ? "最稳农夫" : ""}</span>
+          <span class="rank-score ${x.h.score >= 80 ? "good" : x.h.score >= 60 ? "mid" : "low"}">${x.h.score}</span>
+        </div>`).join("")}
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll(".rank-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const select = $("#report-plot-select");
+      if (select) { select.value = row.dataset.device; select.dispatchEvent(new Event("change")); }
+    });
+  });
 }
 
 async function renderReports() {
@@ -2323,238 +2321,7 @@ function dashPlotCrop(device) {
   return (device?.plot || {}).crop || "—";
 }
 
-function renderDashboard(force) {
-  const shell = document.querySelector(".dashboard-shell");
-  if (!shell || shell.hidden) return; // only render while the screen is visible
-  const devices = state.allDevices || [];
-  if (!devices.length) {
-    const list = $("#dash-plot-list");
-    if (list) list.innerHTML = '<div class="empty">等待设备数据…</div>';
-    return;
-  }
-
-  const soils = devices.map((d) => latestPayload(d, "soil"));
-  const climates = devices.map((d) => latestPayload(d, "climate"));
-  const avgMoisture = dashAvg(soils.map((s) => Number(s.moisture_pct)));
-  const avgTemp = dashAvg(climates.map((c) => Number(c.air_temperature_c)));
-  const avgHumidity = dashAvg(climates.map((c) => Number(c.air_humidity_pct)));
-  const avgLight = dashAvg(climates.map((c) => Number(c.light_lux)));
-  const avgPh = dashAvg(soils.map((s) => Number(s.ph)));
-
-  // --- KPI row ---
-  const onlineSensors = devices.reduce(
-    (sum, d) => sum + (d.sensors || []).filter((s) => s.status === "connected").length, 0
-  );
-  $("#kpi-plots").textContent = String(devices.length);
-  $("#kpi-sensors").textContent = String(onlineSensors);
-  dashNum($("#kpi-moisture"), avgMoisture, 1);
-  dashNum($("#kpi-temp"), avgTemp, 1);
-
-  const moistureTrend = $("#kpi-moisture-trend");
-  if (moistureTrend) {
-    const low = Number.isFinite(avgMoisture) && avgMoisture < 40;
-    const high = Number.isFinite(avgMoisture) && avgMoisture > 65;
-    moistureTrend.textContent = low ? "偏低 · 建议灌溉" : high ? "偏高 · 注意排水" : "目标区间 40–65%";
-    moistureTrend.classList.toggle("down", low || high);
-  }
-  const tempTrend = $("#kpi-temp-trend");
-  if (tempTrend) {
-    const low = Number.isFinite(avgTemp) && avgTemp < 18;
-    const high = Number.isFinite(avgTemp) && avgTemp > 28;
-    tempTrend.textContent = low ? "偏低 · 注意保温" : high ? "偏高 · 注意通风" : "舒适区间 18–28°C";
-    tempTrend.classList.toggle("down", low || high);
-  }
-  dashNum($("#dash-core-value"), avgMoisture, 1);
-
-  // --- plot status list ---
-  const plotList = $("#dash-plot-list");
-  if (plotList) {
-    plotList.innerHTML = devices.map((d) => {
-      const online = isDeviceOnline(d);
-      const name = escapeHtml(dashPlotName(d));
-      const crop = escapeHtml(dashPlotCrop(d));
-      return `<div class="plot-row">
-        <div><div class="name">${name}</div></div>
-        <span class="crop">${crop}</span>
-        <span class="status ${online ? "" : "off"}"><i class="status-dot"></i>${online ? "在线" : "离线"}</span>
-      </div>`;
-    }).join("");
-  }
-
-  // --- derived alerts (thresholds applied to live telemetry) ---
-  const alertStream = $("#dash-alert-stream");
-  if (alertStream) {
-    const alerts = [];
-    devices.forEach((d) => {
-      const soil = latestPayload(d, "soil");
-      const climate = latestPayload(d, "climate");
-      const label = dashPlotName(d);
-      const m = Number(soil.moisture_pct);
-      const t = Number(climate.air_temperature_c);
-      if (Number.isFinite(m) && m < 40) alerts.push({ level: "warn", text: `${label}：土壤湿度 ${m.toFixed(1)}% 低于 40%，建议灌溉` });
-      if (Number.isFinite(m) && m > 65) alerts.push({ level: "warn", text: `${label}：土壤湿度 ${m.toFixed(1)}% 高于 65%，注意排水` });
-      if (Number.isFinite(t) && t > 28) alerts.push({ level: "warn", text: `${label}：气温 ${t.toFixed(1)}°C 偏高，建议通风` });
-      if (Number.isFinite(t) && t < 18) alerts.push({ level: "warn", text: `${label}：气温 ${t.toFixed(1)}°C 偏低，注意保温` });
-      if (!isDeviceOnline(d)) alerts.push({ level: "error", text: `${label}：设备离线，未收到近期遥测` });
-    });
-    alertStream.innerHTML = alerts.length
-      ? alerts.map((a) => `<div class="alert-item ${a.level}">
-          <span class="time">${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-          <span class="text">${escapeHtml(a.text)}</span>
-        </div>`).join("")
-      : '<div class="empty">全部地块指标正常</div>';
-  }
-
-  // --- footer readouts ---
-  dashNum($("#dash-light"), avgLight, 0);
-  dashNum($("#dash-humidity"), avgHumidity, 1);
-  dashNum($("#dash-ph"), avgPh, 2);
-
-  // --- soil detail grid ---
-  const soilGrid = $("#dash-soil-grid");
-  if (soilGrid) {
-    const cells = [
-      ["土壤温度", dashAvg(soils.map((s) => Number(s.temperature_c))), "°C", 1],
-      ["电导率", dashAvg(soils.map((s) => Number(s.conductivity_ms_cm))), "mS/cm", 2],
-      ["氮", dashAvg(soils.map((s) => Number(s.nitrogen_mg_kg))), "mg/kg", 0],
-      ["磷", dashAvg(soils.map((s) => Number(s.phosphorus_mg_kg))), "mg/kg", 0],
-      ["钾", dashAvg(soils.map((s) => Number(s.potassium_mg_kg))), "mg/kg", 0],
-      ["盐分", dashAvg(soils.map((s) => Number(s.salinity_g_l))), "g/L", 3],
-    ];
-    soilGrid.innerHTML = cells.map(([name, val, unit, digits]) => {
-      const text = Number.isFinite(val) ? val.toFixed(digits) : "--";
-      return `<div class="readout"><div class="name">${name}</div>
-        <div class="num">${text}</div><div class="unit">${unit}</div></div>`;
-    }).join("");
-  }
-
-  // --- recent telemetry log ---
-  const log = $("#dash-telemetry-log");
-  if (log) {
-    const rows = [];
-    devices.forEach((d) => {
-      const history = Array.isArray(d.history) ? d.history : [];
-      const last = history[history.length - 1];
-      if (!last?.timestamp) return;
-      const label = dashPlotName(d);
-      rows.push({ ts: new Date(last.timestamp), label, kind: last.kind });
-    });
-    rows.sort((a, b) => b.ts - a.ts);
-    log.innerHTML = rows.length
-      ? rows.slice(0, 12).map((r) => `<div class="alert-item">
-          <span class="time">${r.ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-          <span class="text">${escapeHtml(r.label)} · ${r.kind === "soil" ? "土壤" : "气候"}遥测</span>
-        </div>`).join("")
-      : '<div class="empty">等待数据…</div>';
-  }
-
-  if (force && window.lucide) window.lucide.createIcons();
-}
-
-function updateDashboardClock() {
-  const clock = $("#dashboard-clock");
-  if (!clock) return;
-  clock.textContent = new Date().toLocaleString("zh-CN", {
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
-}
-
 // Canvas: pulsing telemetry rings driven by live moisture samples.
-function startDashboardCanvas() {
-  const canvas = $("#dashboard-canvas");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  let phase = 0;
-  let width = 0;
-  let height = 0;
-
-  function resize() {
-    const rect = canvas.parentElement.getBoundingClientRect();
-    // Skip when the dashboard view is hidden (rect collapses to 0) — the
-    // ResizeObserver will re-fire once the view becomes visible.
-    if (!rect.width || !rect.height) return;
-    const dpr = window.devicePixelRatio || 1;
-    width = rect.width;
-    height = rect.height;
-    canvas.width = Math.max(1, Math.floor(width * dpr));
-    canvas.height = Math.max(1, Math.floor(height * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  // Hidden views report 0x0 at boot; observe the wrapper so the canvas
-  // re-measures the moment the dashboard route becomes visible/resized.
-  if (typeof ResizeObserver !== "undefined") {
-    const ro = new ResizeObserver(() => resize());
-    ro.observe(canvas.parentElement);
-    window.addEventListener("resize", resize);
-  } else {
-    window.addEventListener("resize", resize);
-    resize();
-  }
-  window.__dashResize = resize;
-
-  function frame() {
-    phase += 0.012;
-    ctx.clearRect(0, 0, width, height);
-    const cx = width / 2;
-    const cy = height / 2;
-
-    // concentric pulse rings
-    for (let i = 0; i < 4; i += 1) {
-      const t = (phase + i * 0.25) % 1;
-      const radius = 40 + t * (Math.min(width, height) * 0.5);
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(34, 211, 238, ${(1 - t) * 0.32})`;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-    }
-
-    // radial spokes
-    ctx.strokeStyle = "rgba(14, 165, 233, 0.14)";
-    ctx.lineWidth = 1;
-    for (let a = 0; a < 12; a += 1) {
-      const angle = (a / 12) * Math.PI * 2 + phase * 0.25;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(cx + Math.cos(angle) * Math.min(width, height) * 0.46, cy + Math.sin(angle) * Math.min(width, height) * 0.46);
-      ctx.stroke();
-    }
-
-    // data points: one per plot, distance reflects its moisture level
-    const devices = state.allDevices || [];
-    const points = devices.map((d, idx) => {
-      const soil = latestPayload(d, "soil");
-      const m = Number(soil.moisture_pct);
-      const ratio = Number.isFinite(m) ? Math.min(1, Math.max(0, m / 100)) : 0.4;
-      const angle = (idx / Math.max(1, devices.length)) * Math.PI * 2 - Math.PI / 2 + phase * 0.6;
-      const radius = 55 + ratio * (Math.min(width, height) * 0.3);
-      return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius, m };
-    });
-
-    if (points.length > 1) {
-      ctx.beginPath();
-      points.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      ctx.closePath();
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-    }
-
-    points.forEach((p) => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(125, 211, 252, 0.95)";
-      ctx.shadowColor = "rgba(56, 189, 248, 0.9)";
-      ctx.shadowBlur = 12;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-    });
-
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-}
 
 if (window.lucide) window.lucide.createIcons();
 bindBrokerActions();
@@ -2585,7 +2352,3 @@ setInterval(refreshAiStatus, 15000);
 setInterval(refreshAlertLog, 30000);
 setInterval(loadBroker, 30000);
 setInterval(refreshUserPermissions, 60000);
-// v15.4.0: big data screen — clock tick + canvas animation start
-updateDashboardClock();
-setInterval(updateDashboardClock, 1000);
-startDashboardCanvas();
