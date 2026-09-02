@@ -3,7 +3,7 @@
  * 策略：静态资源网络优先 + 离线回退；/api /ai 等数据请求永不缓存。
  * 每次发版请把 CACHE 版本号 +1（如 v1 -> v2），否则用户端不更新缓存。
  */
-const CACHE = 'smartagri-v18';
+const CACHE = 'smartagri-v19';
 
 const APP_SHELL = [
   './',
