@@ -189,7 +189,9 @@ def _owner_label(owner_user_id):
     if owner_user_id is None:
         return "未分配"
     if owner_user_id == BUILTIN_PLOT_OWNER_ID:
-        return "内置"
+        # uid 1 is the seeded admin account; since v16.5 no built-in plots
+        # exist, so this reads "管理员" rather than the stale "内置".
+        return "管理员"
     try:
         user = get_user_by_id(owner_user_id)
     except Exception:
