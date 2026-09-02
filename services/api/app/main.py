@@ -476,6 +476,41 @@ def _load_custom_plots_into_registry():
         LOGGER.info("restored custom plot %s (%s) owner=%s", device_id, name, owner_user_id)
 
 
+def _seed_builtin_plots_into_registry():
+    """Guarantee the three demo plots exist on every boot and belong to admin.
+
+    They used to live in the in-memory registry only, so an API restart dropped
+    them — and since the simulator discovers plots through GET /devices, they
+    could never come back (deadlock: not in the list → never simulated → never
+    re-registered). Seeding them here with an explicit owner also makes their
+    multi-tenant ownership unambiguous.
+    """
+    for device_id, meta in PLOT_META.items():
+        with registry_lock:
+            existing = registry.get(device_id)
+            if existing is not None:
+                if existing.get("owner_user_id") is None:
+                    existing["owner_user_id"] = BUILTIN_PLOT_OWNER_ID
+                existing["plot"] = {"name": meta["name"], "crop": meta["crop"]}
+                continue
+            registry[device_id] = {
+                "device_id": device_id,
+                "telemetry": {},
+                "last_seen": None,
+                "pump": {"action": "stop", "running": False, "status": "standby",
+                         "timestamp": None, "command_id": None},
+                "plot": {"name": meta["name"], "crop": meta["crop"]},
+                "owner_user_id": BUILTIN_PLOT_OWNER_ID,
+            }
+        for sensor_type in sorted(SENSOR_TYPES.keys()):
+            try:
+                create_sensor(device_id, sensor_type)
+            except ValueError:
+                pass  # already seeded
+        LOGGER.info("seeded builtin plot %s (%s) owner=%s", device_id, meta["name"],
+                    BUILTIN_PLOT_OWNER_ID)
+
+
 _load_custom_plots_into_registry()
 
 
@@ -599,6 +634,11 @@ def seed_default_sensors_for_device(device_id):
         except ValueError:
             pass  # raced with another seed; ignore
     return created
+
+
+# Seed the three demo plots only after the sensor helpers exist (they are defined
+# above, while the seed function itself sits next to the registry bootstrapping).
+_seed_builtin_plots_into_registry()
 
 
 # --- Day 10: automatic irrigation rules -------------------------------------
