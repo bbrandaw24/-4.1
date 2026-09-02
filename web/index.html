@@ -19,10 +19,10 @@
   <link rel="stylesheet" href="auth.css?v=v15.3.1">
   <link rel="stylesheet" href="agent.css">
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
-  <link rel="stylesheet" href="sensor.css?v=v15.7.0">
+  <link rel="stylesheet" href="sensor.css?v=v15.8.0">
   <link rel="stylesheet" href="day13.css">
   <link rel="stylesheet" href="theme.css?v=v15-perf">
-  <link rel="stylesheet" href="dashboard.css?v=v15.7.0">
+  <link rel="stylesheet" href="dashboard.css?v=v15.8.0">
 </head>
 <body>
   <header class="topbar">
@@ -159,6 +159,20 @@
         <div class="panel-heading"><div><p class="eyebrow">ACCOUNTS</p><h2>账户管理</h2><p class="agent-sub">查看平台账户列表；农户账户可修改角色/显示名或删除，管理者账户受保护不可删除。</p></div><button class="notify-button" id="users-refresh" type="button">刷新</button></div>
         <div class="users-list" id="users-list"><span class="sensor-hint">加载中…</span></div>
         <p class="sensor-hint" id="users-hint"></p>
+      </article>
+      <article class="panel steward-panel" id="steward-panel" hidden>
+        <div class="panel-heading">
+          <div><p class="eyebrow">AI STEWARD</p><h2>🤖 AI 农场管家</h2><p class="agent-sub">管家按你设定的权限与阈值自动分析传感器数据并执行：跌破湿度阈值自动开泵、高温高湿自动生成病虫害工单，所有动作记录在时间线。</p></div>
+          <button class="notify-button" id="steward-refresh" type="button">刷新</button>
+        </div>
+        <div class="steward-grid">
+          <div class="steward-config" id="steward-config-wrap"></div>
+          <div class="steward-timeline">
+            <h3 class="steward-timeline-title">管家时间线</h3>
+            <div class="alert-stream steward-log" id="steward-log"><div class="empty">等待管家动作…</div></div>
+          </div>
+        </div>
+        <p class="sensor-hint" id="steward-hint"></p>
       </article>
     </section>
 
@@ -348,7 +362,7 @@
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day16-beijing-gateway"></script>
-  <script src="app.js?v=v15.7.0"></script>
+  <script src="app.js?v=v15.8.0"></script>
   <script src="kitten.js?v=day16-kitten"></script>
   <script src="agent.js?v=day16-kitten"></script>
   <script src="enhance.js?v=v15-perf"></script>
