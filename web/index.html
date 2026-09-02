@@ -46,6 +46,7 @@
       <button class="nav-item" data-route="dashboard"><i data-lucide="monitor"></i><span>数据屏幕</span></button>
       <button class="nav-item" data-route="reports"><i data-lucide="sprout"></i><span>农场报告</span></button>
       <button class="nav-item" data-route="adopt"><i data-lucide="heart-handshake"></i><span>认养农场</span></button>
+      <button class="nav-item" data-route="farm3d"><i data-lucide="box"></i><span>3D 农场</span></button>
     </nav>
 
     <section class="metric-grid route-panel" data-view="overview" aria-label="关键指标">
@@ -400,10 +401,36 @@
         </div>
       </article>
     </section>
+
+    <section class="route-panel farm3d-shell" data-view="farm3d" aria-label="3D 农场">
+      <article class="panel farm3d-panel">
+        <div class="panel-heading"><div><p class="eyebrow">DIGITAL TWIN</p><h2>🎮 数字孪生 3D 农场</h2><p class="agent-sub">传感器遥测驱动虚拟作物生长——湿度决定叶片、健康度决定颜色、进度决定植株大小。拖动旋转视角，点击任意作物查看实时数据。</p></div></div>
+        <div class="farm3d-wrap">
+          <div class="farm3d-stage" id="farm3d-stage"><div class="farm3d-loading" id="farm3d-loading">正在初始化 3D 场景…</div></div>
+          <aside class="farm3d-side">
+            <div class="farm3d-selected" id="farm3d-selected">
+              <div class="f3d-title">👆 点击一个作物</div>
+              <div class="f3d-body">查看它的实时生长状态与遥测数据。</div>
+            </div>
+            <div class="farm3d-legend">
+              <div class="f3d-title">🎨 健康度配色</div>
+              <div class="f3d-legend-row"><span class="dot" style="background:#22c55e"></span>优秀 ≥80</div>
+              <div class="f3d-legend-row"><span class="dot" style="background:#a3e635"></span>良好 60-79</div>
+              <div class="f3d-legend-row"><span class="dot" style="background:#facc15"></span>及格 40-59</div>
+              <div class="f3d-legend-row"><span class="dot" style="background:#fb923c"></span>不及格 &lt;40</div>
+              <div class="f3d-legend-row"><span class="dot" style="background:#7c3aed"></span>认养地块</div>
+            </div>
+          </aside>
+        </div>
+        <p class="sensor-hint" id="farm3d-hint"></p>
+      </article>
+    </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day16-beijing-gateway"></script>
-  <script src="app.js?v=v15.11.0"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/controls/OrbitControls.js"></script>
+  <script src="app.js?v=v15.12.0"></script>
   <script src="kitten.js?v=day16-kitten"></script>
   <script src="agent.js?v=day16-kitten"></script>
   <script src="enhance.js?v=v15-perf"></script>
