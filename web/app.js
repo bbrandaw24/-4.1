@@ -1950,10 +1950,20 @@ function bindAdoptActions() {
 let farm3d = {
   scene: null, camera: null, renderer: null, controls: null, built: false,
   crops: new Map(), devices: [], raycaster: null, mouse: null, animId: 0,
+  hoverId: null, mouseDirty: false, stars: null, t0: performance.now(),
+  geoPool: new Map(),   // geometry cache keyed by kind+part (v16.5: Map pool)
+  matPool: new Map(),   // static material cache (shared across plots)
 };
 
 function farm3dColor(score) {
   return score >= 80 ? 0x22c55e : score >= 60 ? 0xa3e635 : score >= 40 ? 0xfacc15 : 0xfb923c;
+}
+
+// v16.5: foliage tint via single-axis lerp — failing (<=60) stays withered
+// yellow 0xb8a24a, excellent (>=90) reaches deep green 0x2f6d33.
+function farm3dLeafColor(score, out) {
+  const t = Math.max(0, Math.min(1, ((score == null ? 60 : score) - 60) / 30));
+  return out.lerpColors(new THREE.Color(0xb8a24a), new THREE.Color(0x2f6d33), t);
 }
 
 function farm3dProgress(device) {
@@ -1973,8 +1983,9 @@ function initFarm3D() {
   const width = Math.max(320, stage.clientWidth || 680);
   const height = Math.max(300, stage.clientHeight || 470);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0b1020);
-  scene.fog = new THREE.Fog(0x0b1020, 13, 28);
+  // v16.5: night-sky mood — deep-blue gradient haze via matched fog + bg
+  scene.background = new THREE.Color(0x0a1224);
+  scene.fog = new THREE.Fog(0x0a1224, 14, 34);
   const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
   camera.position.set(7, 5.5, 9.5);
   camera.lookAt(0, 1.2, 0);
@@ -1983,19 +1994,61 @@ function initFarm3D() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // v16.5: filmic tone mapping + sRGB output for richer night contrast
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.outputEncoding = THREE.sRGBEncoding;
   stage.appendChild(renderer.domElement);
-  scene.add(new THREE.AmbientLight(0x8899bb, 0.7));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.95);
-  dir.position.set(5, 9, 4);
-  dir.castShadow = true;
-  dir.shadow.mapSize.set(1024, 1024);
-  scene.add(dir);
-  const fill = new THREE.PointLight(0x22d3ee, 0.55, 22);
-  fill.position.set(-5, 3.5, -4);
-  scene.add(fill);
+  // v16.5 lighting rig: hemisphere sky/soil fill + one warm key light + cool rim
+  scene.add(new THREE.HemisphereLight(0x7fa8ff, 0x3a2d1c, 0.8));
+  const key = new THREE.DirectionalLight(0xffd9a0, 1.0);
+  key.position.set(6, 9, 4);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024); // shadow budget capped at 1024 on purpose
+  key.shadow.camera.left = -8;
+  key.shadow.camera.right = 8;
+  key.shadow.camera.top = 8;
+  key.shadow.camera.bottom = -8;
+  scene.add(key);
+  const rim = new THREE.PointLight(0x22d3ee, 0.45, 24);
+  rim.position.set(-6, 4, -5);
+  scene.add(rim);
+  // dark grid ground + circular farm boundary halo + faint ground disc
   const grid = new THREE.GridHelper(16, 16, 0x1e3a5f, 0x152a4a);
   grid.position.y = -0.02;
   scene.add(grid);
+  const boundary = new THREE.Mesh(
+    new THREE.TorusGeometry(5.7, 0.05, 8, 72),
+    new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.45 })
+  );
+  boundary.rotation.x = Math.PI / 2;
+  boundary.position.y = 0.02;
+  scene.add(boundary);
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(5.7, 64),
+    new THREE.MeshBasicMaterial({ color: 0x0e1c38, transparent: true, opacity: 0.5 })
+  );
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = -0.01;
+  scene.add(disc);
+  // v16.5: star field — ~650 points on the upper dome, slowly rotating
+  const starCount = 650;
+  const starPos = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const az = Math.random() * Math.PI * 2;
+    const el = Math.random() * Math.PI * 0.48 + 0.06;
+    const r = 30 + Math.random() * 8;
+    starPos[i * 3] = Math.cos(az) * Math.cos(el) * r;
+    starPos[i * 3 + 1] = Math.sin(el) * r;
+    starPos[i * 3 + 2] = Math.sin(az) * Math.cos(el) * r;
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+  farm3d.stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+    color: 0xcfe4ff, size: 0.09, transparent: true, opacity: 0.85,
+    sizeAttenuation: true, fog: false,
+  }));
+  scene.add(farm3d.stars);
   // Self-made orbit controls (cdnjs r128 ships no OrbitControls file):
   // drag to rotate, wheel to zoom, slow auto-rotation when idle.
   const target = new THREE.Vector3(0, 1.2, 0);
@@ -2043,12 +2096,21 @@ function initFarm3D() {
   farm3d.mouse = new THREE.Vector2();
   const loading = $("#farm3d-loading");
   if (loading) loading.remove();
+  // click-to-inspect: record pointer on down, resolve hit on up
   renderer.domElement.addEventListener("pointerdown", (e) => {
     const rect = renderer.domElement.getBoundingClientRect();
     farm3d.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     farm3d.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   });
   renderer.domElement.addEventListener("pointerup", onFarm3DClick);
+  // v16.5: hover highlight — mark dirty, raycast once per frame in animate
+  renderer.domElement.addEventListener("pointermove", (e) => {
+    if (!farm3d.built) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    farm3d.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    farm3d.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    farm3d.mouseDirty = true;
+  });
   window.addEventListener("resize", resizeFarm3D);
   farm3d.built = true;
   animateFarm3D();
@@ -2072,205 +2134,308 @@ function animateFarm3D() {
   if (farm3d.controls && farm3d.controls.autoRotate && typeof farm3d.rotateCamera === "function") {
     farm3d.rotateCamera(0.0035, 0);
   }
-  // gentle wind sway, phase-staggered per plant so they don't move in lockstep
-  const t = performance.now() / 1000;
+  if (farm3d.stars) farm3d.stars.rotation.y += 0.00035; // slow starfield drift
+  const t = (performance.now() - farm3d.t0) / 1000;
   farm3d.crops.forEach((g) => {
-    const p = g.userData && g.userData.plant;
-    if (p) p.rotation.z = Math.sin(t * 1.15 + (g.userData.phase || 0)) * 0.035;
+    const u = g.userData || {};
+    // gentle wind sway, phase-staggered per plant (3x3 grid per plot)
+    (u.plants || []).forEach((p, pi) => {
+      p.rotation.z = Math.sin(t * 1.2 + (u.phase || 0) + pi * 0.9) * 0.04;
+    });
+    // mature fruit breathes: subtle scale pulsation around 1.0
+    if (u.fruits && u.fruits.visible) {
+      const s = 1 + Math.sin(t * 2.1 + (u.phase || 0)) * 0.05;
+      u.fruits.scale.setScalar(s);
+    }
+    // wheat/rice heads bow lower as the plot matures
+    if (u.ears) u.ears.rotation.x = (u.pct || 0) / 100 * 0.55;
   });
+  if (farm3d.mouseDirty) {
+    farm3d.mouseDirty = false;
+    updateFarm3DHover();
+  }
   farm3d.renderer.render(farm3d.scene, farm3d.camera);
 }
 
-  // v16.4: per-crop styling — different silhouettes for trees / bushes /
-  // vines / grain so the 3D farm reads as a real mixed farm, not one repeated
-  // stick-and-blob model. All procedural three.js geometry (no assets).
-  const FARM3D_TREE_BLOBS = [
-    [0, 0, 0, 1], [-0.3, 0.12, 0.18, 0.72], [0.32, 0.16, -0.12, 0.68],
-    [0.05, 0.3, 0.28, 0.6], [-0.12, 0.24, -0.3, 0.62], [0.26, -0.05, 0.26, 0.55],
-  ];
-  function farm3dStyle(cropName) {
-    const s = String(cropName || "");
-    if (s.includes("苹果")) return { kind: "tree", trunk: 0x6d4c33, leaf: 0x2f7d32, fruit: 0xe53e3e, fruitR: 0.085, nFruit: 6, canopy: 0.62 };
-    if (s.includes("梨")) return { kind: "tree", trunk: 0x7a5a3a, leaf: 0x3f8f3f, fruit: 0xdce97a, fruitR: 0.095, nFruit: 5, canopy: 0.54, tall: 1.18 };
-    if (s.includes("橘") || s.includes("柑") || s.includes("橙")) return { kind: "tree", trunk: 0x6d4c33, leaf: 0x27753a, fruit: 0xf97316, fruitR: 0.08, nFruit: 7, canopy: 0.58 };
-    if (s.includes("草莓")) return { kind: "bush", leaf: 0x2f9e44, fruit: 0xe11d48, fruitR: 0.06, nFruit: 5 };
-    if (s.includes("番茄") || s.includes("西红柿")) return { kind: "vine", leaf: 0x3a8a3a, fruit: 0xf05e45, fruitR: 0.07, nFruit: 4 };
-    if (s.includes("麦") || s.includes("稻") || s.includes("谷")) return { kind: "grain", leaf: 0x7fa843, fruit: 0xe8c860, fruitR: 0.045, nFruit: 6 };
-    if (s.includes("玉米")) return { kind: "corn", leaf: 0x4d9e3a, fruit: 0xf2c14e, fruitR: 0.06, nFruit: 3 };
-    return { kind: "bush", leaf: 0x2f8f4a, fruit: 0x9dbb3f, fruitR: 0.06, nFruit: 4 };
+// v16.5: hover highlight — foliage emissive 0.12 -> 0.45, halo 0.4 -> 0.85
+function updateFarm3DHover() {
+  if (!farm3d.raycaster || !farm3d.camera) return;
+  farm3d.raycaster.setFromCamera(farm3d.mouse, farm3d.camera);
+  const hits = farm3d.raycaster.intersectObjects(Array.from(farm3d.crops.values()), true);
+  let id = null;
+  if (hits.length) {
+    let obj = hits[0].object;
+    while (obj && !(obj.userData && obj.userData.device)) obj = obj.parent;
+    if (obj && obj.userData.device) id = obj.userData.device.device_id;
   }
+  if (id === farm3d.hoverId) return;
+  farm3d.hoverId = id;
+  farm3d.crops.forEach((group, gid) => {
+    const u = group.userData || {};
+    const on = gid === id;
+    if (u.leafMat) u.leafMat.emissiveIntensity = on ? 0.45 : 0.12;
+    if (u.halo) u.halo.material.opacity = on ? 0.85 : 0.4;
+  });
+  farm3d.renderer.domElement.style.cursor = id ? "pointer" : "grab";
+}
 
-  function makeCropMesh(device, index, total) {
-    const group = new THREE.Group();
-    const health = plotHealth(device);
-    const score = health.score ?? 50;
-    const pct = farm3dProgress(device);
-    const crop = reportCrops[(device.plot || {}).crop];
-    const cropName = (crop && crop.name) || (device.plot || {}).crop || "作物";
-    const style = farm3dStyle(cropName);
-    const color = farm3dColor(score);
-    const grow = 0.35 + (pct / 100) * 0.75; // whole-plant scale driven by growth progress
+// v16.5: per-crop styling — different silhouettes for trees / bushes /
+// vines / grain so the 3D farm reads as a real mixed farm, not one repeated
+// stick-and-blob model. All procedural three.js geometry (no assets).
+function farm3dStyle(cropName) {
+  const s = String(cropName || "");
+  if (s.includes("苹果")) return { kind: "tree", trunk: 0x6d4c33, leaf: 0x2f7d32, fruit: 0xe53e3e, fruitR: 0.085, nFruit: 6, canopy: 0.62 };
+  if (s.includes("梨")) return { kind: "tree", trunk: 0x7a5a3a, leaf: 0x3f8f3f, fruit: 0xdce97a, fruitR: 0.095, nFruit: 5, canopy: 0.54, tall: 1.18 };
+  if (s.includes("橘") || s.includes("柑") || s.includes("橙")) return { kind: "tree", trunk: 0x6d4c33, leaf: 0x27753a, fruit: 0xf97316, fruitR: 0.08, nFruit: 7, canopy: 0.58 };
+  if (s.includes("草莓")) return { kind: "bush", leaf: 0x2f9e44, fruit: 0xe11d48, fruitR: 0.06, nFruit: 5 };
+  if (s.includes("番茄") || s.includes("西红柿")) return { kind: "vine", leaf: 0x3a8a3a, fruit: 0xf05e45, fruitR: 0.07, nFruit: 4 };
+  if (s.includes("麦") || s.includes("稻") || s.includes("谷")) return { kind: "grain", leaf: 0x7fa843, fruit: 0xe8c860, fruitR: 0.045, nFruit: 6 };
+  if (s.includes("玉米")) return { kind: "corn", leaf: 0x4d9e3a, fruit: 0xf2c14e, fruitR: 0.06, nFruit: 3 };
+  return { kind: "bush", leaf: 0x2f8f4a, fruit: 0x9dbb3f, fruitR: 0.06, nFruit: 4 };
+}
 
-    // raised soil bed with furrow rows — reads as a tilled plot, not a mound
-    const bed = new THREE.Mesh(
-      new THREE.BoxGeometry(1.5, 0.16, 1.5),
-      new THREE.MeshStandardMaterial({ color: 0x4a3826, roughness: 1 })
-    );
-    bed.position.y = 0.08;
-    bed.receiveShadow = true;
-    group.add(bed);
-    const furrowMat = new THREE.MeshStandardMaterial({ color: 0x382a1b, roughness: 1 });
-    for (let r = -1; r <= 1; r++) {
-      const row = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.05, 0.15), furrowMat);
-      row.position.set(0, 0.165, r * 0.44);
-      group.add(row);
+// v16.5 geometry/material pools — shared per category so 9 plants per plot
+// (and plots of the same crop) reuse the same GPU buffers.
+function farm3dPool(key, make) {
+  if (!farm3d.geoPool.has(key)) farm3d.geoPool.set(key, make());
+  return farm3d.geoPool.get(key);
+}
+function farm3dMat(key, make) {
+  if (!farm3d.matPool.has(key)) farm3d.matPool.set(key, make());
+  return farm3d.matPool.get(key);
+}
+
+// Build ONE plant template for a style; the caller clones it into a 3x3 grid
+// (clone shares geometry AND materials, so health tint / hover glow applied on
+// the shared leafMat lights up the whole plot at zero extra cost).
+function farm3dPlantTemplate(style, index) {
+  const plant = new THREE.Group();
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2f6d33, roughness: 0.62, emissive: 0x2f6d33, emissiveIntensity: 0.12 });
+  const stalkMat = new THREE.MeshStandardMaterial({ color: style.leaf, roughness: 0.7 });
+  const woodMat = farm3dMat("wood:" + (style.trunk || 0x5f4630),
+    () => new THREE.MeshStandardMaterial({ color: style.trunk || 0x5f4630, roughness: 0.9 }));
+  const fruitMat = farm3dMat("fruit:" + style.fruit,
+    () => new THREE.MeshStandardMaterial({ color: style.fruit, roughness: 0.32, emissive: style.fruit, emissiveIntensity: 0.12 }));
+  const fruits = new THREE.Group();
+  const ears = new THREE.Group(); // grain only: golden ears that bow when ripe
+
+  if (style.kind === "tree") {
+    // tapered trunk + clustered ellipsoid canopy (icosahedron, squashed)
+    const trunkH = 0.55 * (style.tall || 1);
+    const trunk = new THREE.Mesh(farm3dPool("trunk:" + trunkH,
+      () => new THREE.CylinderGeometry(0.07, 0.11, trunkH, 8)), woodMat);
+    trunk.position.y = trunkH / 2;
+    trunk.castShadow = true;
+    plant.add(trunk);
+    const canopy = new THREE.Group();
+    canopy.position.y = trunkH;
+    const BLOBS = [[0, 0, 0, 1], [-0.3, 0.12, 0.18, 0.72], [0.32, 0.16, -0.12, 0.68], [0.05, 0.3, 0.28, 0.6], [-0.12, 0.24, -0.3, 0.62], [0.26, -0.05, 0.26, 0.55]];
+    BLOBS.forEach(([x, y, z, s], bi) => {
+      const geo = farm3dPool("canopy:" + style.canopy + "*" + bi,
+        () => new THREE.IcosahedronGeometry(style.canopy * s, 1));
+      const b = new THREE.Mesh(geo, leafMat);
+      b.scale.y = 0.82;
+      b.position.set(x * style.canopy, y * style.canopy * 1.4, z * style.canopy);
+      b.castShadow = true;
+      canopy.add(b);
+    });
+    plant.add(canopy);
+    for (let i = 0; i < style.nFruit; i++) {
+      const f = new THREE.Mesh(farm3dPool("fruitS:" + style.fruitR,
+        () => new THREE.SphereGeometry(style.fruitR, 10, 8)), fruitMat);
+      const a = (i / style.nFruit) * Math.PI * 2 + index * 1.3;
+      f.position.set(Math.cos(a) * style.canopy * 0.95, trunkH + 0.12 + ((i % 3) - 1) * 0.17, Math.sin(a) * style.canopy * 0.95);
+      fruits.add(f);
     }
-
-    // plant group — sways in the wind (animateFarm3D) and scales with growth
-    const plant = new THREE.Group();
-    plant.position.y = 0.16;
-    group.add(plant);
-    const leafMat = new THREE.MeshStandardMaterial({ color, roughness: 0.62, emissive: color, emissiveIntensity: 0.06 });
-    const woodMat = new THREE.MeshStandardMaterial({ color: style.trunk || 0x5f4630, roughness: 0.9 });
-    const stalkMat = new THREE.MeshStandardMaterial({ color: style.leaf, roughness: 0.7 });
-    const fruitMat = new THREE.MeshStandardMaterial({ color: style.fruit, roughness: 0.32, emissive: style.fruit, emissiveIntensity: 0.12 });
-    const fruits = new THREE.Group();
-
-    if (style.kind === "tree") {
-      // tapered trunk + clustered ellipsoid canopy + fruit on the canopy rim
-      const trunkH = 0.55 * (style.tall || 1);
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, trunkH, 8), woodMat);
-      trunk.position.y = trunkH / 2;
-      trunk.castShadow = true;
-      plant.add(trunk);
-      const canopy = new THREE.Group();
-      canopy.position.y = trunkH;
-      FARM3D_TREE_BLOBS.forEach(([x, y, z, s]) => {
-        const b = new THREE.Mesh(new THREE.SphereGeometry(style.canopy * s, 12, 10), leafMat);
-        b.scale.y = 0.82;
-        b.position.set(x * style.canopy, y * style.canopy * 1.4, z * style.canopy);
-        b.castShadow = true;
-        canopy.add(b);
-      });
-      plant.add(canopy);
-      for (let i = 0; i < style.nFruit; i++) {
-        const f = new THREE.Mesh(new THREE.SphereGeometry(style.fruitR, 10, 8), fruitMat);
-        const a = (i / style.nFruit) * Math.PI * 2 + index * 1.3;
-        f.position.set(Math.cos(a) * style.canopy * 0.95, trunkH + 0.12 + ((i % 3) - 1) * 0.17, Math.sin(a) * style.canopy * 0.95);
+  } else if (style.kind === "vine") {
+    // tomato-style: stake + main stem + spiral vine arcs + hanging fruit
+    const stakeH = 1.05;
+    const stake = new THREE.Mesh(farm3dPool("stake", () => new THREE.CylinderGeometry(0.025, 0.025, stakeH, 6)), woodMat);
+    stake.position.y = stakeH / 2;
+    plant.add(stake);
+    const stemH = 0.9;
+    const stem = new THREE.Mesh(farm3dPool("stem", () => new THREE.CylinderGeometry(0.03, 0.05, stemH, 6)), stalkMat);
+    stem.position.y = stemH / 2;
+    stem.castShadow = true;
+    plant.add(stem);
+    for (let i = 0; i < 4; i++) {
+      // vine arc winding around the stake (TorusGeometry partial ring)
+      const arc = new THREE.Mesh(farm3dPool("vineArc", () => new THREE.TorusGeometry(0.17, 0.016, 6, 14, Math.PI * 0.85)), stalkMat);
+      arc.position.y = 0.2 + i * 0.2;
+      arc.rotation.x = Math.PI / 2;
+      arc.rotation.z = i * 2.4 + index;
+      plant.add(arc);
+      const leaf = new THREE.Mesh(farm3dPool("vineLeaf", () => new THREE.SphereGeometry(0.15, 10, 8)), leafMat);
+      leaf.scale.set(1.15, 0.5, 0.7);
+      const a = i * 2.4 + index;
+      leaf.position.set(Math.cos(a) * 0.15, 0.26 + i * 0.18, Math.sin(a) * 0.15);
+      leaf.rotation.y = -a;
+      leaf.castShadow = true;
+      plant.add(leaf);
+      if (i >= 1) {
+        // fruit hangs just below the leaf joint
+        const f = new THREE.Mesh(farm3dPool("fruitS:" + style.fruitR, () => new THREE.SphereGeometry(style.fruitR, 10, 8)), fruitMat);
+        f.position.set(Math.cos(a) * 0.17, 0.16 + i * 0.18, Math.sin(a) * 0.17);
         fruits.add(f);
       }
-    } else if (style.kind === "vine") {
-      // tomato-style: stake + main stem + paired side leaves + hanging fruit
-      const stakeH = 1.05;
-      const stake = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, stakeH, 6), woodMat);
-      stake.position.y = stakeH / 2;
-      plant.add(stake);
-      const stemH = 0.9;
-      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, stemH, 6), stalkMat);
-      stem.position.y = stemH / 2;
-      stem.castShadow = true;
-      plant.add(stem);
-      for (let i = 0; i < 5; i++) {
-        const y = 0.22 + i * 0.17;
-        const a = i * 2.4 + index;
-        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), leafMat);
-        leaf.scale.set(1.15, 0.5, 0.7);
-        leaf.position.set(Math.cos(a) * 0.15, y, Math.sin(a) * 0.15);
-        leaf.rotation.y = -a;
-        leaf.castShadow = true;
-        plant.add(leaf);
-        if (i >= 2) {
-          const f = new THREE.Mesh(new THREE.SphereGeometry(style.fruitR, 10, 8), fruitMat);
-          f.position.set(Math.cos(a) * 0.16, y - 0.1, Math.sin(a) * 0.16);
-          fruits.add(f);
-        }
-      }
-    } else if (style.kind === "grain") {
-      // wheat/rice: cluster of tall stalks, golden ears appear at maturity
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 + index * 0.6;
-        const r = 0.1 + (i % 3) * 0.09;
-        const h = 0.6 + (i % 3) * 0.14;
-        const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, h, 5), stalkMat);
-        stalk.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
-        plant.add(stalk);
-        const blade = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), leafMat);
-        blade.scale.set(0.35, 1.4, 0.16);
-        blade.position.set(Math.cos(a) * r + 0.04, h * 0.62, Math.sin(a) * r);
-        blade.rotation.z = 0.5;
-        plant.add(blade);
-        const ear = new THREE.Mesh(new THREE.SphereGeometry(style.fruitR, 8, 6), fruitMat);
-        ear.scale.set(0.7, 2.4, 0.7);
-        ear.position.set(Math.cos(a) * r, h + style.fruitR * 1.6, Math.sin(a) * r);
-        ear.visible = pct >= 80;
-        fruits.add(ear);
-      }
-    } else if (style.kind === "corn") {
-      // corn: thick central stalk + long arched leaves + cob attached to stem
-      const stalkH = 1.15;
-      const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.055, stalkH, 6), stalkMat);
-      stalk.position.y = stalkH / 2;
-      stalk.castShadow = true;
+    }
+  } else if (style.kind === "grain") {
+    // wheat/rice: 8-12 stalk cluster; golden ears show when ripe and bow lower
+    const n = 9 + (index % 4); // 9-12 per plant, deterministic per index
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + index * 0.6;
+      const r = 0.08 + (i % 3) * 0.08;
+      const h = 0.55 + (i % 3) * 0.13;
+      const stalk = new THREE.Mesh(farm3dPool("grainStalk:" + h, () => new THREE.CylinderGeometry(0.012, 0.02, h, 5)), stalkMat);
+      stalk.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
       plant.add(stalk);
-      for (let i = 0; i < 5; i++) {
-        const y = 0.25 + i * 0.2;
-        const a = i * 2.1 + index;
-        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), leafMat);
-        leaf.scale.set(0.22, 0.75, 1.1);
-        leaf.position.set(Math.cos(a) * 0.16, y, Math.sin(a) * 0.16);
-        leaf.rotation.set(0.45 * Math.sin(a), -a, 0.55 * Math.cos(a));
-        plant.add(leaf);
-      }
-      for (let i = 0; i < style.nFruit; i++) {
-        const cob = new THREE.Mesh(new THREE.SphereGeometry(style.fruitR, 8, 6), fruitMat);
-        cob.scale.set(0.8, 1.8, 0.8);
-        const a = i * 2.1 + 0.9 + index;
-        cob.position.set(Math.cos(a) * 0.1, 0.5 + i * 0.22, Math.sin(a) * 0.1);
-        cob.rotation.z = 0.3;
-        fruits.add(cob);
-      }
-    } else {
-      // bush (strawberry / generic): low leaf rosette + fruit resting near leaves
-      const n = 8;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2 + index * 0.9;
-        const r = 0.15 + (i % 2) * 0.13;
-        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), leafMat);
-        leaf.scale.set(1, 0.55, 1);
-        leaf.position.set(Math.cos(a) * r, 0.1 + (i % 3) * 0.07, Math.sin(a) * r);
-        leaf.rotation.y = -a;
-        leaf.castShadow = true;
-        plant.add(leaf);
-      }
-      for (let i = 0; i < style.nFruit; i++) {
-        const f = new THREE.Mesh(new THREE.SphereGeometry(style.fruitR, 10, 8), fruitMat);
-        f.scale.y = 1.25;
-        const a = (i / style.nFruit) * Math.PI * 2 + 0.5;
-        f.position.set(Math.cos(a) * 0.3, 0.05, Math.sin(a) * 0.3);
-        fruits.add(f);
+      const blade = new THREE.Mesh(farm3dPool("grainBlade", () => new THREE.SphereGeometry(0.09, 8, 6)), leafMat);
+      blade.scale.set(0.35, 1.4, 0.16);
+      blade.position.set(Math.cos(a) * r + 0.04, h * 0.62, Math.sin(a) * r);
+      blade.rotation.z = 0.5;
+      plant.add(blade);
+      const ear = new THREE.Mesh(farm3dPool("grainEar:" + style.fruitR, () => new THREE.SphereGeometry(style.fruitR, 8, 6)), fruitMat);
+      ear.scale.set(0.7, 2.4, 0.7);
+      ear.position.set(Math.cos(a) * r, h + style.fruitR * 1.6, Math.sin(a) * r);
+      ears.add(ear);
+    }
+    fruits.add(ears);
+  } else if (style.kind === "corn") {
+    // corn: thick central stalk + long arched leaves + cob with silk tassel
+    const stalkH = 1.15;
+    const stalk = new THREE.Mesh(farm3dPool("cornStalk", () => new THREE.CylinderGeometry(0.035, 0.055, stalkH, 6)), stalkMat);
+    stalk.position.y = stalkH / 2;
+    stalk.castShadow = true;
+    plant.add(stalk);
+    for (let i = 0; i < 4; i++) {
+      const y = 0.28 + i * 0.2;
+      const a = i * 2.1 + index;
+      const leaf = new THREE.Mesh(farm3dPool("cornLeaf", () => new THREE.SphereGeometry(0.2, 8, 6)), leafMat);
+      leaf.scale.set(0.2, 0.3, 1.25); // long, narrow, arched outward
+      leaf.position.set(Math.cos(a) * 0.18, y, Math.sin(a) * 0.18);
+      leaf.rotation.set(0.4 * Math.sin(a), -a, 0.5 * Math.cos(a));
+      leaf.rotation.x = 0.35;
+      plant.add(leaf);
+    }
+    for (let i = 0; i < style.nFruit; i++) {
+      const a = i * 2.1 + 0.9 + index;
+      const cob = new THREE.Mesh(farm3dPool("cornCob:" + style.fruitR, () => new THREE.SphereGeometry(style.fruitR, 8, 6)), fruitMat);
+      cob.scale.set(0.8, 1.8, 0.8);
+      cob.position.set(Math.cos(a) * 0.1, 0.5 + i * 0.22, Math.sin(a) * 0.1);
+      cob.rotation.z = 0.3;
+      fruits.add(cob);
+      // silk tassel on the cob tip
+      const silk = new THREE.Mesh(farm3dPool("cornSilk", () => new THREE.CylinderGeometry(0.006, 0.006, 0.09, 4)),
+        farm3dMat("silkMat", () => new THREE.MeshStandardMaterial({ color: 0x8a5a2b, roughness: 1 })));
+      silk.position.set(cob.position.x, cob.position.y + style.fruitR * 1.9, cob.position.z);
+      silk.rotation.z = 0.3;
+      fruits.add(silk);
+    }
+  } else {
+    // bush (strawberry / generic): cone-leaf rosette + fruit + tiny flowers
+    const n = 8;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + index * 0.9;
+      const r = 0.15 + (i % 2) * 0.13;
+      const leaf = new THREE.Mesh(farm3dPool("bushLeaf", () => new THREE.ConeGeometry(0.11, 0.3, 6)), leafMat);
+      leaf.scale.set(1, 0.8, 1);
+      leaf.position.set(Math.cos(a) * r, 0.12 + (i % 3) * 0.06, Math.sin(a) * r);
+      leaf.rotation.set(0.9 * Math.cos(a), -a, 0.9 * Math.sin(a)); // splayed open
+      leaf.castShadow = true;
+      plant.add(leaf);
+    }
+    for (let i = 0; i < style.nFruit; i++) {
+      const a = (i / style.nFruit) * Math.PI * 2 + 0.5;
+      const f = new THREE.Mesh(farm3dPool("fruitS:" + style.fruitR, () => new THREE.SphereGeometry(style.fruitR, 10, 8)), fruitMat);
+      f.scale.y = 1.25;
+      f.position.set(Math.cos(a) * 0.3, 0.05, Math.sin(a) * 0.3);
+      fruits.add(f);
+      // strawberry blossom: tiny white petals + yellow heart
+      if (i % 2 === 0) {
+        const flower = new THREE.Mesh(farm3dPool("bushFlower", () => new THREE.SphereGeometry(0.028, 6, 5)),
+          farm3dMat("flowerMat", () => new THREE.MeshStandardMaterial({ color: 0xf5f5f4, roughness: 0.8 })));
+        flower.position.set(Math.cos(a + 0.6) * 0.24, 0.14, Math.sin(a + 0.6) * 0.24);
+        fruits.add(flower);
       }
     }
-    plant.add(fruits);
-    plant.scale.setScalar(grow);
-
-    // adopted halo ring
-    const isAdopted = adoptions.some((a) => a.device_id === device.device_id);
-    if (isAdopted) {
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.95, 0.03, 8, 44),
-        new THREE.MeshBasicMaterial({ color: 0x7c3aed })
-      );
-      ring.rotation.x = Math.PI / 2;
-      ring.position.y = 0.03;
-      group.add(ring);
-    }
-    const angle = total > 1 ? (index / total) * Math.PI * 2 : 0;
-    const radius = Math.min(4.2, 1.6 + total * 0.55);
-    group.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-    // dynamic refs for the update pass; phase staggers the wind sway
-    group.userData = { device, plant, fruits, leafMat, name: cropName, pct, score, phase: index * 1.7 };
-    return group;
   }
+  plant.add(fruits);
+  return { plant, leafMat, stalkMat, fruits, ears };
+}
+
+function makeCropMesh(device, index, total) {
+  const group = new THREE.Group();
+  const health = plotHealth(device);
+  const score = health.score ?? 50;
+  const pct = farm3dProgress(device);
+  const crop = reportCrops[(device.plot || {}).crop];
+  const cropName = (crop && crop.name) || (device.plot || {}).crop || "作物";
+  const style = farm3dStyle(cropName);
+
+  // v16.5: trapezoid tilled bed — two stacked layers narrowing upward with
+  // three ridge rows (light 0x3a2d1c crests over dark 0x241d15 furrows) and a
+  // slight jitter per row so the soil reads as undulating, not extruded.
+  const bedMat = farm3dMat("bedMat", () => new THREE.MeshStandardMaterial({ color: 0x241d15, roughness: 1 }));
+  const ridgeMat = farm3dMat("ridgeMat", () => new THREE.MeshStandardMaterial({ color: 0x3a2d1c, roughness: 1 }));
+  const bedLower = new THREE.Mesh(farm3dPool("bedLower", () => new THREE.BoxGeometry(1.5, 0.09, 1.5)), bedMat);
+  bedLower.position.y = 0.045;
+  bedLower.receiveShadow = true;
+  group.add(bedLower);
+  const bedUpper = new THREE.Mesh(farm3dPool("bedUpper", () => new THREE.BoxGeometry(1.28, 0.08, 1.28)), bedMat);
+  bedUpper.position.y = 0.13;
+  bedUpper.receiveShadow = true;
+  group.add(bedUpper);
+  for (let r = -1; r <= 1; r++) {
+    const ridge = new THREE.Mesh(farm3dPool("ridge", () => new THREE.BoxGeometry(1.2, 0.05, 0.16)), ridgeMat);
+    ridge.position.set(((r + 2) % 2) * 0.02, 0.185 + Math.abs(r) * 0.008, r * 0.42);
+    ridge.rotation.y = r * 0.03; // tiny yaw jitter = tilled unevenness
+    group.add(ridge);
+  }
+
+  // v16.5: 3x3 plant grid per plot, phase-staggered for natural wind sway
+  const tpl = farm3dPlantTemplate(style, index);
+  const plants = [];
+  for (let ix = 0; ix < 3; ix++) {
+    for (let iz = 0; iz < 3; iz++) {
+      const p = tpl.plant.clone();
+      p.position.set((ix - 1) * 0.42, 0.21, (iz - 1) * 0.42);
+      group.add(p);
+      plants.push(p);
+    }
+  }
+
+  // growth drives whole-plot scale (0.25 -> 1.0); health tints foliage
+  const grow = 0.25 + (pct / 100) * 0.75;
+  plants.forEach((p) => p.scale.setScalar(grow));
+  farm3dLeafColor(score, tpl.leafMat.color);
+  tpl.leafMat.emissive.copy(tpl.leafMat.color);
+  tpl.stalkMat.color.copy(tpl.leafMat.color).lerp(new THREE.Color(0xcbb26a), 0.35);
+  tpl.fruits.visible = pct >= 100; // fruit appears only at full maturity
+
+  // adoption halo ring: violet for adopted plots, cool slate otherwise
+  const isAdopted = adoptions.some((a) => a.device_id === device.device_id);
+  const halo = new THREE.Mesh(
+    new THREE.TorusGeometry(1.05, 0.035, 8, 48),
+    new THREE.MeshBasicMaterial({
+      color: isAdopted ? 0x7c3aed : 0x334155,
+      transparent: true, opacity: 0.4,
+    })
+  );
+  halo.rotation.x = Math.PI / 2;
+  halo.position.y = 0.03;
+  group.add(halo);
+
+  const angle = total > 1 ? (index / total) * Math.PI * 2 : 0;
+  const radius = Math.min(4.2, 1.6 + total * 0.55);
+  group.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+  // dynamic refs for the update pass
+  group.userData = {
+    device, plants, leafMat: tpl.leafMat, stalkMat: tpl.stalkMat,
+    fruits: tpl.fruits, ears: style.kind === "grain" ? tpl.ears : null,
+    halo, name: cropName, pct, score, phase: index * 1.7,
+  };
+  return group;
+}
 
 function buildFarm3DCrops() {
   const devices = state.allDevices || [];
@@ -2278,18 +2443,15 @@ function buildFarm3DCrops() {
     $("#farm3d-hint").textContent = "暂无地块数据。";
     return;
   }
-  const existing = new Set();
   devices.forEach((d, i) => {
     let group = farm3d.crops.get(d.device_id);
     if (!group) {
       group = makeCropMesh(d, i, devices.length);
       farm3d.scene.add(group);
       farm3d.crops.set(d.device_id, group);
-    } else {
-      existing.add(d.device_id);
     }
   });
-  // remove vanished plots
+  // remove vanished plots (differential add/remove)
   const ids = new Set(devices.map((d) => d.device_id));
   farm3d.crops.forEach((group, deviceId) => {
     if (!ids.has(deviceId)) {
@@ -2313,11 +2475,16 @@ function updateFarm3DCrops() {
     const health = plotHealth(device);
     const score = health.score ?? 50;
     const pct = farm3dProgress(device);
-    const color = farm3dColor(score);
-    // growth scales the whole plant; health tints the foliage; fruits appear at maturity
-    if (u.plant) u.plant.scale.setScalar(0.35 + (pct / 100) * 0.75);
-    if (u.leafMat) u.leafMat.color.setHex(color);
-    if (u.fruits) u.fruits.visible = pct >= 80;
+    // growth scales each plant (0.25 -> 1.0); health tints foliage;
+    // stalks lean toward gold as grain matures; fruit shows at 100%
+    const grow = 0.25 + (pct / 100) * 0.75;
+    (u.plants || []).forEach((p) => p.scale.setScalar(grow));
+    if (u.leafMat) {
+      farm3dLeafColor(score, u.leafMat.color);
+      u.leafMat.emissive.copy(u.leafMat.color);
+    }
+    if (u.stalkMat) u.stalkMat.color.copy(u.leafMat ? u.leafMat.color : farm3dLeafColor(score, new THREE.Color())).lerp(new THREE.Color(0xcbb26a), (pct / 100) * 0.5);
+    if (u.fruits) u.fruits.visible = pct >= 100;
     u.pct = pct;
     u.score = score;
   });
