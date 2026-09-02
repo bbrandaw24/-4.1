@@ -357,16 +357,21 @@ async function refresh() {
     const response = await Auth.request(`/api/v1/devices`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    if (!data.items?.length) throw new Error("暂无设备");
-    state.allDevices = data.items;
-    populatePlotSwitcher(data.items);
-    renderPlotsStrip(data.items);
-    if (!selectedDeviceId || !data.items.some((item) => item.device_id === selectedDeviceId)) {
-      selectedDeviceId = data.items[0].device_id;
-      DEVICE_ID = selectedDeviceId;
+    // An empty list is a legitimate state now that plots are per-account: a
+    // freshly created farmer account simply does not own a plot yet.
+    const items = data.items || [];
+    state.allDevices = items;
+    state.plotScope = data.scope || "own";
+    populatePlotSwitcher(items);
+    renderPlotsStrip(items);
+    if (items.length) {
+      if (!selectedDeviceId || !items.some((item) => item.device_id === selectedDeviceId)) {
+        selectedDeviceId = items[0].device_id;
+        DEVICE_ID = selectedDeviceId;
+      }
+      renderDevice(items.find((item) => item.device_id === selectedDeviceId) || items[0]);
     }
-    renderDevice(data.items.find((item) => item.device_id === selectedDeviceId) || data.items[0]);
-    renderSensorsBoard(data.items);
+    renderSensorsBoard(items);
     bindSensorActions();
     const addBtn = $("#sensor-add-btn");
     if (addBtn) addBtn.disabled = !Auth.hasPermission("manage_sensors");
@@ -393,14 +398,18 @@ async function refresh() {
 
 function populatePlotSwitcher(items) {
   const select = $("#plot-select");
-  if (!select || select.dataset.bound) return;
-  select.dataset.bound = "1";
+  if (!select) return;
+  // Re-populated on every refresh: the visible set now depends on the signed-in
+  // account, so it cannot be filled once at start-up.
   select.innerHTML = items.map((item) => {
     const plot = item.plot || {};
     const label = plot.name ? `${plot.name}（${plot.crop || item.device_id}）` : item.device_id;
-    return `<option value="${item.device_id}">${label}</option>`;
+    return `<option value="${escapeHtml(item.device_id)}">${escapeHtml(label)}</option>`;
   }).join("");
-  select.addEventListener("change", () => { selectDevice(select.value); });
+  if (!select.dataset.bound) {
+    select.dataset.bound = "1";
+    select.addEventListener("change", () => { selectDevice(select.value); });
+  }
 }
 
 function selectDevice(deviceId) {
@@ -841,10 +850,23 @@ function renderSensorsBoard(devices) {
   const board = $("#sensors-board");
   if (!board) return;
   if (!devices || !devices.length) {
-    board.innerHTML = '<p class="sensor-hint">暂无地块。</p>';
+    const canCreate = Auth.hasPermission("manage_sensors");
+    board.innerHTML = `<div class="plot-empty-state">
+      <p class="plot-empty-title">当前账户还没有地块</p>
+      <p class="plot-empty-desc">地块按账户独立：每个账户只能看到自己创建或分配给自己的地块，管理员可见全部地块。${canCreate ? "" : "如需地块，请联系管理员为你创建。"}</p>
+      ${canCreate ? '<button class="action primary" type="button" id="plot-empty-add-btn">+ 添加我的地块</button>' : ""}
+    </div>`;
+    const emptyBtn = $("#plot-empty-add-btn");
+    if (emptyBtn) {
+      emptyBtn.addEventListener("click", () => {
+        const addBtn = $("#plot-add-btn");
+        if (addBtn) addBtn.click();
+      });
+    }
     return;
   }
   const canManage = Auth.hasPermission("manage_sensors");
+  const showOwner = state.plotScope === "all";
   const BUILTIN_PLOTS = ["sim-plot-apple", "sim-plot-pear", "sim-plot-orange"];
   board.innerHTML = devices.map((device) => {
     const sensors = (device.sensors || []).slice().sort((a, b) =>
@@ -858,10 +880,14 @@ function renderSensorsBoard(devices) {
     const removeBtn = (!isBuiltin && canManage)
       ? `<button class="plot-remove" data-action="remove-plot" data-device="${device.device_id}" type="button" title="删除该地块">删除地块</button>`
       : "";
+    const ownerBadge = showOwner
+      ? `<span class="plot-owner-badge" title="地块归属账户">${escapeHtml(device.owner_label || "未分配")}</span>`
+      : "";
     return `<section class="sensor-group" data-device="${device.device_id}">
       <header class="sensor-group-header">
-        <span class="sensor-group-name">${plot.name || device.device_id}</span>
-        <span class="sensor-group-crop">${plot.crop || "—"}</span>
+        <span class="sensor-group-name">${escapeHtml(plot.name || device.device_id)}</span>
+        <span class="sensor-group-crop">${escapeHtml(plot.crop || "—")}</span>
+        ${ownerBadge}
         <span class="sensor-group-status ${online ? "" : "off"}">
           <span class="pulse ${online ? "" : "off"}"></span>${online ? "在线" : "离线"}
         </span>
