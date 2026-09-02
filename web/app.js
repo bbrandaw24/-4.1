@@ -1385,6 +1385,127 @@ function bindUsersActions() {
   }
 }
 
+// --- v15.8.0: AI farm steward (per-account automation butler) --------------
+const STEWARD_ACTION_META = {
+  pump_on:  { icon: "💧", label: "自动开泵", cls: "pump-on" },
+  pump_off: { icon: "✅", label: "自动关泵", cls: "pump-off" },
+  ticket:   { icon: "🛡️", label: "防治工单", cls: "ticket" },
+};
+
+function renderStewardLog(items) {
+  const log = $("#steward-log");
+  if (!log) return;
+  if (!items || !items.length) {
+    log.innerHTML = '<div class="empty">管家还没有动作。开启自动灌溉并设置湿度阈值后，跌破阈值会自动开泵并记录在这里。</div>';
+    return;
+  }
+  log.innerHTML = items.map((item) => {
+    const meta = STEWARD_ACTION_META[item.action_type] || { icon: "🤖", label: item.action_type, cls: "" };
+    const time = item.created_at ? new Date(item.created_at).toLocaleString("zh-CN", { hour12: false }) : "--";
+    const detail = item.detail ? `<div class="steward-detail">${escapeHtml(item.detail)}</div>` : "";
+    return `<div class="alert-item steward-item ${meta.cls}">
+      <span class="steward-icon">${meta.icon}</span>
+      <div class="text">
+        <strong>${meta.label}</strong>
+        <span class="steward-plot">${escapeHtml(item.device_id)}</span>
+        <p>${escapeHtml(item.reason)}</p>
+        ${detail}
+      </div>
+      <span class="time">${time}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderStewardConfig(cfg) {
+  const wrap = $("#steward-config-wrap");
+  if (!wrap) return;
+  const canEdit = Auth.hasPermission("manage_rules");
+  const checked = (v) => (v ? "checked" : "");
+  wrap.innerHTML = `
+    <h3 class="steward-timeline-title">管家设置<span class="steward-owner-tip">仅对当前账户生效</span></h3>
+    <label class="steward-switch">
+      <input type="checkbox" id="steward-auto-pump" ${checked(cfg.auto_pump_enabled)} ${canEdit ? "" : "disabled"}>
+      <span>自动灌溉（湿度跌破阈值自动开泵，到时自动关泵）</span>
+    </label>
+    <label class="steward-field">土壤湿度阈值
+      <input type="number" id="steward-threshold" min="10" max="90" step="0.5" value="${cfg.moisture_threshold_pct}" ${canEdit ? "" : "disabled"}>
+      <span class="steward-unit">%</span>
+    </label>
+    <label class="steward-field">单次泵运行时长
+      <input type="number" id="steward-duration" min="1" max="60" step="1" value="${cfg.pump_duration_min}" ${canEdit ? "" : "disabled"}>
+      <span class="steward-unit">分钟</span>
+    </label>
+    <label class="steward-switch">
+      <input type="checkbox" id="steward-tickets" ${checked(cfg.auto_tickets_enabled)} ${canEdit ? "" : "disabled"}>
+      <span>病虫害工单（高温高湿自动生成防治建议）</span>
+    </label>
+    ${canEdit ? '<button class="action primary" id="steward-save" type="button">保存设置</button>' : '<p class="steward-readonly-tip">你没有管理规则权限，设置只读。</p>'}
+  `;
+  const saveBtn = $("#steward-save");
+  if (saveBtn && !saveBtn.dataset.bound) {
+    saveBtn.dataset.bound = "1";
+    saveBtn.addEventListener("click", saveStewardConfig);
+  }
+}
+
+async function loadSteward() {
+  const panel = $("#steward-panel");
+  if (!panel) return;
+  panel.hidden = false;
+  try {
+    const [cfgResp, actResp] = await Promise.all([
+      Auth.request("/api/v1/steward/config", { cache: "no-store" }),
+      Auth.request("/api/v1/steward/actions?limit=30", { cache: "no-store" }),
+    ]);
+    if (cfgResp.ok) {
+      const cfg = await cfgResp.json();
+      renderStewardConfig(cfg);
+    }
+    if (actResp.ok) {
+      const data = await actResp.json();
+      renderStewardLog(data.items || []);
+    }
+    $("#steward-hint").textContent = "";
+  } catch (error) {
+    $("#steward-hint").textContent = `管家数据加载失败：${error.message || error}`;
+  }
+}
+
+async function saveStewardConfig() {
+  const hint = $("#steward-hint");
+  const body = {
+    auto_pump_enabled: $("#steward-auto-pump").checked,
+    moisture_threshold_pct: Number($("#steward-threshold").value),
+    pump_duration_min: Number($("#steward-duration").value),
+    auto_tickets_enabled: $("#steward-tickets").checked,
+  };
+  try {
+    const response = await Auth.request("/api/v1/steward/config", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    renderStewardConfig(data);
+    hint.textContent = "管家设置已保存";
+    hint.style.color = "var(--green)";
+  } catch (error) {
+    hint.textContent = `保存失败：${error.message || error}`;
+    hint.style.color = "";
+  }
+}
+
+function bindStewardActions() {
+  const panel = $("#steward-panel");
+  const refreshBtn = $("#steward-refresh");
+  if (!panel) return;
+  if (refreshBtn && !refreshBtn.dataset.bound) {
+    refreshBtn.dataset.bound = "1";
+    refreshBtn.addEventListener("click", loadSteward);
+  }
+  loadSteward();
+}
+
 // --- v15.4.0: big data screen ----------------------------------------------
 const DASH_SENSOR_LABELS = {
   soil_temperature: "土壤温度",
@@ -1672,6 +1793,7 @@ function startDashboardCanvas() {
 if (window.lucide) window.lucide.createIcons();
 bindBrokerActions();
 bindUsersActions();
+bindStewardActions();
 loadBrokerPresets();
 loadBroker();
 refreshUserPermissions();
