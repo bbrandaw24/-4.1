@@ -2014,18 +2014,49 @@ function initFarm3D() {
   const grid = new THREE.GridHelper(16, 16, 0x1e3a5f, 0x152a4a);
   grid.position.y = -0.02;
   scene.add(grid);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.minDistance = 3.5;
-  controls.maxDistance = 20;
-  controls.maxPolarAngle = Math.PI / 2.05;
-  controls.autoRotate = true;
-  controls.autoRotateSpeed = 0.8;
+  // Self-made orbit controls (cdnjs r128 ships no OrbitControls file):
+  // drag to rotate, wheel to zoom, slow auto-rotation when idle.
+  const target = new THREE.Vector3(0, 1.2, 0);
+  farm3d.controls = { autoRotate: true };
+  let dragState = null;
+  function rotateCamera(dyaw, dpitch) {
+    const pos = farm3d.camera.position.clone().sub(target);
+    const d = Math.max(0.5, pos.length());
+    const yaw = Math.atan2(pos.x, pos.z) + dyaw;
+    let pitch = Math.asin(pos.y / d) + dpitch;
+    pitch = Math.max(0.15, Math.min(Math.PI / 2.05, pitch));
+    farm3d.camera.position.set(
+      Math.sin(yaw) * Math.cos(pitch) * d,
+      Math.sin(pitch) * d,
+      Math.cos(yaw) * Math.cos(pitch) * d
+    );
+    farm3d.camera.position.add(target);
+    farm3d.camera.lookAt(target);
+  }
+  farm3d.rotateCamera = rotateCamera;
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    dragState = { x: e.clientX, y: e.clientY };
+    farm3d.controls.autoRotate = false;
+  });
+  window.addEventListener("pointermove", (e) => {
+    if (!dragState || !farm3d.built) return;
+    const dx = e.clientX - dragState.x;
+    const dy = e.clientY - dragState.y;
+    dragState = { x: e.clientX, y: e.clientY };
+    rotateCamera(dx * 0.005, dy * 0.005);
+  });
+  window.addEventListener("pointerup", () => { dragState = null; });
+  renderer.domElement.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const dir = new THREE.Vector3().subVectors(farm3d.camera.position, target).normalize();
+    const factor = 1 + e.deltaY * 0.0012;
+    const d = Math.min(18, Math.max(3.5, farm3d.camera.position.distanceTo(target) * factor));
+    farm3d.camera.position.copy(target).add(dir.multiplyScalar(d));
+    farm3d.camera.lookAt(target);
+  }, { passive: false });
   farm3d.scene = scene;
   farm3d.camera = camera;
   farm3d.renderer = renderer;
-  farm3d.controls = controls;
   farm3d.raycaster = new THREE.Raycaster();
   farm3d.mouse = new THREE.Vector2();
   const loading = $("#farm3d-loading");
@@ -2056,7 +2087,9 @@ function resizeFarm3D() {
 function animateFarm3D() {
   if (!farm3d.built) return;
   farm3d.animId = requestAnimationFrame(animateFarm3D);
-  if (farm3d.controls) farm3d.controls.update();
+  if (farm3d.controls && farm3d.controls.autoRotate && typeof farm3d.rotateCamera === "function") {
+    farm3d.rotateCamera(0.0035, 0);
+  }
   farm3d.renderer.render(farm3d.scene, farm3d.camera);
 }
 
