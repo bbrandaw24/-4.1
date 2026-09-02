@@ -3,19 +3,14 @@
  * 策略：静态资源网络优先 + 离线回退；/api /ai 等数据请求永不缓存。
  * 每次发版请把 CACHE 版本号 +1（如 v1 -> v2），否则用户端不更新缓存。
  */
-const CACHE = 'smartagri-v10';
+const CACHE = 'smartagri-v9';
 
 const APP_SHELL = [
   './',
   './index.html',
   './login.html',
-  './offline.html',
   './theme.css',
-  './v16.css',
   './enhance.js',
-  './v16-ui.js',
-  './icons.js',
-  './v16-core.js',
   './styles.css',
   './day08.css',
   './auth.css',
@@ -71,10 +66,8 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => {
-        // v16：离线时页面跳转给友好离线页，静态资源回退缓存
-        if (req.mode === 'navigate') return caches.match('./offline.html');
-        return caches.match(req).then((hit) => hit || caches.match('./index.html'));
-      })
+      .catch(() =>
+        caches.match(req).then((hit) => hit || caches.match('./index.html'))
+      )
   );
 });
