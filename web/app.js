@@ -1782,33 +1782,129 @@ async function loadAdoptions() {
     list.innerHTML = `<div class="rank-empty">认养列表加载失败：${escapeHtml(error.message || error)}</div>`;
     return;
   }
+  const isManager = Auth.hasPermission("list_users");
   if (!adoptions.length) {
-    list.innerHTML = '<div class="rank-empty">还没有认养的地块。选一个作物，点击「认养这块地」开始。</div>';
-    return;
-  }
-  const devices = state.allDevices || [];
-  list.innerHTML = adoptions.map((ad) => {
-    const device = devices.find((d) => d.device_id === ad.device_id);
-    const health = device ? plotHealth(device) : { score: null };
-    const progress = device ? plotProgress(device) : { label: "—" };
-    const online = device ? Boolean(device.last_seen) : false;
-    return `<div class="adopt-card">
+    list.innerHTML = '<div class="rank-empty">还没有认养的地块。选一个作物，点击「认养这块地」开始。认养后 1 分钟 = 1 天生长，成熟即可收获积分。</div>';
+  } else {
+    const devices = state.allDevices || [];
+    list.innerHTML = adoptions.map((ad) => {
+      const device = devices.find((d) => d.device_id === ad.device_id);
+      const health = device ? plotHealth(device) : { score: null };
+      const g = ad.growth || {};
+      const pct = g.pct != null ? g.pct : (device ? plotProgress(device).pct : null);
+      const stage = pct >= 100 ? "已成熟" : pct >= 70 ? "成熟期" : pct >= 40 ? "生长期" : pct >= 10 ? "幼苗期" : "播种期";
+      const mature = Boolean(g.mature);
+      const scaleBadge = (ad.time_scale || 1) > 1
+        ? `<span class="adopt-scale-badge">⏩ ${ad.time_scale}× 加速</span>` : "";
+      const scaleControl = isManager
+        ? `<span class="adopt-scale-wrap">加速
+            <select class="adopt-scale" data-device="${escapeHtml(ad.device_id)}">
+              ${[1, 2, 5, 10, 30, 60].map((s) => `<option value="${s}" ${(ad.time_scale || 1) === s ? "selected" : ""}>${s}×</option>`).join("")}
+            </select></span>` : "";
+      return `<div class="adopt-card">
       <div class="adopt-card-head">
         <span class="adopt-crop">${escapeHtml(ad.crop)}</span>
         <span class="adopt-date">认养于 ${new Date(ad.adopted_at).toLocaleDateString("zh-CN")}</span>
       </div>
-      <div class="adopt-name">${escapeHtml(ad.nickname || ad.device_id)}</div>
+      <div class="adopt-name">${escapeHtml(ad.nickname || ad.device_id)} ${scaleBadge}</div>
       <div class="adopt-meta">
         <span>健康度 <b class="${health.score == null ? "" : health.score >= 60 ? "ok" : "warn"}">${health.score == null ? "--" : health.score}</b></span>
-        <span>${escapeHtml(progress.label)}</span>
-        <span class="${online ? "ok" : "warn"}">${online ? "● 在线" : "○ 离线"}</span>
+        <span>${pct == null ? "进度未知" : `${pct}% · ${stage}`}</span>
+        <span>收获 <b>${ad.harvest_count || 0}</b> 次</span>
+        <span class="${device && device.last_seen ? "ok" : "warn"}">${device && device.last_seen ? "● 在线" : "○ 离线"}</span>
       </div>
+      ${scaleControl}
       <div class="adopt-actions">
         <button class="action ghost adopt-report" data-device="${escapeHtml(ad.device_id)}" type="button">📊 查看报告</button>
+        <a class="adopt-trace-link" href="trace.html?code=${encodeURIComponent(ad.device_id)}" target="_blank" rel="noopener">🔗 溯源码</a>
+        <button class="adopt-harvest ${mature ? "mature" : ""}" data-device="${escapeHtml(ad.device_id)}" data-name="${escapeHtml(ad.nickname || ad.device_id)}" type="button" ${mature ? "" : "disabled"}>🌾 ${mature ? "收获" : "未成熟"}</button>
         <button class="adopt-unadopt" data-device="${escapeHtml(ad.device_id)}" type="button">解除认养</button>
       </div>
     </div>`;
-  }).join("");
+    }).join("");
+  }
+  await Promise.all([loadAdoptPoints(), loadAdoptLeaderboard()]);
+}
+
+async function loadAdoptPoints() {
+  const box = $("#adopt-points");
+  if (!box) return;
+  try {
+    const resp = await Auth.request("/api/v1/adoptions/points", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+    const rows = (d.by_crop || []).map((r) =>
+      `<div class="points-row"><span>${escapeHtml(r.crop)}</span><span>收获 ${r.harvests} 次 · 均健康 ${r.avg_health ?? "--"}</span><b>+${r.points} 分</b></div>`).join("");
+    box.innerHTML = `<h3 class="adopt-points-head">🏆 我的收获积分</h3>
+      <div class="points-total">
+        <div class="points-big">${d.total_points || 0}<small>累计积分</small></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px;">共收获 ${d.total_harvests || 0} 次 · 等级倍率：优秀×2 / 良好×1.5 / 及格×1 / 不及格×0.5</div>
+      </div>
+      <div class="points-crops">${rows || '<div style="font-size:12px;color:var(--muted);">还没有收获记录，作物成熟后点击「收获」赚积分。</div>'}</div>`;
+  } catch (error) {
+    box.innerHTML = `<h3 class="adopt-points-head">🏆 我的收获积分</h3><div class="rank-empty">加载失败</div>`;
+  }
+}
+
+async function loadAdoptLeaderboard() {
+  const box = $("#adopt-leaderboard");
+  if (!box) return;
+  try {
+    const resp = await Auth.request("/api/v1/adoptions/leaderboard", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+    const groups = d.groups || {};
+    const keys = Object.keys(groups);
+    if (!keys.length) {
+      box.innerHTML = `<h3 class="adopt-lb-head">📈 认养积分排行榜</h3><div class="rank-empty">还没有人收获过作物，快去收获拿积分上榜！</div>`;
+      return;
+    }
+    const medals = ["🥇", "🥈", "🥉"];
+    const html = keys.map((crop) => {
+      const rows = groups[crop].map((r, i) =>
+        `<div class="rank-row ${i === 0 ? "top" : ""}">
+          <span class="rank-medal">${i < 3 ? medals[i] : `${i + 1}`}</span>
+          <span class="rank-name" title="${escapeHtml(r.nickname)}">${escapeHtml(r.nickname)}</span>
+          <span class="rank-tag">${r.harvests} 次收获 · 均健 ${r.avg_health ?? "--"}</span>
+          <span class="rank-score ${r.points >= 200 ? "good" : r.points >= 100 ? "mid" : "low"}">${r.points} 分</span>
+        </div>`).join("");
+      return `<div class="rank-group" style="margin-bottom:12px;">
+        <div class="rank-group-head">🌾 ${escapeHtml(crop)}<span>按积分</span></div>
+        ${rows}
+      </div>`;
+    }).join("");
+    box.innerHTML = `<h3 class="adopt-lb-head">📈 认养积分排行榜（按作物 × 按积分）</h3>${html}`;
+  } catch (error) {
+    box.innerHTML = `<h3 class="adopt-lb-head">📈 认养积分排行榜</h3><div class="rank-empty">加载失败</div>`;
+  }
+}
+
+async function harvestAdopt(deviceId, name) {
+  if (!window.confirm(`确定收获「${name}」？将按当前健康度评级并发放积分，收获后自动重新播种。`)) return;
+  try {
+    const resp = await Auth.request(`/api/v1/adoptions/${deviceId}/harvest`, { method: "POST" });
+    const d = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(d.message || `HTTP ${resp.status}`);
+    $("#adopt-hint").textContent = `🎉 收获成功：${d.grade?.label || ""}品质 +${d.points} 积分！已重新播种。`;
+    await refresh();
+    await loadAdoptions();
+  } catch (error) {
+    $("#adopt-hint").textContent = `收获失败：${error.message || error}`;
+  }
+}
+
+async function setAdoptScale(deviceId, scale) {
+  try {
+    const resp = await Auth.request(`/api/v1/adoptions/${deviceId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ time_scale: Number(scale) }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    $("#adopt-hint").textContent = `⏩ 已设置 ${scale}× 时间加速（1 分钟 = ${scale} 天）`;
+    await loadAdoptions();
+  } catch (error) {
+    $("#adopt-hint").textContent = `设置加速失败：${error.message || error}`;
+  }
 }
 
 async function renderAdopt() {
@@ -1833,6 +1929,11 @@ function bindAdoptActions() {
         setRoute("reports");
         return;
       }
+      const harvestBtn = event.target.closest(".adopt-harvest");
+      if (harvestBtn) {
+        harvestAdopt(harvestBtn.dataset.device, harvestBtn.dataset.name);
+        return;
+      }
       const unadoptBtn = event.target.closest(".adopt-unadopt");
       if (unadoptBtn) {
         if (!window.confirm("确定解除认养？该地块和它的数据会被删除。")) return;
@@ -1846,6 +1947,10 @@ function bindAdoptActions() {
           $("#adopt-hint").textContent = `解除失败：${error.message || error}`;
         }
       }
+    });
+    list.addEventListener("change", (event) => {
+      const scale = event.target.closest(".adopt-scale");
+      if (scale) setAdoptScale(scale.dataset.device, scale.value);
     });
   }
 }
