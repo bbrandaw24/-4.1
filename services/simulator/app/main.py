@@ -41,10 +41,13 @@ KEEP_LEGACY_PAYLOADS = os.getenv("SIM_KEEP_LEGACY_PAYLOADS", "true").lower() == 
 API_UPSTREAM = os.getenv("API_UPSTREAM", "http://127.0.0.1:8010")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+# The simulator is long-lived; re-login periodically so an API container
+# rebuild (new AUTH_SECRET) or an expired token cannot strand it in a 401 loop.
+LOGIN_REFRESH_SECONDS = float(os.getenv("LOGIN_REFRESH_SECONDS", "600"))
 
-# A fresh deployment starts with an EMPTY farm: farmers create their own plots
-# from the web UI and the discovery sweep adopts them automatically. Seed demo
-# plots explicitly via the SIM_DEVICES env (JSON list) when needed.
+# v16.5: a fresh deployment starts with an EMPTY farm — farmers create plots
+# from the web UI (discovered automatically) or adopt a crop (API creates a
+# dedicated plot). Seed demo plots explicitly via SIM_DEVICES (JSON) if needed.
 DEFAULT_PROFILES: list[dict] = []
 
 SENSOR_TYPES = {  # mirror of API SENSOR_TYPES — only the bits the simulator needs
@@ -91,8 +94,13 @@ class ApiClient:
     def __init__(self, base: str):
         self.base = base.rstrip("/")
         self.token = None
+        self._username = None
+        self._password = None
 
     def login(self, username: str, password: str) -> str:
+        # Remember the credentials so a 401 later can be self-healed.
+        self._username = username
+        self._password = password
         body = json.dumps({"username": username, "password": password}).encode("utf-8")
         req = urllib.request.Request(
             f"{self.base}/api/v1/auth/login",
@@ -115,6 +123,18 @@ class ApiClient:
             raise RuntimeError("not authenticated")
         return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
 
+    def _relogin(self) -> bool:
+        """Re-authenticate after a 401. True when a fresh token is in place."""
+        if not (self._username and self._password):
+            return False
+        self.token = None
+        try:
+            self.login(self._username, self._password)
+        except Exception as exc:  # login() already logged the details
+            LOGGER.warning("auto re-login failed (%s)", exc)
+            return False
+        return bool(self.token)
+
     def ensure_device(self, device_id: str):
         req = urllib.request.Request(
             f"{self.base}/api/v1/devices",
@@ -133,30 +153,44 @@ class ApiClient:
             LOGGER.warning("ensure_device %s failed: %s %s", device_id, exc.code, body)
 
     def list_sensors(self, device_id: str) -> list[dict]:
-        req = urllib.request.Request(
-            f"{self.base}/api/v1/devices/{device_id}/sensors",
-            headers=self._headers(),
-            method="GET",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return json.loads(resp.read()).get("items", [])
-        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
-            LOGGER.warning("list_sensors(%s) failed: %s", device_id, exc)
-            return []
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(
+                    f"{self.base}/api/v1/devices/{device_id}/sensors",
+                    headers=self._headers(),
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return json.loads(resp.read()).get("items", [])
+            except urllib.error.HTTPError as exc:
+                if exc.code == 401 and attempt == 0 and self._relogin():
+                    continue  # fresh token — retry once
+                LOGGER.warning("list_sensors(%s) failed: %s", device_id, exc)
+                return []
+            except (urllib.error.URLError, json.JSONDecodeError, RuntimeError) as exc:
+                LOGGER.warning("list_sensors(%s) failed: %s", device_id, exc)
+                return []
+        return []
 
     def list_devices(self) -> list[dict]:
-        req = urllib.request.Request(
-            f"{self.base}/api/v1/devices",
-            headers=self._headers(),
-            method="GET",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return json.loads(resp.read()).get("items", [])
-        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
-            LOGGER.warning("list_devices failed: %s", exc)
-            return []
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(
+                    f"{self.base}/api/v1/devices",
+                    headers=self._headers(),
+                    method="GET",
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return json.loads(resp.read()).get("items", [])
+            except urllib.error.HTTPError as exc:
+                if exc.code == 401 and attempt == 0 and self._relogin():
+                    continue  # fresh token — retry once
+                LOGGER.warning("list_devices failed: %s", exc)
+                return []
+            except (urllib.error.URLError, json.JSONDecodeError, RuntimeError) as exc:
+                LOGGER.warning("list_devices failed: %s", exc)
+                return []
+        return []
 
     def create_sensor(self, device_id: str, sensor_type: str):
         req = urllib.request.Request(
@@ -430,6 +464,7 @@ def main() -> None:
     sensor_cache_refresh_at = 0.0
     sensor_cache: dict[str, list[dict]] = {p["id"]: [] for p in profiles}
     last_discovery_at = 0.0
+    last_login_at = time.time()
 
     stopping = False
 
@@ -446,6 +481,14 @@ def main() -> None:
                 continue
             # Refresh sensor cache every 5s (cheap; reads SQLite via API)
             now_ts = time.time()
+            # Keep the token fresh: rebuilding the API container invalidates the
+            # old one, and the startup login alone would leave us 401 forever.
+            if (now_ts - last_login_at) > LOGIN_REFRESH_SECONDS:
+                try:
+                    api.login(ADMIN_USERNAME, ADMIN_PASSWORD)
+                    last_login_at = now_ts
+                except Exception as exc:
+                    LOGGER.debug("periodic re-login failed: %s", exc)
             if api.token and (now_ts - sensor_cache_refresh_at) > 5:
                 try:
                     sensor_cache = refresh_sensor_cache(api, profiles)
