@@ -69,6 +69,62 @@ PLOT_META = {
     "sim-plot-orange": {"name": "橘园", "crop": "橘子"},
 }
 
+# --- Crop catalog (v15.7.0): canonical list of plantable crops ----------------
+# crop 字段不再自由文本：创建地块时必须命中本目录（按 name / alias / key 归一化），
+# 存储使用目录中的标准中文名。参考区间（适宜土壤湿度 % / 气温 °C / pH / 目标 NPK
+# mg/kg）为后续作物差异化告警阈值、生长进度、PK 评分预留，当前仅作目录元数据。
+CROPS = {
+    "apple":     {"name": "苹果", "alias": ["苹果"], "type": "果树", "growing_days": 170,
+                  "soil_moisture": [45, 65], "air_temp": [15, 28], "ph": [5.5, 7.5], "npk": {"n": 150, "p": 60, "k": 150}},
+    "pear":      {"name": "梨", "alias": ["梨", "梨子"], "type": "果树", "growing_days": 175,
+                  "soil_moisture": [45, 65], "air_temp": [15, 28], "ph": [6.0, 7.5], "npk": {"n": 150, "p": 60, "k": 150}},
+    "orange":    {"name": "橘子", "alias": ["橘子", "橘", "柑橘", "桔子", "橘子园"], "type": "果树", "growing_days": 220,
+                  "soil_moisture": [45, 70], "air_temp": [20, 30], "ph": [5.5, 7.0], "npk": {"n": 180, "p": 70, "k": 180}},
+    "grape":     {"name": "葡萄", "alias": ["葡萄"], "type": "果树", "growing_days": 155,
+                  "soil_moisture": [40, 65], "air_temp": [18, 30], "ph": [6.0, 7.5], "npk": {"n": 120, "p": 50, "k": 140}},
+    "strawberry":{"name": "草莓", "alias": ["草莓"], "type": "浆果", "growing_days": 100,
+                  "soil_moisture": [55, 75], "air_temp": [15, 25], "ph": [5.5, 6.8], "npk": {"n": 130, "p": 50, "k": 150}},
+    "tomato":    {"name": "番茄", "alias": ["番茄", "西红柿"], "type": "茄果", "growing_days": 120,
+                  "soil_moisture": [50, 75], "air_temp": [18, 28], "ph": [6.0, 7.0], "npk": {"n": 140, "p": 50, "k": 160}},
+    "cucumber":  {"name": "黄瓜", "alias": ["黄瓜"], "type": "瓜类", "growing_days": 70,
+                  "soil_moisture": [60, 85], "air_temp": [20, 30], "ph": [6.0, 7.0], "npk": {"n": 120, "p": 45, "k": 140}},
+    "chili":     {"name": "辣椒", "alias": ["辣椒", "尖椒"], "type": "茄果", "growing_days": 105,
+                  "soil_moisture": [50, 70], "air_temp": [20, 30], "ph": [6.0, 7.0], "npk": {"n": 130, "p": 50, "k": 150}},
+    "eggplant":  {"name": "茄子", "alias": ["茄子"], "type": "茄果", "growing_days": 115,
+                  "soil_moisture": [55, 75], "air_temp": [22, 30], "ph": [6.0, 7.0], "npk": {"n": 140, "p": 55, "k": 160}},
+    "watermelon":{"name": "西瓜", "alias": ["西瓜"], "type": "瓜类", "growing_days": 100,
+                  "soil_moisture": [55, 75], "air_temp": [22, 32], "ph": [6.0, 7.5], "npk": {"n": 110, "p": 45, "k": 130}},
+    "bokchoy":   {"name": "白菜", "alias": ["白菜", "大白菜", "小白菜"], "type": "叶菜", "growing_days": 70,
+                  "soil_moisture": [60, 80], "air_temp": [15, 25], "ph": [6.0, 7.0], "npk": {"n": 160, "p": 60, "k": 140}},
+    "spinach":   {"name": "菠菜", "alias": ["菠菜"], "type": "叶菜", "growing_days": 50,
+                  "soil_moisture": [60, 80], "air_temp": [10, 25], "ph": [6.0, 7.5], "npk": {"n": 140, "p": 50, "k": 130}},
+    "lettuce":   {"name": "生菜", "alias": ["生菜"], "type": "叶菜", "growing_days": 60,
+                  "soil_moisture": [55, 75], "air_temp": [12, 24], "ph": [6.0, 7.0], "npk": {"n": 130, "p": 50, "k": 140}},
+    "rice":      {"name": "水稻", "alias": ["水稻", "稻谷"], "type": "大田", "growing_days": 135,
+                  "soil_moisture": [70, 90], "air_temp": [20, 35], "ph": [5.5, 7.0], "npk": {"n": 150, "p": 70, "k": 120}},
+    "wheat":     {"name": "小麦", "alias": ["小麦"], "type": "大田", "growing_days": 210,
+                  "soil_moisture": [50, 70], "air_temp": [10, 25], "ph": [6.0, 7.5], "npk": {"n": 120, "p": 50, "k": 100}},
+    "corn":      {"name": "玉米", "alias": ["玉米", "包谷"], "type": "大田", "growing_days": 120,
+                  "soil_moisture": [50, 75], "air_temp": [18, 30], "ph": [5.5, 7.0], "npk": {"n": 180, "p": 60, "k": 150}},
+    "soybean":   {"name": "大豆", "alias": ["大豆", "黄豆"], "type": "大田", "growing_days": 105,
+                  "soil_moisture": [50, 70], "air_temp": [18, 28], "ph": [6.0, 7.0], "npk": {"n": 60, "p": 50, "k": 80}},
+    "peanut":    {"name": "花生", "alias": ["花生"], "type": "油料", "growing_days": 135,
+                  "soil_moisture": [45, 65], "air_temp": [20, 30], "ph": [5.5, 7.0], "npk": {"n": 100, "p": 60, "k": 120}},
+}
+# 归一化查找表：别名/标准名/key → 标准名
+_CROP_LOOKUP = {}
+for _key, _meta in CROPS.items():
+    for _t in (_meta["name"], * _meta.get("alias", []), _key):
+        _CROP_LOOKUP.setdefault(_t, _meta["name"])
+
+
+def normalize_crop(text):
+    """Resolve user input to a canonical crop name from the catalog, or None."""
+    if not text:
+        return None
+    key = str(text).strip()
+    return _CROP_LOOKUP.get(key)
+
 # --- Plot ownership (multi-tenant isolation) ---------------------------------
 # Every plot belongs to exactly one account. A regular account (farmer/guest)
 # only ever sees its own plots; a manager ("管理员") sees every plot.
@@ -1023,6 +1079,22 @@ def system_status():
     })
 
 
+@app.get("/api/v1/crops")
+@require_auth()
+def crops_catalog():
+    """Canonical crop catalog (v15.7.0). Returns reference ranges that future
+    features (growing progress, crop-specific alerts, PK scoring) will use."""
+    items = []
+    for key, meta in CROPS.items():
+        items.append({
+            "key": key, "name": meta["name"], "type": meta["type"],
+            "growing_days": meta["growing_days"],
+            "soil_moisture": meta["soil_moisture"], "air_temp": meta["air_temp"],
+            "ph": meta["ph"], "npk": meta["npk"],
+        })
+    return jsonify({"items": items, "count": len(items)})
+
+
 @app.get("/api/v1/devices")
 @require_auth()
 def devices():
@@ -1054,6 +1126,19 @@ def register_device_endpoint():
     device_id = (body.get("device_id") or "").strip()
     name = (body.get("name") or "").strip()
     crop = (body.get("crop") or "").strip()
+    # Crop catalog enforcement (v15.7.0): crop must resolve to a catalog entry.
+    # Legacy plots (already stored) keep their original text; new plots must
+    # pick a canonical crop, so downstream features (growing progress, PK,
+    # crop-specific alerts) have a stable dimension to key on.
+    if crop:
+        canonical = normalize_crop(crop)
+        if canonical is None:
+            return jsonify({
+                "error": "crop_not_in_catalog",
+                "message": f"暂不支持种植「{crop}」，可选：{'、'.join(c['name'] for c in CROPS.values())}",
+                "available": [c["name"] for c in CROPS.values()],
+            }), 400
+        crop = canonical
     if not device_id:
         # Web UI creates plots without choosing an id; generate one for them.
         device_id = f"sim-plot-{uuid4().hex[:8]}"
