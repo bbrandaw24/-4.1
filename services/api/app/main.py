@@ -14,10 +14,10 @@ from PIL import Image, UnidentifiedImageError
 import paho.mqtt.client as mqtt
 
 try:
-    from .auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth
+    from .auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth, _connect as _users_connect
     from .agent import answer_question, load_knowledge_base
 except ImportError:  # allow running main.py directly without the package context
-    from auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth
+    from auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth, _connect as _users_connect
     from agent import answer_question, load_knowledge_base
 
 app = Flask(__name__)
@@ -1699,27 +1699,42 @@ def adoption_points():
 @app.get("/api/v1/adoptions/leaderboard")
 @require_auth()
 def adoption_leaderboard():
-    """Cross-account leaderboard grouped by crop, ranked by harvest POINTS."""
+    """Farmer-only points leaderboard: a single ranking by total harvest points,
+    excluding any user whose role is 'manager' (so admin-collected points don't
+    pollute the public farmer standings)."""
+    manager_ids = set()
+    try:
+        uc = _users_connect()
+        manager_ids = {r[0] for r in uc.execute("SELECT id FROM users WHERE role='manager'").fetchall()}
+        uc.close()
+    except Exception as exc:
+        LOGGER.warning("leaderboard: manager-id lookup failed: %s", exc)
+    # Always exclude the built-in admin id too, even if users.db is unreachable.
+    manager_ids.add(BUILTIN_PLOT_OWNER_ID)
     conn = _telemetry_connect()
     try:
-        rows = conn.execute(
-            "SELECT crop, owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
-            "ROUND(AVG(health_score),1) AS avg_health FROM harvests "
-            "GROUP BY crop, owner_user_id HAVING total > 0 "
-            "ORDER BY crop, total DESC LIMIT 300").fetchall()
+        if manager_ids:
+            placeholders = ",".join("?" * len(manager_ids))
+            sql = (
+                f"SELECT owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
+                f"ROUND(AVG(health_score),1) AS avg_health FROM harvests "
+                f"WHERE owner_user_id NOT IN ({placeholders}) "
+                f"GROUP BY owner_user_id HAVING total > 0 ORDER BY total DESC LIMIT 100")
+            rows = conn.execute(sql, tuple(manager_ids)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
+                "ROUND(AVG(health_score),1) AS avg_health FROM harvests "
+                "GROUP BY owner_user_id HAVING total > 0 ORDER BY total DESC LIMIT 100").fetchall()
         nick_rows = conn.execute(
-            "SELECT owner_user_id, nickname FROM adoptions "
-            "WHERE owner_user_id IN (SELECT DISTINCT owner_user_id FROM harvests) "
-            "GROUP BY owner_user_id").fetchall()
+            "SELECT owner_user_id, nickname FROM adoptions GROUP BY owner_user_id").fetchall()
     finally:
         conn.close()
     names = {r[0]: r[1] for r in nick_rows}
-    groups = {}
-    for crop, uid, total, cnt, avg in rows:
-        groups.setdefault(crop, []).append({
-            "owner_user_id": uid, "nickname": names.get(uid) or f"用户{uid}",
-            "points": total, "harvests": cnt, "avg_health": avg})
-    return jsonify({"groups": groups})
+    entries = [{"owner_user_id": uid, "nickname": names.get(uid) or f"用户{uid}",
+                "points": total, "harvests": cnt, "avg_health": avg}
+               for uid, total, cnt, avg in rows]
+    return jsonify({"entries": entries, "scope": "farmers"})
 
 
 @app.get("/api/v1/trace/<device_id>")
