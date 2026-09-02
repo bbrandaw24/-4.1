@@ -285,3 +285,38 @@
 .rank-score.mid { color: #c05621; }
 .rank-score.low { color: #a33232; }
 .rank-empty { color: var(--muted); font-size: 12.5px; padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; }
+
+/* --- Adoption farm (v15.10.0) ---------------------------------------------- */
+.adopt-panel { max-width: 1000px; }
+.adopt-form {
+  display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
+  margin: 14px 0 4px; padding: 16px; border: 1px solid var(--line);
+  border-radius: 12px; background: #fbfdfb;
+}
+.adopt-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--ink); }
+.adopt-field select, .adopt-field input {
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  font-size: 13px; color: var(--ink); background: #fff; min-width: 150px;
+}
+.adopt-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 16px; }
+.adopt-card {
+  border: 1px solid var(--line); border-radius: 14px; background: #fff;
+  padding: 14px 16px; box-shadow: 0 4px 16px rgba(20,60,40,0.05);
+}
+.adopt-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.adopt-crop {
+  font-size: 11px; font-weight: 700; color: #0f5132; background: #e6f4ec;
+  padding: 2px 10px; border-radius: 999px;
+}
+.adopt-date { font-size: 11px; color: var(--muted); }
+.adopt-name { font-size: 16px; font-weight: 800; color: var(--ink); margin-bottom: 8px; }
+.adopt-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.adopt-meta b { font-size: 13px; }
+.adopt-meta .ok { color: var(--green); }
+.adopt-meta .warn { color: #c05621; }
+.adopt-actions { display: flex; gap: 8px; align-items: center; }
+.adopt-unadopt {
+  padding: 6px 10px; border: 1px solid #e8cfcf; background: #fff6f6;
+  color: #a33232; border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: 600;
+}
+.adopt-unadopt:hover { background: #fde8e8; }
