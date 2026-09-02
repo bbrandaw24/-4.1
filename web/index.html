@@ -10,10 +10,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script src="icons.js?v=v15.13.0"></script>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="day08.css">
   <link rel="stylesheet" href="auth.css?v=v15.3.1">
@@ -21,8 +18,7 @@
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
   <link rel="stylesheet" href="sensor.css?v=v15.9.0">
   <link rel="stylesheet" href="day13.css">
-  <link rel="stylesheet" href="theme.css?v=v15-perf">
-  <link rel="stylesheet" href="dashboard.css?v=v15.9.0">
+  <link rel="stylesheet" href="theme.css?v=v15.13.0">
 </head>
 <body>
   <header class="topbar">
@@ -43,7 +39,6 @@
       <button class="nav-item" data-route="trends"><i data-lucide="chart-spline"></i><span>趋势</span></button>
       <button class="nav-item" data-route="devices"><i data-lucide="cpu"></i><span>设备</span></button>
       <button class="nav-item" data-route="agent"><i data-lucide="message-circle"></i><span>智能体问答</span></button>
-      <button class="nav-item" data-route="dashboard"><i data-lucide="monitor"></i><span>数据屏幕</span></button>
       <button class="nav-item" data-route="reports"><i data-lucide="sprout"></i><span>农场报告</span></button>
       <button class="nav-item" data-route="adopt"><i data-lucide="heart-handshake"></i><span>认养农场</span></button>
       <button class="nav-item" data-route="farm3d"><i data-lucide="box"></i><span>3D 农场</span></button>
@@ -283,85 +278,6 @@
       </article>
     </section>
 
-    <section class="route-panel dashboard-shell" data-view="dashboard" aria-label="数据大屏">
-      <div class="led-ticker"><div class="led-track"><span>如需帮助，请拨打 027-67883697　·　智慧农业大数据平台实时监测中　·　SMART AGRICULTURE BIG DATA PLATFORM　·　如需帮助，请拨打 027-67883697　·　智慧农业大数据平台实时监测中　·　</span></div></div>
-
-      <header class="screen-header">
-        <div class="screen-title">
-          <h1>智慧农业大数据平台</h1>
-          <span class="subtitle">SMART AGRICULTURE BIG DATA SCREEN</span>
-        </div>
-        <div class="kpi-strip">
-          <div class="ks"><span class="ks-num" id="kpi-plots">--</span><span class="ks-lbl">地块</span></div>
-          <div class="ks"><span class="ks-num" id="kpi-sensors">--</span><span class="ks-lbl">在线传感器</span></div>
-          <div class="ks"><span class="ks-num" id="kpi-moisture">--</span><span class="ks-lbl">平均湿度%</span></div>
-          <div class="ks"><span class="ks-num" id="kpi-temp">--</span><span class="ks-lbl">平均气温°C</span></div>
-        </div>
-        <div class="screen-clock" id="dashboard-clock">--:--:--</div>
-      </header>
-
-      <div class="screen-body">
-        <!-- 左列：实时监控 + 农田预警 -->
-        <div class="screen-col">
-          <article class="dpanel">
-            <div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h3><i data-lucide="cctv"></i> 实时监控</h3></div>
-            <div class="video-window">
-              <div class="video-bg"></div>
-              <button class="play-btn" type="button" aria-label="播放">▶</button>
-              <span class="video-tag">园区监控 · 01</span>
-              <span class="live-dot">LIVE</span>
-            </div>
-          </article>
-          <article class="dpanel grow">
-            <div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h3><i data-lucide="alert-triangle"></i> 农田种植数据预警</h3></div>
-            <div class="warn-table-wrap">
-              <table class="warn-table">
-                <thead><tr><th>作物类型</th><th>监测数据</th><th>实时值</th><th>增长率</th><th>状态</th></tr></thead>
-                <tbody id="dash-warn-body"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
-              </table>
-            </div>
-          </article>
-        </div>
-
-        <!-- 中列：区域地图 + 24h 折线 -->
-        <div class="screen-col">
-          <article class="dpanel">
-            <div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h3><i data-lucide="map"></i> 区域分布</h3></div>
-            <div class="map-wrap"><svg id="dash-map" viewBox="0 0 400 240" preserveAspectRatio="xMidYMid meet"></svg></div>
-          </article>
-          <article class="dpanel grow">
-            <div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h3><i data-lucide="line-chart"></i> 24 小时环境监测</h3></div>
-            <div class="chart-wrap"><svg id="dash-24h" viewBox="0 0 400 200" preserveAspectRatio="none"></svg></div>
-          </article>
-        </div>
-
-        <!-- 右列：环境监测 KPI + 土地墒情 -->
-        <div class="screen-col">
-          <article class="dpanel">
-            <div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h3><i data-lucide="image"></i> 农场实景 · 环境监测</h3></div>
-            <div class="env-grid" id="dash-env">
-              <div class="env-card"><div class="env-label">空气温度</div><div class="env-val" id="env-temp">--<small>°C</small></div></div>
-              <div class="env-card"><div class="env-label">空气湿度</div><div class="env-val" id="env-hum">--<small>%</small></div></div>
-              <div class="env-card"><div class="env-label">光照强度</div><div class="env-val" id="env-light">--<small>lux</small></div></div>
-              <div class="env-card est"><div class="env-label">PM2.5<small class="est-tag">估算</small></div><div class="env-val" id="env-pm">--<small>μg</small></div></div>
-              <div class="env-card est"><div class="env-label">空气质量<small class="est-tag">估算</small></div><div class="env-val" id="env-aqi">--</div></div>
-              <div class="env-card est"><div class="env-label">风速<small class="est-tag">估算</small></div><div class="env-val" id="env-wind">--<small>m/s</small></div></div>
-            </div>
-          </article>
-          <article class="dpanel grow">
-            <div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h3><i data-lucide="waves"></i> 土地墒情预警</h3></div>
-            <div class="chart-wrap"><svg id="dash-moisture" viewBox="0 0 400 200" preserveAspectRatio="none"></svg></div>
-          </article>
-        </div>
-      </div>
-
-      <div class="screen-foot">
-        <article class="dpanel"><div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h4><i data-lucide="users"></i> 人员出勤率<small class="est-tag">演示</small></h4></div><div class="chart-wrap sm"><svg id="dash-attend" viewBox="0 0 200 130" preserveAspectRatio="none"></svg></div></article>
-        <article class="dpanel"><div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h4><i data-lucide="bar-chart-2"></i> 土地使用面积<small class="est-tag">演示</small></h4></div><div class="chart-wrap sm"><svg id="dash-area" viewBox="0 0 200 130" preserveAspectRatio="none"></svg></div></article>
-        <article class="dpanel"><div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h4><i data-lucide="pie-chart"></i> 作物种类占比<small class="est-tag">演示</small></h4></div><div class="chart-wrap sm"><svg id="dash-crop" viewBox="0 0 200 130"></svg></div></article>
-        <article class="dpanel"><div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h4><i data-lucide="sprout"></i> 作物生长进度<small class="est-tag">演示</small></h4></div><div class="growth-list" id="dash-growth"></div></article>
-      </div>
-    </section>
 
     <section class="route-panel" data-view="reports" aria-label="农场报告">
       <article class="panel reports-panel">
@@ -428,11 +344,11 @@
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day16-beijing-gateway"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="app.js?v=v15.12.0"></script>
+  <script src="three.min.js?v=v15.13.0"></script>
+  <script src="app.js?v=v15.13.0"></script>
   <script src="kitten.js?v=day16-kitten"></script>
   <script src="agent.js?v=day16-kitten"></script>
-  <script src="enhance.js?v=v15-perf"></script>
+  <script src="enhance.js?v=v15.13.0"></script>
   <script>
     // PWA：注册 Service Worker（离线缓存 + 可添加到主屏幕）
     if ('serviceWorker' in navigator) {
