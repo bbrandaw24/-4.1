@@ -383,6 +383,12 @@ async function refresh() {
     $("#last-update").textContent = new Date().toLocaleTimeString();
     // Keep the big-data screen in sync whenever new telemetry arrives.
     renderDashboard(false);
+    // Reports view also depends on allDevices arriving after an async refresh:
+    // re-render it so a direct ?view=reports load (or a slow first refresh)
+    // never leaves the report card / ranking empty.
+    if (document.querySelector('[data-view="reports"]') && !document.querySelector('[data-view="reports"]').hidden) {
+      renderReports();
+    }
   } catch (error) {
     // Refresh failure only shows the error in the device-status slot; the
     // top-right pill stays under healthz control.
