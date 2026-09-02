@@ -1989,7 +1989,7 @@ async function loadAdoptions() {
   }
   const isManager = Auth.hasPermission("list_users");
   if (!adoptions.length) {
-    list.innerHTML = '<div class="rank-empty">还没有认养的地块。选一个作物，点击「认养这块地」开始。认养后 1 分钟 = 1 天生长，成熟即可收获积分。</div>';
+    list.innerHTML = '<div class="rank-empty">还没有认养的地块。选一个作物，点击「认养这块地」开始。认养后进入 5× 加速生长（1 分钟 = 5 天，约 20 分钟成熟）。收获的作物存入仓库，可在「农场报告→市场仓库」按实时倍率出售赚积分。</div>';
   } else {
     const devices = state.allDevices || [];
     list.innerHTML = adoptions.map((ad) => {
