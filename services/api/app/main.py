@@ -1473,8 +1473,9 @@ def adopt_crop():
     conn = _telemetry_connect()
     try:
         conn.execute(
-            "INSERT INTO adoptions (owner_user_id, device_id, crop, nickname, adopted_at) VALUES (?,?,?,?,?)",
-            (owner_user_id, device_id, crop, nickname, utc_now()),
+            # v16.9: 认养默认 5× 加速（1 分钟 = 5 天，100 天作物约 20 分钟成熟）
+            "INSERT INTO adoptions (owner_user_id, device_id, crop, nickname, adopted_at, time_scale) VALUES (?,?,?,?,?,?)",
+            (owner_user_id, device_id, crop, nickname, utc_now(), 5),
         )
         conn.commit()
     finally:
