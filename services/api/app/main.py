@@ -636,11 +636,6 @@ def seed_default_sensors_for_device(device_id):
     return created
 
 
-# Seed the three demo plots only after the sensor helpers exist (they are defined
-# above, while the seed function itself sits next to the registry bootstrapping).
-_seed_builtin_plots_into_registry()
-
-
 # --- Day 10: automatic irrigation rules -------------------------------------
 IRRIGATION_RULE_LIMITS = {"min_pct": 5.0, "max_pct": 95.0}
 DEFAULT_IRRIGATION_RULE = {
@@ -1630,3 +1625,12 @@ def image_thumbnail(image_id):
     if record is None:
         return jsonify({"error": "image_not_found", "image_id": image_id}), 404
     return send_file(UPLOAD_DIR / f"{image_id}_thumb.jpg", mimetype="image/jpeg", max_age=3600)
+
+
+# ---------------------------------------------------------------------------
+# Boot-time seeding of the three built-in demo plots.
+# Must run last: it depends on helpers defined throughout this module
+# (create_sensor, utc_now, …) which are only bound by the time the file has
+# finished executing.
+# ---------------------------------------------------------------------------
+_seed_builtin_plots_into_registry()
