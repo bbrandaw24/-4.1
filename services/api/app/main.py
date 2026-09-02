@@ -370,6 +370,22 @@ def init_telemetry_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steward_actions_owner ON steward_actions(owner_user_id, created_at)")
+        # Adoption farm (v15.10.0): a user adopts a crop, the platform creates a
+        # dedicated plot owned by that account, and the record below tracks the
+        # "adoption certificate" (nickname / crop / date).
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS adoptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                crop TEXT NOT NULL,
+                nickname TEXT,
+                adopted_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_adoptions_owner ON adoptions(owner_user_id)")
         conn.commit()
     finally:
         conn.close()
@@ -1331,6 +1347,121 @@ def steward_loop():
 
 
 Thread(target=steward_loop, name="steward-loop", daemon=True).start()
+
+
+# --- Adoption farm (v15.10.0) -----------------------------------------------
+def _create_owned_plot(device_id, name, crop, owner_user_id):
+    """Register a new plot in the registry/DB, seed its 5 sensors and wake the
+    simulator. Shared by plot creation and crop adoption."""
+    with registry_lock:
+        if device_id in registry:
+            return False
+        registry[device_id] = {"device_id": device_id, "telemetry": {}, "last_seen": None,
+                               "pump": {"action": "stop", "running": False, "status": "standby",
+                                        "timestamp": None, "command_id": None},
+                               "plot": {"name": name or device_id, "crop": crop or ""},
+                               "owner_user_id": owner_user_id}
+    _save_custom_plot(device_id, name, crop, owner_user_id)
+    _deleted_plots.pop(device_id, None)
+    for sensor_type in sorted(SENSOR_TYPES.keys()):
+        try:
+            create_sensor(device_id, sensor_type)
+        except ValueError:
+            pass
+    try:
+        _publish_new_plot(device_id)
+    except Exception:
+        pass
+    LOGGER.info("created owned plot %s (%s / %s) owner=%s", device_id, name, crop, owner_user_id)
+    return True
+
+
+def _adoption_certificate(owner_user_id, device_id, crop, nickname):
+    return {"owner_user_id": owner_user_id, "device_id": device_id, "crop": crop,
+            "nickname": nickname, "adopted_at": utc_now()}
+
+
+@app.post("/api/v1/adoptions")
+@require_auth("manage_sensors")
+def adopt_crop():
+    """Adopt a crop from the catalog: the platform creates a dedicated plot
+    owned by the signed-in account and issues an adoption certificate."""
+    body = request.get_json(silent=True) or {}
+    crop = (body.get("crop") or "").strip()
+    nickname = (body.get("nickname") or "").strip()
+    canonical = normalize_crop(crop)
+    if canonical is None:
+        return jsonify({
+            "error": "crop_not_in_catalog",
+            "message": f"暂不支持认养「{crop}」，可选：{'、'.join(c['name'] for c in CROPS.values())}",
+            "available": [c["name"] for c in CROPS.values()],
+        }), 400
+    crop = canonical
+    if not nickname:
+        nickname = f"我的{crop}地"
+    device_id = f"adopt-{uuid4().hex[:8]}"
+    owner_user_id = _current_user_id()
+    _create_owned_plot(device_id, nickname, crop, owner_user_id)
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "INSERT INTO adoptions (owner_user_id, device_id, crop, nickname, adopted_at) VALUES (?,?,?,?,?)",
+            (owner_user_id, device_id, crop, nickname, utc_now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify(_adoption_certificate(owner_user_id, device_id, crop, nickname)), 201
+
+
+@app.get("/api/v1/adoptions")
+@require_auth()
+def list_adoptions():
+    """Adoption certificates for the signed-in account (manager: all)."""
+    uid = _current_user_id()
+    conn = _telemetry_connect()
+    try:
+        if _is_manager():
+            rows = conn.execute(
+                "SELECT owner_user_id, device_id, crop, nickname, adopted_at FROM adoptions "
+                "ORDER BY id DESC LIMIT 200").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT owner_user_id, device_id, crop, nickname, adopted_at FROM adoptions "
+                "WHERE owner_user_id=? ORDER BY id DESC LIMIT 200", (uid,)).fetchall()
+    finally:
+        conn.close()
+    items = [{"owner_user_id": r[0], "device_id": r[1], "crop": r[2],
+              "nickname": r[3], "adopted_at": r[4]} for r in rows]
+    return jsonify({"items": items, "count": len(items)})
+
+
+@app.delete("/api/v1/adoptions/<device_id>")
+@require_auth("manage_sensors")
+def unadopt(device_id):
+    """Release an adoption: deletes the dedicated plot and its certificate."""
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute("SELECT owner_user_id FROM adoptions WHERE device_id=?", (device_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return jsonify({"error": "adoption_not_found", "device_id": device_id}), 404
+    # Mirror delete_plot_endpoint: drop registry entry, sensors, custom_plots row.
+    with registry_lock:
+        registry.pop(device_id, None)
+        _deleted_plots[device_id] = time.time()
+    conn = _telemetry_connect()
+    try:
+        conn.execute("DELETE FROM sensors WHERE device_id=?", (device_id,))
+        conn.execute("DELETE FROM custom_plots WHERE device_id=?", (device_id,))
+        conn.execute("DELETE FROM adoptions WHERE device_id=?", (device_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"deleted": device_id})
 
 
 @app.get("/api/v1/devices")
