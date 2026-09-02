@@ -45,6 +45,7 @@
       <button class="nav-item" data-route="agent"><i data-lucide="message-circle"></i><span>智能体问答</span></button>
       <button class="nav-item" data-route="dashboard"><i data-lucide="monitor"></i><span>数据屏幕</span></button>
       <button class="nav-item" data-route="reports"><i data-lucide="sprout"></i><span>农场报告</span></button>
+      <button class="nav-item" data-route="adopt"><i data-lucide="heart-handshake"></i><span>认养农场</span></button>
     </nav>
 
     <section class="metric-grid route-panel" data-view="overview" aria-label="关键指标">
@@ -378,10 +379,27 @@
         <p class="sensor-hint" id="report-hint"></p>
       </article>
     </section>
+
+    <section class="route-panel" data-view="adopt" aria-label="认养农场">
+      <article class="panel adopt-panel">
+        <div class="panel-heading"><div><p class="eyebrow">ADOPT A PLOT</p><h2>🧑‍🌾 认养农场</h2><p class="agent-sub">从作物目录选一个品种认养，平台为你创建专属地块：自动补齐 5 类传感器、AI 管家看护、随时查看成长报告。今天你也是农场主。</p></div></div>
+        <div class="adopt-form">
+          <label class="adopt-field">认养作物
+            <select id="adopt-crop"></select>
+          </label>
+          <label class="adopt-field">起个昵称
+            <input id="adopt-nickname" type="text" placeholder="如：我的小苹果" maxlength="20" autocomplete="off">
+          </label>
+          <button class="action primary" id="adopt-btn" type="button">🌱 认养这块地</button>
+        </div>
+        <p class="sensor-hint" id="adopt-hint"></p>
+        <div class="adopt-list" id="adopt-list"><div class="rank-empty">还没有认养的地块。</div></div>
+      </article>
+    </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day16-beijing-gateway"></script>
-  <script src="app.js?v=v15.9.0"></script>
+  <script src="app.js?v=v15.10.0"></script>
   <script src="kitten.js?v=day16-kitten"></script>
   <script src="agent.js?v=day16-kitten"></script>
   <script src="enhance.js?v=v15-perf"></script>
