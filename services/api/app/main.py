@@ -1596,7 +1596,12 @@ def _adoption_growth(row, now_ts=None):
         adopted_ts = now_ts
     elapsed_min = max(0.0, (now_ts - adopted_ts) / 60.0)
     age_days = elapsed_min * (row["time_scale"] or 1)
-    growing = CROPS.get(row["crop"], {}).get("growing_days", 120)
+    # v16.7.2: adoptions store the canonical DISPLAY name (normalize_crop maps
+    # to CROPS[key]["name"]), so a raw CROPS.get("草莓") misses the English key
+    # and silently falls back to 120 days. Resolve by key OR display name.
+    crop_meta = CROPS.get(row["crop"]) or next(
+        (m for m in CROPS.values() if m.get("name") == row["crop"]), {})
+    growing = crop_meta.get("growing_days", 120)
     pct = min(100.0, round(age_days / growing * 100, 1))
     return {"age_days": round(age_days, 1), "pct": pct,
             "remaining_days": round(max(0.0, growing - age_days), 1),
