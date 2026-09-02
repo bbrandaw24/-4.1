@@ -2265,8 +2265,20 @@ function showFarm3DInfo(device) {
     <div class="f3d-body">${health.parts && health.parts.length ? escapeHtml(health.parts.join("；")) : "各项指标处于作物适宜区间，长势良好。"}</div>`;
 }
 
-function renderFarm3D(force) {
+async function renderFarm3D(force) {
   if (!initFarm3D()) return;
+  // farm3d depends on the crop catalog (health/progress scoring) and the
+  // adoption list (time-scaled growth). Load both before building/updating.
+  await ensureReportCrops();
+  try {
+    if (!adoptions.length) {
+      const resp = await Auth.request("/api/v1/adoptions", { cache: "no-store" });
+      if (resp.ok) {
+        const d = await resp.json();
+        adoptions = d.items || [];
+      }
+    }
+  } catch (_) { /* non-fatal: adopted plots fall back to real-time progress */ }
   if (force || farm3d.crops.size === 0) buildFarm3DCrops();
   updateFarm3DCrops();
 }
