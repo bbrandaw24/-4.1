@@ -350,10 +350,12 @@ def test_delete_custom_plot_removes_everything(client, farmer_headers):
         _cleanup_plot(device_id)
 
 
-def test_delete_builtin_plot_rejected(client, farmer_headers):
+def test_delete_nonexistent_plot_404(client, farmer_headers):
+    # v16.4: built-in plots were removed — every plot is user-created, so an
+    # unknown id is a plain 404 instead of the old builtin-protection 403.
     response = client.delete("/api/v1/devices/sim-plot-apple", headers=farmer_headers)
-    assert response.status_code == 403
-    assert response.get_json()["error"] == "builtin_plot_cannot_be_deleted"
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "plot_not_found"
 
 
 def test_delete_plot_requires_manage_sensors(client, guest_headers):
