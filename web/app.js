@@ -1859,29 +1859,25 @@ async function loadAdoptLeaderboard() {
     const resp = await Auth.request("/api/v1/adoptions/leaderboard", { cache: "no-store" });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const d = await resp.json();
-    const groups = d.groups || {};
-    const keys = Object.keys(groups);
-    if (!keys.length) {
-      box.innerHTML = `<h3 class="adopt-lb-head">📈 认养积分排行榜</h3><div class="rank-empty">还没有人收获过作物，快去收获拿积分上榜！</div>`;
+    const entries = d.entries || [];
+    if (!entries.length) {
+      box.innerHTML = `<h3 class="adopt-lb-head">🏆 农户积分总榜（不含管理员）</h3><div class="rank-empty">还没有农户收获过作物，快去收获拿积分上榜！</div>`;
       return;
     }
     const medals = ["🥇", "🥈", "🥉"];
-    const html = keys.map((crop) => {
-      const rows = groups[crop].map((r, i) =>
-        `<div class="rank-row ${i === 0 ? "top" : ""}">
-          <span class="rank-medal">${i < 3 ? medals[i] : `${i + 1}`}</span>
-          <span class="rank-name" title="${escapeHtml(r.nickname)}">${escapeHtml(r.nickname)}</span>
-          <span class="rank-tag">${r.harvests} 次收获 · 均健 ${r.avg_health ?? "--"}</span>
-          <span class="rank-score ${r.points >= 200 ? "good" : r.points >= 100 ? "mid" : "low"}">${r.points} 分</span>
-        </div>`).join("");
-      return `<div class="rank-group" style="margin-bottom:12px;">
-        <div class="rank-group-head">🌾 ${escapeHtml(crop)}<span>按积分</span></div>
+    const rows = entries.map((r, i) =>
+      `<div class="rank-row ${i === 0 ? "top" : ""}">
+        <span class="rank-medal">${i < 3 ? medals[i] : `${i + 1}`}</span>
+        <span class="rank-name" title="${escapeHtml(r.nickname)}">${escapeHtml(r.nickname)}</span>
+        <span class="rank-tag">${r.harvests} 次收获 · 均健康 ${r.avg_health ?? "--"}</span>
+        <span class="rank-score ${r.points >= 200 ? "good" : r.points >= 100 ? "mid" : "low"}">${r.points} 分</span>
+      </div>`).join("");
+    box.innerHTML = `<h3 class="adopt-lb-head">🏆 农户积分总榜（不含管理员，按积分排名）</h3>
+      <div class="rank-group" style="margin-bottom:0;">
         ${rows}
       </div>`;
-    }).join("");
-    box.innerHTML = `<h3 class="adopt-lb-head">📈 认养积分排行榜（按作物 × 按积分）</h3>${html}`;
   } catch (error) {
-    box.innerHTML = `<h3 class="adopt-lb-head">📈 认养积分排行榜</h3><div class="rank-empty">加载失败</div>`;
+    box.innerHTML = `<h3 class="adopt-lb-head">🏆 农户积分总榜（不含管理员）</h3><div class="rank-empty">加载失败</div>`;
   }
 }
 
