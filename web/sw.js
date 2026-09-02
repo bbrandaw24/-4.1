@@ -3,7 +3,7 @@
  * 策略：静态资源网络优先 + 离线回退；/api /ai 等数据请求永不缓存。
  * 每次发版请把 CACHE 版本号 +1（如 v1 -> v2），否则用户端不更新缓存。
  */
-const CACHE = 'smartagri-v15';
+const CACHE = 'smartagri-v16';
 
 const APP_SHELL = [
   './',
@@ -18,10 +18,11 @@ const APP_SHELL = [
   './kitten.css',
   './sensor.css',
   './day13.css',
-  './dashboard.css',
   './trace.html',
   './app.js',
   './auth.js',
+  './icons.js',
+  './three.min.js',
   './agent.js',
   './kitten.js',
   './login.js',
@@ -52,7 +53,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // 跨域（CDN 字体/lucide）不接管
+  if (url.origin !== self.location.origin) return; // 跨域请求不接管
 
   // 数据接口：永不缓存，直走网络
   if (/^\/(api|ai|healthz|mqtt)(\/|$)/.test(url.pathname)) return;
