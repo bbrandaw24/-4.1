@@ -1688,6 +1688,198 @@ async function renderRanking() {
   }
 }
 
+// ================= v16.8 市场仓库（倍率行情 + 仓库交易） =================
+let marketState = null;      // {multiplier, history[], base_prices[]}
+let warehouseState = null;   // {balance, items[]}
+let marketTimer = null;
+
+function marketViewVisible() {
+  const v = document.querySelector('[data-view="reports"]');
+  return v && !v.hidden;
+}
+
+async function refreshMarketUI(silent) {
+  if (!marketViewVisible()) return;
+  try {
+    const [mRes, wRes] = await Promise.all([
+      Auth.request("/api/v1/market", { cache: "no-store" }),
+      Auth.request("/api/v1/warehouse", { cache: "no-store" }),
+    ]);
+    if (!mRes.ok || !wRes.ok) throw new Error(`HTTP ${mRes.status}/${wRes.status}`);
+    marketState = await mRes.json();
+    warehouseState = await wRes.json();
+  } catch (error) {
+    if (!silent) {
+      const h = $("#market-hint");
+      if (h) h.textContent = "行情加载失败：" + escapeHtml(error.message || error);
+    }
+    return;
+  }
+  renderMarketUI();
+}
+
+function renderMarketUI() {
+  if (!marketState || !warehouseState) return;
+  const rateEl = $("#market-rate");
+  const m = marketState.multiplier;
+  const history = marketState.history || [];
+  if (rateEl) {
+    rateEl.textContent = "×" + m.toFixed(2);
+    // 涨红跌绿：与上一档对比
+    const prev = history.length > 1 ? history[history.length - 2].multiplier : m;
+    rateEl.classList.toggle("up", m > prev);
+    rateEl.classList.toggle("down", m < prev);
+  }
+  const upd = $("#market-update-time");
+  if (upd && history.length) {
+    const t = new Date(history[history.length - 1].t * 1000);
+    upd.textContent = "更新于 " + t.toLocaleTimeString("zh-CN", { hour12: false });
+  }
+  const bal = $("#market-balance");
+  if (bal) bal.textContent = (warehouseState.balance ?? 0).toLocaleString();
+  drawMarketChart();
+  renderMarketPrices();
+  renderMarketStock();
+}
+
+function drawMarketChart() {
+  const canvas = $("#market-chart");
+  if (!canvas) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(260, canvas.clientWidth || 420);
+  const h = 132;
+  if (canvas.width !== w * dpr) canvas.width = w * dpr;
+  if (canvas.height !== h * dpr) canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const hist = (marketState && marketState.history) || [];
+  if (!hist.length) {
+    ctx.fillStyle = "rgba(127,127,127,.6)";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("暂无行情数据", w / 2 - 40, h / 2);
+    return;
+  }
+  const padL = 30, padR = 10, padT = 8, padB = 16;
+  const iw = w - padL - padR, ih = h - padT - padB;
+  const lo = 0.5, hi = 4.0;
+  const px = (i) => padL + (i / (hist.length - 1)) * iw;
+  const py = (v) => padT + (1 - (v - lo) / (hi - lo)) * ih;
+  // grid + axis labels
+  ctx.strokeStyle = "rgba(127,127,127,.22)";
+  ctx.fillStyle = "rgba(127,127,127,.75)";
+  ctx.font = "10px sans-serif";
+  ctx.lineWidth = 1;
+  for (const gv of [0.5, 1, 2, 3, 4]) {
+    const y = py(gv);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillText(gv.toFixed(1), 4, y + 3);
+  }
+  // 均值线
+  ctx.strokeStyle = "rgba(148,163,184,.45)";
+  ctx.setLineDash([4, 4]);
+  const ym = py(2.25);
+  ctx.beginPath(); ctx.moveTo(padL, ym); ctx.lineTo(w - padR, ym); ctx.stroke();
+  ctx.setLineDash([]);
+  // area fill
+  const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
+  grad.addColorStop(0, "rgba(34,211,238,.30)");
+  grad.addColorStop(1, "rgba(34,211,238,.02)");
+  ctx.beginPath();
+  ctx.moveTo(px(0), py(hist[0].multiplier));
+  for (let i = 1; i < hist.length; i++) ctx.lineTo(px(i), py(hist[i].multiplier));
+  ctx.lineTo(px(hist.length - 1), py(lo)); ctx.lineTo(px(0), py(lo)); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+  // line
+  ctx.beginPath();
+  ctx.moveTo(px(0), py(hist[0].multiplier));
+  for (let i = 1; i < hist.length; i++) ctx.lineTo(px(i), py(hist[i].multiplier));
+  ctx.strokeStyle = "#22d3ee";
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  // current dot
+  const last = hist[hist.length - 1];
+  const x0 = px(hist.length - 1), y0 = py(last.multiplier);
+  ctx.beginPath(); ctx.arc(x0, y0, 4, 0, Math.PI * 2);
+  ctx.fillStyle = "#22d3ee"; ctx.fill();
+  ctx.beginPath(); ctx.arc(x0, y0, 2, 0, Math.PI * 2);
+  ctx.fillStyle = "#0b1020"; ctx.fill();
+  ctx.fillStyle = "rgba(127,127,127,.9)";
+  ctx.textAlign = "right";
+  ctx.fillText("×" + last.multiplier.toFixed(2), x0 - 8, y0 - 6);
+  ctx.textAlign = "left";
+}
+
+function renderMarketPrices() {
+  const tbody = $("#market-price-tbody");
+  if (!tbody) return;
+  const prices = (marketState && marketState.base_prices) || [];
+  if (!prices.length) { tbody.innerHTML = '<div class="rank-empty">暂无价格公示</div>'; return; }
+  const m = marketState.multiplier;
+  tbody.innerHTML = prices.map((p) => `
+    <div class="market-price-row">
+      <span class="mp-crop">${escapeHtml(p.crop)}</span>
+      <span class="mp-base">基础 ${p.base_price}</span>
+      <span class="mp-value">时价 ${p.unit_value}</span>
+      <button class="market-btn buy" type="button" data-act="buy" data-crop="${escapeHtml(p.crop)}">买入</button>
+    </div>`).join("");
+}
+
+function renderMarketStock() {
+  const box = $("#market-stock");
+  if (!box) return;
+  const items = (warehouseState && warehouseState.items) || [];
+  const hint = $("#market-stock-tip");
+  if (hint) hint.textContent = items.length ? `共 ${items.length} 种作物` : "";
+  if (!items.length) {
+    box.innerHTML = '<div class="rank-empty">仓库空空如也：去「认养农场」收获作物后，它们会自动存入这里；行情好的时候卖出换积分。</div>';
+    return;
+  }
+  const m = marketState.multiplier;
+  box.innerHTML = items.map((it) => `
+    <div class="market-stock-row">
+      <span class="mp-crop">${escapeHtml(it.crop)}</span>
+      <span class="mp-base">×${it.qty}</span>
+      <span class="mp-value">约 ${it.unit_sell * it.qty} 积分</span>
+      <button class="market-btn sell" type="button" data-act="sell" data-crop="${escapeHtml(it.crop)}" data-qty="${it.qty}">出售</button>
+    </div>`).join("");
+}
+
+function bindMarketActions() {
+  const wrap = $("#market-wrap");
+  if (!wrap || wrap.dataset.marketBound) return;
+  wrap.dataset.marketBound = "1";
+  wrap.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    const act = btn.dataset.act;
+    const crop = btn.dataset.crop;
+    if (!act || !crop) return;
+    const qtyStr = window.prompt(`${act === "sell" ? "出售" : "买入"}「${crop}」数量（整数 ≥1）：`, "1");
+    if (qtyStr == null) return;
+    const qty = parseInt(qtyStr, 10);
+    if (!qty || qty < 1) { alert("数量需为不小于 1 的整数"); return; }
+    const endpoint = act === "sell" ? "/api/v1/warehouse/sell" : "/api/v1/warehouse/buy";
+    btn.disabled = true;
+    try {
+      const resp = await Auth.request(endpoint, { method: "POST", body: JSON.stringify({ crop, qty }) });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { alert(data.message || data.error || `HTTP ${resp.status}`); return; }
+      alert(act === "sell"
+        ? `已按 ×${data.multiplier} 售出 ${qty} 份「${crop}」，获得 ${data.points} 积分（余额 ${data.balance}）`
+        : `已按 ×${data.multiplier} 买入 ${qty} 份「${crop}」，花费 ${data.cost} 积分（余额 ${data.balance}）`);
+      await refreshMarketUI(true);
+    } catch (err) {
+      alert("交易失败：" + (err.message || err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  // v16.8: 30s 行情自动刷新（页面可见才拉）
+  if (!marketTimer) marketTimer = setInterval(() => refreshMarketUI(true), 30000);
+}
+
 async function renderReports() {
   await ensureReportCrops();
   // v16.7.2: the accelerated growth clock lives in the adoption records; make
@@ -1721,6 +1913,8 @@ async function renderReports() {
   $("#report-card").innerHTML = reportCardHtml(device);
   renderRanking();
   $("#report-hint").textContent = "";
+  refreshMarketUI(false);
+  bindMarketActions();
 }
 
 function bindReportsActions() {
