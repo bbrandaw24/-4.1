@@ -1028,6 +1028,26 @@ function closeAddSensorDialog() {
 }
 
 // --- Day 16: add plot (not limited to the built-in 3 plots) -----------------
+async function populateCropSelect() {
+  // Single source of truth for plantable crops: refresh the static options
+  // from GET /api/v1/crops (v15.7.0). Falls back to the HTML defaults when
+  // the catalog endpoint is unreachable.
+  const select = $("#plot-crop");
+  if (!select) return;
+  try {
+    const response = await Auth.request("/api/v1/crops", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const crops = data.items || [];
+    if (!crops.length) return;
+    const current = select.value;
+    select.innerHTML = crops.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+    select.value = current || crops[0].name;
+  } catch (_) {
+    /* keep the static <option> list in index.html */
+  }
+}
+
 function openAddPlotDialog() {
   const dialog = $("#plot-add-dialog");
   if (!dialog) return;
@@ -1655,6 +1675,7 @@ bindUsersActions();
 loadBrokerPresets();
 loadBroker();
 refreshUserPermissions();
+populateCropSelect();
 if (Auth.hasPermission("list_users")) loadUsers();
 // Bind sensor-board actions up front, NOT only after the first successful
 // refresh(): on slow links refresh() can fail for minutes and the click
