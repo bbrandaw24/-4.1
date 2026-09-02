@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f172a">
+<title>农产品溯源 · 智慧农业</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh; color: #e2e8f0;
+    background:
+      radial-gradient(1200px 600px at 20% -10%, rgba(14,165,233,0.16), transparent 60%),
+      radial-gradient(1000px 500px at 90% 110%, rgba(34,211,238,0.12), transparent 60%),
+      linear-gradient(160deg, #020617 0%, #0f172a 100%);
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 18px 48px; }
+  .trace-top { text-align: center; margin-bottom: 24px; }
+  .trace-top h1 {
+    font-size: 24px; font-weight: 800; letter-spacing: 2px;
+    background: linear-gradient(120deg, #7dd3fc, #22d3ee 60%, #a5f3fc);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 30px rgba(34,211,238,0.25);
+  }
+  .trace-top p { color: #64748b; font-size: 12.5px; margin-top: 8px; }
+  .trace-top .code-pill {
+    display: inline-block; margin-top: 10px; padding: 4px 14px;
+    border: 1px solid rgba(34,211,238,0.35); border-radius: 999px;
+    color: #22d3ee; font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    background: rgba(14,165,233,0.08);
+  }
+  .card {
+    border: 1px solid rgba(34,211,238,0.25); border-radius: 16px;
+    background: rgba(15,23,42,0.7); backdrop-filter: blur(8px);
+    padding: 22px; margin-bottom: 16px; position: relative; overflow: hidden;
+  }
+  .card::before, .card::after {
+    content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
+  }
+  .card::before { top: 0; left: 0; border-top: 2px solid #22d3ee; border-left: 2px solid #22d3ee; }
+  .card::after { bottom: 0; right: 0; border-bottom: 2px solid #22d3ee; border-right: 2px solid #22d3ee; }
+  .hero { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .hero .avatar {
+    width: 78px; height: 78px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 34px;
+    border: 2px solid rgba(34,211,238,0.5); background: rgba(14,165,233,0.12);
+  }
+  .hero h2 { font-size: 20px; font-weight: 800; color: #f8fafc; }
+  .hero .sub { color: #94a3b8; font-size: 12.5px; margin-top: 6px; line-height: 1.8; }
+  .hero .crop-tag {
+    display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px;
+    color: #0f5132; background: #a7f3d0; font-weight: 700; margin-right: 6px;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  .metric {
+    border: 1px solid rgba(148,163,184,0.18); border-radius: 12px; padding: 14px;
+    background: rgba(2,6,23,0.5);
+  }
+  .metric .k { font-size: 11px; color: #64748b; margin-bottom: 8px; letter-spacing: 1px; }
+  .metric .v { font-size: 24px; font-weight: 800; color: #7dd3fc; }
+  .metric .v small { font-size: 12px; color: #64748b; font-weight: 500; }
+  .bar { height: 8px; border-radius: 99px; background: rgba(148,163,184,0.2); margin-top: 10px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #0ea5e9, #22d3ee); }
+  .grade { display: inline-block; padding: 2px 12px; border-radius: 999px; font-weight: 700; font-size: 12px; }
+  .grade.excellent { color: #052e16; background: #86efac; }
+  .grade.good { color: #422006; background: #fde68a; }
+  .grade.pass { color: #431407; background: #fdba74; }
+  .grade.fail { color: #450a0a; background: #fca5a5; }
+  .list-title { font-size: 13px; color: #94a3b8; margin: 4px 0 10px; letter-spacing: 1px; }
+  .row {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center;
+    padding: 9px 0; border-bottom: 1px dashed rgba(148,163,184,0.15); font-size: 12.5px;
+  }
+  .row:last-child { border-bottom: none; }
+  .row .time { color: #64748b; font-size: 11px; white-space: nowrap; }
+  .row b { color: #7dd3fc; }
+  .empty { color: #475569; font-size: 12.5px; padding: 14px 0; }
+  .qr-box { text-align: center; padding-top: 6px; }
+  .qr-box canvas, .qr-box img { border-radius: 10px; background: #fff; padding: 8px; }
+  .qr-tip { color: #64748b; font-size: 11px; margin-top: 8px; line-height: 1.7; }
+  .error-box { text-align: center; padding: 60px 20px; }
+  .error-box h2 { color: #fca5a5; font-size: 18px; margin-bottom: 10px; }
+  .footer { text-align: center; color: #334155; font-size: 11px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="trace-top">
+    <h1>🌾 农产品溯源</h1>
+    <p>SMART AGRICULTURE TRACEABILITY · 一物一码</p>
+    <div class="code-pill" id="trace-code">加载中…</div>
+  </div>
+  <div id="trace-body"><div class="card error-box"><h2>正在读取溯源信息…</h2></div></div>
+  <div class="footer">智慧农业大数据平台 · 认养农场溯源认证</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+const code = new URLSearchParams(location.search).get("code") || "";
+const codePill = document.getElementById("trace-code");
+if (codePill) codePill.textContent = code || "未知溯源码";
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function gradeCls(g) { return g ? `grade ${g.grade}` : ""; }
+
+async function load() {
+  const body = document.getElementById("trace-body");
+  if (!code) {
+    body.innerHTML = '<div class="card error-box"><h2>缺少溯源码</h2><p style="color:#94a3b8">请在认养卡点击「溯源码」进入。</p></div>';
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/v1/trace/${encodeURIComponent(code)}`);
+    const d = await resp.json();
+    if (!resp.ok || d.error) throw new Error(d.message || d.error || `HTTP ${resp.status}`);
+    const g = d.growth || {};
+    const stage = g.pct >= 100 ? "已成熟" : g.pct >= 70 ? "成熟期" : g.pct >= 40 ? "生长期" : g.pct >= 10 ? "幼苗期" : "播种期";
+    const shareUrl = `${location.origin}/trace.html?code=${encodeURIComponent(code)}`;
+    const harvestRows = (d.harvests || []).map((h) =>
+      `<div class="row"><span class="grade ${h.grade_label === "优秀" ? "excellent" : h.grade_label === "良好" ? "good" : h.grade_label === "及格" ? "pass" : "fail"}">${esc(h.grade_label)}</span><span>健康 ${h.health_score} 分 · +${h.points} 积分</span><span class="time">${new Date(h.harvested_at).toLocaleString("zh-CN")}</span></div>`).join("");
+    const eventRows = (d.events || []).map((e) =>
+      `<div class="row"><span>${e.action_type === "pump_on" ? "💧" : e.action_type === "pump_off" ? "✅" : "🛡️"}</span><span>${esc(e.reason)}</span><span class="time">${new Date(e.created_at).toLocaleString("zh-CN")}</span></div>`).join("");
+    body.innerHTML = `
+      <div class="card">
+        <div class="hero">
+          <div class="avatar">🌱</div>
+          <div>
+            <h2><span class="crop-tag">${esc(d.crop)}</span>${esc(d.nickname)}</h2>
+            <div class="sub">认养时间 ${new Date(d.adopted_at).toLocaleString("zh-CN")}<br>
+            溯源码：<b style="color:#7dd3ee">${esc(code)}</b>${(d.time_scale || 1) > 1 ? ` · 时间加速 ${d.time_scale}×` : ""}</div>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="metric"><div class="k">生长进度</div><div class="v">${g.pct ?? "--"}<small>% · ${stage}</small></div>
+            <div class="bar"><i style="width:${Math.max(2, Math.min(100, g.pct || 0))}%"></i></div></div>
+          <div class="metric"><div class="k">当前健康度 ${d.grade ? `<span class="${gradeCls(d.grade)}">${esc(d.grade.label)}</span>` : ""}</div>
+            <div class="v">${d.health_score ?? "--"}<small> / 100</small></div></div>
+          <div class="metric"><div class="k">累计收获</div><div class="v">${d.harvest_count || 0}<small> 次</small></div></div>
+          <div class="metric"><div class="k">AI 管家事件</div><div class="v">${(d.events || []).length}<small> 条</small></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="list-title">🧾 收获记录（${(d.harvests || []).length}）</div>
+        ${harvestRows || '<div class="empty">尚未收获，作物成熟后由认养人收获。</div>'}
+      </div>
+      <div class="card">
+        <div class="list-title">🤖 AI 管家看护记录</div>
+        ${eventRows || '<div class="empty">暂无自动看护记录。</div>'}
+      </div>
+      <div class="card qr-box">
+        <div class="list-title">📱 扫码溯源</div>
+        <div id="qrcode"></div>
+        <div class="qr-tip">分享此码，任何人扫码即可查看这块作物的完整生长档案与收获履历。<br>链接：<span style="color:#7dd3ee;word-break:break-all">${esc(shareUrl)}</span></div>
+      </div>`;
+    if (window.QRCode) {
+      new QRCode(document.getElementById("qrcode"), { text: shareUrl, width: 150, height: 150 });
+    } else {
+      document.getElementById("qrcode").innerHTML = '<div class="empty">二维码组件加载失败，请复制上方链接分享。</div>';
+    }
+  } catch (error) {
+    body.innerHTML = `<div class="card error-box"><h2>溯源信息读取失败</h2><p style="color:#94a3b8">${esc(error.message || error)}</p></div>`;
+  }
+}
+load();
+</script>
+</body>
+</html>
