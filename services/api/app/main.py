@@ -14,10 +14,10 @@ from PIL import Image, UnidentifiedImageError
 import paho.mqtt.client as mqtt
 
 try:
-    from .auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth, _connect as _users_connect
+    from .auth import current_user, init_db, register_auth_routes, require_auth
     from .agent import answer_question, load_knowledge_base
 except ImportError:  # allow running main.py directly without the package context
-    from auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth, _connect as _users_connect
+    from auth import current_user, init_db, register_auth_routes, require_auth
     from agent import answer_question, load_knowledge_base
 
 app = Flask(__name__)
@@ -62,141 +62,10 @@ image_registry = {}
 image_registry_lock = Lock()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# --- Plot metadata (multi-plot deployment: apple / pear / orange orchards) ----
-PLOT_META = {
-    # created_at: fixed demo start so built-in plots carry a realistic growth
-    # age for the report / 3D-farm progress views (they have no custom_plots row).
-    "sim-plot-apple": {"name": "苹果园", "crop": "苹果", "created_at": "2026-08-01T00:00:00+00:00"},
-    "sim-plot-pear": {"name": "梨园", "crop": "梨", "created_at": "2026-08-01T00:00:00+00:00"},
-    "sim-plot-orange": {"name": "橘园", "crop": "橘子", "created_at": "2026-08-01T00:00:00+00:00"},
-}
-
-# --- Crop catalog (v15.7.0): canonical list of plantable crops ----------------
-# crop 字段不再自由文本：创建地块时必须命中本目录（按 name / alias / key 归一化），
-# 存储使用目录中的标准中文名。参考区间（适宜土壤湿度 % / 气温 °C / pH / 目标 NPK
-# mg/kg）为后续作物差异化告警阈值、生长进度、PK 评分预留，当前仅作目录元数据。
-CROPS = {
-    "apple":     {"name": "苹果", "alias": ["苹果"], "type": "果树", "growing_days": 170,
-                  "soil_moisture": [45, 65], "air_temp": [15, 28], "ph": [5.5, 7.5], "npk": {"n": 150, "p": 60, "k": 150}},
-    "pear":      {"name": "梨", "alias": ["梨", "梨子"], "type": "果树", "growing_days": 175,
-                  "soil_moisture": [45, 65], "air_temp": [15, 28], "ph": [6.0, 7.5], "npk": {"n": 150, "p": 60, "k": 150}},
-    "orange":    {"name": "橘子", "alias": ["橘子", "橘", "柑橘", "桔子", "橘子园"], "type": "果树", "growing_days": 220,
-                  "soil_moisture": [45, 70], "air_temp": [20, 30], "ph": [5.5, 7.0], "npk": {"n": 180, "p": 70, "k": 180}},
-    "grape":     {"name": "葡萄", "alias": ["葡萄"], "type": "果树", "growing_days": 155,
-                  "soil_moisture": [40, 65], "air_temp": [18, 30], "ph": [6.0, 7.5], "npk": {"n": 120, "p": 50, "k": 140}},
-    "strawberry":{"name": "草莓", "alias": ["草莓"], "type": "浆果", "growing_days": 100,
-                  "soil_moisture": [55, 75], "air_temp": [15, 25], "ph": [5.5, 6.8], "npk": {"n": 130, "p": 50, "k": 150}},
-    "tomato":    {"name": "番茄", "alias": ["番茄", "西红柿"], "type": "茄果", "growing_days": 120,
-                  "soil_moisture": [50, 75], "air_temp": [18, 28], "ph": [6.0, 7.0], "npk": {"n": 140, "p": 50, "k": 160}},
-    "cucumber":  {"name": "黄瓜", "alias": ["黄瓜"], "type": "瓜类", "growing_days": 70,
-                  "soil_moisture": [60, 85], "air_temp": [20, 30], "ph": [6.0, 7.0], "npk": {"n": 120, "p": 45, "k": 140}},
-    "chili":     {"name": "辣椒", "alias": ["辣椒", "尖椒"], "type": "茄果", "growing_days": 105,
-                  "soil_moisture": [50, 70], "air_temp": [20, 30], "ph": [6.0, 7.0], "npk": {"n": 130, "p": 50, "k": 150}},
-    "eggplant":  {"name": "茄子", "alias": ["茄子"], "type": "茄果", "growing_days": 115,
-                  "soil_moisture": [55, 75], "air_temp": [22, 30], "ph": [6.0, 7.0], "npk": {"n": 140, "p": 55, "k": 160}},
-    "watermelon":{"name": "西瓜", "alias": ["西瓜"], "type": "瓜类", "growing_days": 100,
-                  "soil_moisture": [55, 75], "air_temp": [22, 32], "ph": [6.0, 7.5], "npk": {"n": 110, "p": 45, "k": 130}},
-    "bokchoy":   {"name": "白菜", "alias": ["白菜", "大白菜", "小白菜"], "type": "叶菜", "growing_days": 70,
-                  "soil_moisture": [60, 80], "air_temp": [15, 25], "ph": [6.0, 7.0], "npk": {"n": 160, "p": 60, "k": 140}},
-    "spinach":   {"name": "菠菜", "alias": ["菠菜"], "type": "叶菜", "growing_days": 50,
-                  "soil_moisture": [60, 80], "air_temp": [10, 25], "ph": [6.0, 7.5], "npk": {"n": 140, "p": 50, "k": 130}},
-    "lettuce":   {"name": "生菜", "alias": ["生菜"], "type": "叶菜", "growing_days": 60,
-                  "soil_moisture": [55, 75], "air_temp": [12, 24], "ph": [6.0, 7.0], "npk": {"n": 130, "p": 50, "k": 140}},
-    "rice":      {"name": "水稻", "alias": ["水稻", "稻谷"], "type": "大田", "growing_days": 135,
-                  "soil_moisture": [70, 90], "air_temp": [20, 35], "ph": [5.5, 7.0], "npk": {"n": 150, "p": 70, "k": 120}},
-    "wheat":     {"name": "小麦", "alias": ["小麦"], "type": "大田", "growing_days": 210,
-                  "soil_moisture": [50, 70], "air_temp": [10, 25], "ph": [6.0, 7.5], "npk": {"n": 120, "p": 50, "k": 100}},
-    "corn":      {"name": "玉米", "alias": ["玉米", "包谷"], "type": "大田", "growing_days": 120,
-                  "soil_moisture": [50, 75], "air_temp": [18, 30], "ph": [5.5, 7.0], "npk": {"n": 180, "p": 60, "k": 150}},
-    "soybean":   {"name": "大豆", "alias": ["大豆", "黄豆"], "type": "大田", "growing_days": 105,
-                  "soil_moisture": [50, 70], "air_temp": [18, 28], "ph": [6.0, 7.0], "npk": {"n": 60, "p": 50, "k": 80}},
-    "peanut":    {"name": "花生", "alias": ["花生"], "type": "油料", "growing_days": 135,
-                  "soil_moisture": [45, 65], "air_temp": [20, 30], "ph": [5.5, 7.0], "npk": {"n": 100, "p": 60, "k": 120}},
-}
-# 归一化查找表：别名/标准名/key → 标准名
-_CROP_LOOKUP = {}
-for _key, _meta in CROPS.items():
-    for _t in (_meta["name"], * _meta.get("alias", []), _key):
-        _CROP_LOOKUP.setdefault(_t, _meta["name"])
-
-
-def normalize_crop(text):
-    """Resolve user input to a canonical crop name from the catalog, or None."""
-    if not text:
-        return None
-    key = str(text).strip()
-    return _CROP_LOOKUP.get(key)
-
-# --- Plot ownership (multi-tenant isolation) ---------------------------------
-# Every plot belongs to exactly one account. A regular account (farmer/guest)
-# only ever sees its own plots; a manager ("管理员") sees every plot.
-# The three built-in demo plots are owned by the seeded admin account (id=1).
-BUILTIN_PLOT_OWNER_ID = 1
-# Plots that appear only via MQTT (never created through the API) have no owner
-# and are therefore invisible to non-managers until they are claimed.
-ORPHAN_PLOT_OWNER_ID = None
-
-
-def _current_user():
-    return current_user() or {}
-
-
-def _current_user_id():
-    return _current_user().get("user_id")
-
-
-def _is_manager():
-    return _current_user().get("role") == "manager"
-
-
-def _plot_owner(device_id):
-    """Resolve the owning user id for a plot (registry first, then DB, then built-in)."""
-    with registry_lock:
-        device = registry.get(device_id)
-    if device is not None and device.get("owner_user_id") is not None:
-        return device["owner_user_id"]
-    if device_id in PLOT_META:
-        return BUILTIN_PLOT_OWNER_ID
-    owner = _load_plot_owner(device_id)
-    if owner is not None:
-        return owner
-    return ORPHAN_PLOT_OWNER_ID
-
-
-def _accessible_device_ids():
-    """Ids the current user may see. Returns None when the user may see all."""
-    if _is_manager():
-        return None
-    uid = _current_user_id()
-    with registry_lock:
-        return {did for did, device in registry.items() if device.get("owner_user_id") == uid}
-
-
-def _can_access_plot(device_id):
-    """True when the current user owns the plot (or is a manager)."""
-    if _is_manager():
-        return True
-    return _plot_owner(device_id) == _current_user_id()
-
-
-def _plot_access_error(device_id):
-    """Uniform 403 payload for cross-tenant plot access attempts."""
-    return jsonify({"error": "plot_forbidden", "device_id": device_id,
-                    "message": "该地块不属于当前账户，仅管理员可访问全部地块"}), 403
-
-
-def _owner_label(owner_user_id):
-    if owner_user_id is None:
-        return "未分配"
-    if owner_user_id == BUILTIN_PLOT_OWNER_ID:
-        return "内置"
-    try:
-        user = get_user_by_id(owner_user_id)
-    except Exception:
-        return f"#{owner_user_id}"
-    if not user:
-        return f"#{owner_user_id}"
-    return user.get("display_name") or user.get("username") or f"#{owner_user_id}"
+# --- Plot metadata (label fallback for legacy devices) -----------------------
+# No built-in plots: every plot is user-created and deletable. Kept as an
+# (empty) fallback map so legacy code paths keep working.
+PLOT_META = {}
 
 # --- Day 16: sensor registry ------------------------------------------------
 # Each plot (device) owns a fixed set of virtual hardware (sensors). Sensors
@@ -334,83 +203,6 @@ def init_telemetry_db():
             )
             """
         )
-        # Multi-tenant migration: every plot belongs to an account. Existing rows
-        # pre-date ownership, so they are back-filled to the seeded admin account.
-        try:
-            conn.execute("ALTER TABLE custom_plots ADD COLUMN owner_user_id INTEGER")
-        except sqlite3.OperationalError:
-            pass  # column already exists
-        conn.execute(
-            "UPDATE custom_plots SET owner_user_id=? WHERE owner_user_id IS NULL",
-            (BUILTIN_PLOT_OWNER_ID,),
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_plots_owner ON custom_plots(owner_user_id)")
-        # AI farm steward (v15.8.0): per-account automation config + action log.
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS steward_config (
-                owner_user_id INTEGER PRIMARY KEY,
-                auto_pump_enabled INTEGER NOT NULL DEFAULT 0,
-                moisture_threshold_pct REAL NOT NULL DEFAULT 35.0,
-                pump_duration_min INTEGER NOT NULL DEFAULT 5,
-                auto_tickets_enabled INTEGER NOT NULL DEFAULT 1,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS steward_actions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_user_id INTEGER NOT NULL,
-                device_id TEXT NOT NULL,
-                action_type TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                detail TEXT,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_steward_actions_owner ON steward_actions(owner_user_id, created_at)")
-        # Adoption farm (v15.10.0): a user adopts a crop, the platform creates a
-        # dedicated plot owned by that account, and the record below tracks the
-        # "adoption certificate" (nickname / crop / date).
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS adoptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_user_id INTEGER NOT NULL,
-                device_id TEXT NOT NULL,
-                crop TEXT NOT NULL,
-                nickname TEXT,
-                adopted_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_adoptions_owner ON adoptions(owner_user_id)")
-        # v15.11.0: adoption gamification — time acceleration + harvest ledger.
-        for col, decl in (("time_scale", "INTEGER NOT NULL DEFAULT 1"),
-                          ("harvest_count", "INTEGER NOT NULL DEFAULT 0")):
-            cols = [r[1] for r in conn.execute("PRAGMA table_info(adoptions)").fetchall()]
-            if col not in cols:
-                conn.execute(f"ALTER TABLE adoptions ADD COLUMN {col} {decl}")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS harvests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_user_id INTEGER NOT NULL,
-                device_id TEXT NOT NULL,
-                crop TEXT NOT NULL,
-                nickname TEXT,
-                health_score REAL NOT NULL,
-                grade TEXT NOT NULL,
-                grade_label TEXT NOT NULL,
-                points INTEGER NOT NULL,
-                harvested_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_harvests_owner ON harvests(owner_user_id, harvested_at)")
         conn.commit()
     finally:
         conn.close()
@@ -546,47 +338,31 @@ init_telemetry_db()
 
 
 # --- Day 16: user-created plots (persistent "add plot" feature) -------------
-def _save_custom_plot(device_id, name, crop, owner_user_id=None):
-    """Persist a user-created plot (and its owning account) so it survives API restarts."""
+def _save_custom_plot(device_id, name, crop):
+    """Persist a user-created plot so it survives API restarts."""
     conn = _telemetry_connect()
     try:
         conn.execute(
-            "INSERT INTO custom_plots (device_id, name, crop, created_at, owner_user_id) VALUES (?,?,?,?,?) "
-            "ON CONFLICT(device_id) DO UPDATE SET name=excluded.name, crop=excluded.crop"
-            + (", owner_user_id=excluded.owner_user_id" if owner_user_id is not None else ""),
-            (device_id, name or device_id, crop or "", utc_now(), owner_user_id),
+            "INSERT INTO custom_plots (device_id, name, crop, created_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(device_id) DO UPDATE SET name=excluded.name, crop=excluded.crop",
+            (device_id, name or device_id, crop or "", utc_now()),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def _load_plot_owner(device_id):
-    """Read a plot's owner straight from SQLite (used when it is not in the registry)."""
-    conn = _telemetry_connect()
-    try:
-        row = conn.execute(
-            "SELECT owner_user_id FROM custom_plots WHERE device_id=?", (device_id,)
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return None
-    finally:
-        conn.close()
-    return row[0] if row and row[0] is not None else None
-
-
 def _load_custom_plots_into_registry():
     """Re-register persisted user plots after an API restart."""
     conn = _telemetry_connect()
     try:
-        rows = conn.execute("SELECT device_id, name, crop, owner_user_id FROM custom_plots").fetchall()
+        rows = conn.execute("SELECT device_id, name, crop FROM custom_plots").fetchall()
     finally:
         conn.close()
-    for device_id, name, crop, owner_user_id in rows:
+    for device_id, name, crop in rows:
         with registry_lock:
             if device_id in registry:
                 registry[device_id]["plot"] = {"name": name, "crop": crop or ""}
-                registry[device_id]["owner_user_id"] = owner_user_id
                 continue
             registry[device_id] = {
                 "device_id": device_id,
@@ -595,46 +371,8 @@ def _load_custom_plots_into_registry():
                 "pump": {"action": "stop", "running": False, "status": "standby",
                          "timestamp": None, "command_id": None},
                 "plot": {"name": name, "crop": crop or ""},
-                "owner_user_id": owner_user_id,
             }
-        LOGGER.info("restored custom plot %s (%s) owner=%s", device_id, name, owner_user_id)
-
-
-def _seed_builtin_plots_into_registry():
-    """Guarantee the three demo plots exist on every boot and belong to admin.
-
-    They used to live in the in-memory registry only, so an API restart dropped
-    them — and since the simulator discovers plots through GET /devices, they
-    could never come back (deadlock: not in the list → never simulated → never
-    re-registered). Seeding them here with an explicit owner also makes their
-    multi-tenant ownership unambiguous.
-    """
-    for device_id, meta in PLOT_META.items():
-        plot = {"name": meta["name"], "crop": meta["crop"],
-                "created_at": meta.get("created_at")}
-        with registry_lock:
-            existing = registry.get(device_id)
-            if existing is not None:
-                if existing.get("owner_user_id") is None:
-                    existing["owner_user_id"] = BUILTIN_PLOT_OWNER_ID
-                existing["plot"] = plot
-                continue
-            registry[device_id] = {
-                "device_id": device_id,
-                "telemetry": {},
-                "last_seen": None,
-                "pump": {"action": "stop", "running": False, "status": "standby",
-                         "timestamp": None, "command_id": None},
-                "plot": plot,
-                "owner_user_id": BUILTIN_PLOT_OWNER_ID,
-            }
-        for sensor_type in sorted(SENSOR_TYPES.keys()):
-            try:
-                create_sensor(device_id, sensor_type)
-            except ValueError:
-                pass  # already seeded
-        LOGGER.info("seeded builtin plot %s (%s) owner=%s", device_id, meta["name"],
-                    BUILTIN_PLOT_OWNER_ID)
+        LOGGER.info("restored custom plot %s (%s)", device_id, name)
 
 
 _load_custom_plots_into_registry()
@@ -1149,689 +887,18 @@ def system_status():
     })
 
 
-@app.get("/api/v1/crops")
-@require_auth()
-def crops_catalog():
-    """Canonical crop catalog (v15.7.0). Returns reference ranges that future
-    features (growing progress, crop-specific alerts, PK scoring) will use."""
-    items = []
-    for key, meta in CROPS.items():
-        items.append({
-            "key": key, "name": meta["name"], "type": meta["type"],
-            "growing_days": meta["growing_days"],
-            "soil_moisture": meta["soil_moisture"], "air_temp": meta["air_temp"],
-            "ph": meta["ph"], "npk": meta["npk"],
-        })
-    return jsonify({"items": items, "count": len(items)})
-
-
-# --- AI farm steward (v15.8.0) ----------------------------------------------
-# Per-account automation "butler": the user configures permissions (which
-# automations may run) and thresholds (moisture level that triggers a pump);
-# a deterministic rule engine executes the decision, and every action is
-# written to the steward_actions timeline ("08:32 自动开泵，因为湿度跌破 35%").
-# LLM is deliberately NOT in the hot decision path (slow/expensive/unstable);
-# it may be layered on later for explaining/ticketing in natural language.
-STEWARD_LOOP_SECONDS = 30
-STEWARD_TICKET_COOLDOWN_SECONDS = 1800  # per-plot ticket flood protection
-STEWARD_ACTION_COOLDOWN_SECONDS = 300   # per-plot per-action pump spam guard
-
-_steward_cooldown: dict[tuple, float] = {}
-_steward_pump_started_at: dict[str, float] = {}
-
-
-def _steward_default_config():
-    return {"owner_user_id": None, "auto_pump_enabled": False,
-            "moisture_threshold_pct": 35.0, "pump_duration_min": 5,
-            "auto_tickets_enabled": True}
-
-
-def _load_steward_config(owner_user_id):
-    conn = _telemetry_connect()
-    try:
-        row = conn.execute("SELECT * FROM steward_config WHERE owner_user_id=?",
-                           (owner_user_id,)).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        cfg = _steward_default_config()
-        cfg["owner_user_id"] = owner_user_id
-        return cfg
-    return {"owner_user_id": row[0], "auto_pump_enabled": bool(row[1]),
-            "moisture_threshold_pct": row[2], "pump_duration_min": row[3],
-            "auto_tickets_enabled": bool(row[4]), "updated_at": row[5]}
-
-
-def _save_steward_config(owner_user_id, auto_pump_enabled, moisture_threshold_pct,
-                         pump_duration_min, auto_tickets_enabled):
-    conn = _telemetry_connect()
-    try:
-        conn.execute(
-            """INSERT INTO steward_config (owner_user_id, auto_pump_enabled,
-               moisture_threshold_pct, pump_duration_min, auto_tickets_enabled, updated_at)
-               VALUES (?,?,?,?,?,?)
-               ON CONFLICT(owner_user_id) DO UPDATE SET
-                 auto_pump_enabled=excluded.auto_pump_enabled,
-                 moisture_threshold_pct=excluded.moisture_threshold_pct,
-                 pump_duration_min=excluded.pump_duration_min,
-                 auto_tickets_enabled=excluded.auto_tickets_enabled,
-                 updated_at=excluded.updated_at""",
-            (owner_user_id, 1 if auto_pump_enabled else 0, float(moisture_threshold_pct),
-             int(pump_duration_min), 1 if auto_tickets_enabled else 0, utc_now()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _insert_steward_action(owner_user_id, device_id, action_type, reason, detail=None):
-    conn = _telemetry_connect()
-    try:
-        conn.execute(
-            "INSERT INTO steward_actions (owner_user_id, device_id, action_type, reason, detail, created_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (owner_user_id, device_id, action_type, reason, detail, utc_now()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def _plot_moisture(device):
-    return (device.get("telemetry", {}).get("soil", {}).get("payload", {}) or {}).get("moisture_pct")
-
-
-def _plot_temperature(device):
-    return (device.get("telemetry", {}).get("climate", {}).get("payload", {}) or {}).get("air_temperature_c")
-
-
-@app.get("/api/v1/steward/config")
-@require_auth()
-def steward_config_get():
-    """The signed-in account's butler config (per-account: isolated by owner)."""
-    uid = _current_user_id()
-    return jsonify(_load_steward_config(uid))
-
-
-@app.put("/api/v1/steward/config")
-@require_auth("manage_rules")
-def steward_config_put():
-    """Save automation permissions + thresholds for the signed-in account."""
-    body = request.get_json(silent=True) or {}
-    if not isinstance(body, dict):
-        return jsonify({"error": "json_object_required"}), 400
-    if "auto_pump_enabled" in body and not isinstance(body["auto_pump_enabled"], bool):
-        return jsonify({"error": "auto_pump_enabled_must_be_boolean"}), 400
-    threshold = body.get("moisture_threshold_pct", 35.0)
-    try:
-        threshold = float(threshold)
-    except (TypeError, ValueError):
-        return jsonify({"error": "moisture_threshold_pct_must_be_number"}), 400
-    if not 10 <= threshold <= 90:
-        return jsonify({"error": "moisture_threshold_pct_out_of_range", "range": [10, 90]}), 400
-    try:
-        duration = int(body.get("pump_duration_min", 5))
-    except (TypeError, ValueError):
-        return jsonify({"error": "pump_duration_min_must_be_integer"}), 400
-    if not 1 <= duration <= 60:
-        return jsonify({"error": "pump_duration_min_out_of_range", "range": [1, 60]}), 400
-    if "auto_tickets_enabled" in body and not isinstance(body["auto_tickets_enabled"], bool):
-        return jsonify({"error": "auto_tickets_enabled_must_be_boolean"}), 400
-    uid = _current_user_id()
-    _save_steward_config(uid,
-                         body.get("auto_pump_enabled", False),
-                         threshold, duration,
-                         body.get("auto_tickets_enabled", True))
-    return jsonify(_load_steward_config(uid))
-
-
-@app.get("/api/v1/steward/actions")
-@require_auth()
-def steward_actions_get():
-    """Butler timeline, scoped to plots the signed-in account may see."""
-    try:
-        limit = min(max(int(request.args.get("limit", "50")), 1), 200)
-    except ValueError:
-        return jsonify({"error": "limit_must_be_integer"}), 400
-    allowed = _accessible_device_ids()
-    conn = _telemetry_connect()
-    try:
-        if allowed is None:
-            rows = conn.execute(
-                "SELECT owner_user_id, device_id, action_type, reason, detail, created_at "
-                "FROM steward_actions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-        else:
-            placeholders = ",".join("?" * len(allowed))
-            rows = conn.execute(
-                f"SELECT owner_user_id, device_id, action_type, reason, detail, created_at "
-                f"FROM steward_actions WHERE device_id IN ({placeholders}) ORDER BY id DESC LIMIT ?",
-                (*allowed, limit)).fetchall()
-    finally:
-        conn.close()
-    items = [{"owner_user_id": r[0], "device_id": r[1], "action_type": r[2],
-              "reason": r[3], "detail": r[4], "created_at": r[5]} for r in rows]
-    return jsonify({"items": items, "count": len(items)})
-
-
-def steward_loop():
-    """Deterministic rule engine: read per-account configs, act on live telemetry,
-    write every decision to the steward_actions timeline."""
-    while True:
-        time.sleep(STEWARD_LOOP_SECONDS)  # sleep first: module fully loads first
-        try:
-            with registry_lock:
-                devices = {did: dict(dev) for did, dev in registry.items()}
-            conn = _telemetry_connect()
-            try:
-                rows = conn.execute("SELECT owner_user_id, auto_pump_enabled, "
-                                    "moisture_threshold_pct, pump_duration_min, auto_tickets_enabled "
-                                    "FROM steward_config WHERE auto_pump_enabled=1 OR auto_tickets_enabled=1").fetchall()
-            finally:
-                conn.close()
-            now = time.time()
-            for owner, pump_on, threshold, duration, tickets_on in rows:
-                mine = [d for d in devices.values() if d.get("owner_user_id") == owner]
-                for device in mine:
-                    did = device.get("device_id")
-                    moisture = _plot_moisture(device)
-                    temperature = _plot_temperature(device)
-                    pump_state = (device.get("pump") or {})
-                    running = pump_state.get("running") or pump_state.get("status") == "pending"
-                    # 1) Automatic irrigation: moisture below threshold → start pump.
-                    if pump_on and isinstance(moisture, (int, float)):
-                        key = (owner, did, "pump_on")
-                        last = _steward_cooldown.get(key, 0.0)
-                        if moisture < threshold and not running and (now - last) > STEWARD_ACTION_COOLDOWN_SECONDS:
-                            command, error = _publish_pump_command(did, "start", source="steward")
-                            if error is None:
-                                _steward_cooldown[key] = now
-                                _steward_pump_started_at[did] = now
-                                _insert_steward_action(
-                                    owner, did, "pump_on",
-                                    f"检测到土壤湿度 {moisture:.1f}% 跌破阈值 {threshold:.0f}%，自动开启水泵 {duration} 分钟")
-                        # 2) Stop after the configured duration.
-                        elif running and did in _steward_pump_started_at:
-                            elapsed_min = (now - _steward_pump_started_at[did]) / 60.0
-                            if elapsed_min >= duration:
-                                _publish_pump_command(did, "stop", source="steward")
-                                _steward_pump_started_at.pop(did, None)
-                                _insert_steward_action(
-                                    owner, did, "pump_off",
-                                    f"自动灌溉完成（已运行 {duration} 分钟），关闭水泵")
-                    # 3) Pest/ticket heuristic: hot + humid for a while → advisory ticket.
-                    if tickets_on and isinstance(temperature, (int, float)) and isinstance(moisture, (int, float)):
-                        if temperature > 30 and moisture > 80:
-                            key = (owner, did, "ticket")
-                            if (now - _steward_cooldown.get(key, 0.0)) > STEWARD_TICKET_COOLDOWN_SECONDS:
-                                _steward_cooldown[key] = now
-                                detail = (f"温度 {temperature:.1f}°C、湿度 {moisture:.1f}% 持续偏高，"
-                                          "易诱发白粉病/霜霉病。建议：加强通风、降低密度、"
-                                          "傍晚喷施对症防治药剂，连续 3 天复查。")
-                                _insert_steward_action(owner, did, "ticket",
-                                                       "高温高湿预警：已生成病虫害防治工单", detail)
-        except Exception as exc:
-            LOGGER.warning("steward loop pass failed: %s", exc)
-
-
-Thread(target=steward_loop, name="steward-loop", daemon=True).start()
-
-
-# --- Adoption farm (v15.10.0) -----------------------------------------------
-def _create_owned_plot(device_id, name, crop, owner_user_id):
-    """Register a new plot in the registry/DB, seed its 5 sensors and wake the
-    simulator. Shared by plot creation and crop adoption."""
-    with registry_lock:
-        if device_id in registry:
-            return False
-        registry[device_id] = {"device_id": device_id, "telemetry": {}, "last_seen": None,
-                               "pump": {"action": "stop", "running": False, "status": "standby",
-                                        "timestamp": None, "command_id": None},
-                               "plot": {"name": name or device_id, "crop": crop or "",
-                                        "created_at": utc_now()},
-                               "owner_user_id": owner_user_id}
-    _save_custom_plot(device_id, name, crop, owner_user_id)
-    _deleted_plots.pop(device_id, None)
-    for sensor_type in sorted(SENSOR_TYPES.keys()):
-        try:
-            create_sensor(device_id, sensor_type)
-        except ValueError:
-            pass
-    try:
-        _publish_new_plot(device_id)
-    except Exception:
-        pass
-    LOGGER.info("created owned plot %s (%s / %s) owner=%s", device_id, name, crop, owner_user_id)
-    return True
-
-
-def _adoption_certificate(owner_user_id, device_id, crop, nickname):
-    return {"owner_user_id": owner_user_id, "device_id": device_id, "crop": crop,
-            "nickname": nickname, "adopted_at": utc_now()}
-
-
-@app.post("/api/v1/adoptions")
-@require_auth("manage_sensors")
-def adopt_crop():
-    """Adopt a crop from the catalog: the platform creates a dedicated plot
-    owned by the signed-in account and issues an adoption certificate."""
-    body = request.get_json(silent=True) or {}
-    crop = (body.get("crop") or "").strip()
-    nickname = (body.get("nickname") or "").strip()
-    canonical = normalize_crop(crop)
-    if canonical is None:
-        return jsonify({
-            "error": "crop_not_in_catalog",
-            "message": f"暂不支持认养「{crop}」，可选：{'、'.join(c['name'] for c in CROPS.values())}",
-            "available": [c["name"] for c in CROPS.values()],
-        }), 400
-    crop = canonical
-    if not nickname:
-        nickname = f"我的{crop}地"
-    device_id = f"adopt-{uuid4().hex[:8]}"
-    owner_user_id = _current_user_id()
-    _create_owned_plot(device_id, nickname, crop, owner_user_id)
-    conn = _telemetry_connect()
-    try:
-        conn.execute(
-            "INSERT INTO adoptions (owner_user_id, device_id, crop, nickname, adopted_at) VALUES (?,?,?,?,?)",
-            (owner_user_id, device_id, crop, nickname, utc_now()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    return jsonify(_adoption_certificate(owner_user_id, device_id, crop, nickname)), 201
-
-
-@app.get("/api/v1/adoptions")
-@require_auth()
-def list_adoptions():
-    """Adoption certificates for the signed-in account (manager: all)."""
-    uid = _current_user_id()
-    conn = _telemetry_connect()
-    try:
-        if _is_manager():
-            rows = conn.execute(
-                "SELECT owner_user_id, device_id, crop, nickname, adopted_at, time_scale, harvest_count "
-                "FROM adoptions ORDER BY id DESC LIMIT 200").fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT owner_user_id, device_id, crop, nickname, adopted_at, time_scale, harvest_count "
-                "FROM adoptions WHERE owner_user_id=? ORDER BY id DESC LIMIT 200", (uid,)).fetchall()
-    finally:
-        conn.close()
-    items = []
-    for r in rows:
-        row = {"owner_user_id": r[0], "device_id": r[1], "crop": r[2], "nickname": r[3],
-               "adopted_at": r[4], "time_scale": r[5] or 1, "harvest_count": r[6] or 0}
-        items.append(_adoption_certificate_full(row))
-    return jsonify({"items": items, "count": len(items)})
-
-
-@app.delete("/api/v1/adoptions/<device_id>")
-@require_auth("manage_sensors")
-def unadopt(device_id):
-    """Release an adoption: deletes the dedicated plot and its certificate."""
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
-    conn = _telemetry_connect()
-    try:
-        row = conn.execute("SELECT owner_user_id FROM adoptions WHERE device_id=?", (device_id,)).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        return jsonify({"error": "adoption_not_found", "device_id": device_id}), 404
-    # Mirror delete_plot_endpoint: drop registry entry, sensors, custom_plots row.
-    with registry_lock:
-        registry.pop(device_id, None)
-        _deleted_plots[device_id] = time.time()
-    conn = _telemetry_connect()
-    try:
-        conn.execute("DELETE FROM sensors WHERE device_id=?", (device_id,))
-        conn.execute("DELETE FROM custom_plots WHERE device_id=?", (device_id,))
-        conn.execute("DELETE FROM adoptions WHERE device_id=?", (device_id,))
-        conn.commit()
-    finally:
-        conn.close()
-    return jsonify({"deleted": device_id})
-
-
-# --- v15.11.0: adoption gamification -----------------------------------------
-# Time acceleration (1 minute = time_scale days), harvest + points, points
-# leaderboard, and the public one-code trace endpoint. Health scoring mirrors
-# the frontend report card (moisture 40 / temperature 30 / ph 20 / offline 10).
-_CROP_BASE_POINTS = {
-    "apple": 150, "pear": 150, "orange": 160, "grape": 140,
-    "strawberry": 120, "tomato": 100, "cucumber": 90, "chili": 100,
-    "eggplant": 100, "watermelon": 90, "bokchoy": 70, "spinach": 70,
-    "lettuce": 70, "rice": 140, "wheat": 150, "corn": 140, "soybean": 110,
-    "peanut": 110,
-}
-_GRADE_RULES = [
-    (80, "excellent", "优秀", 2.0),
-    (60, "good", "良好", 1.5),
-    (40, "pass", "及格", 1.0),
-    (0, "fail", "不及格", 0.5),
-]
-
-
-def _crop_base_points(crop):
-    # adoptions store the canonical Chinese name (e.g. "大豆"), while the
-    # points table is keyed by catalog key ("soybean") — resolve both.
-    for key, meta in CROPS.items():
-        if meta["name"] == crop or key == crop:
-            return _CROP_BASE_POINTS.get(key, 100)
-    return 100
-
-
-def _deviation_score(value, range_):
-    """Mirror frontend deviationScore(): 0 = centered, 1 = at/beyond boundary."""
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not range_ or range_[0] is None:
-        return None
-    mid = (range_[0] + range_[1]) / 2
-    half = max(0.0001, (range_[1] - range_[0]) / 2)
-    return min(1.0, abs(value - mid) / half)
-
-
-def _plot_health_score(device_id):
-    """Health score 0-100 for a device (same algorithm as the frontend report)."""
-    with registry_lock:
-        device = registry.get(device_id)
-    if device is None:
-        return None
-    plot = device.get("plot") or {}
-    crop_key = normalize_crop(plot.get("crop") or "")
-    crop = CROPS.get(crop_key)
-    if crop is None:
-        return None
-    soil = (device.get("telemetry", {}).get("soil", {}).get("payload", {}) or {})
-    climate = (device.get("telemetry", {}).get("climate", {}).get("payload", {}) or {})
-    deduct = 0.0
-    m = _deviation_score(soil.get("moisture_pct"), crop["soil_moisture"])
-    if m is not None:
-        deduct += 40 * m
-    t = _deviation_score(climate.get("air_temperature_c"), crop["air_temp"])
-    if t is not None:
-        deduct += 30 * t
-    p = _deviation_score(soil.get("ph"), crop["ph"])
-    if p is not None:
-        deduct += 20 * p
-    sensors = list_sensors_for_device(device_id)
-    if sensors:
-        offline = sum(1 for s in sensors if s.get("status") != "connected")
-        if offline:
-            deduct += 10 * (offline / len(sensors))
-    return max(0, round(100 - deduct))
-
-
-def _adoption_row(device_id):
-    conn = _telemetry_connect()
-    try:
-        row = conn.execute(
-            "SELECT owner_user_id, device_id, crop, nickname, adopted_at, time_scale, harvest_count "
-            "FROM adoptions WHERE device_id=?", (device_id,)).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        return None
-    return {"owner_user_id": row[0], "device_id": row[1], "crop": row[2], "nickname": row[3],
-            "adopted_at": row[4], "time_scale": row[5] or 1, "harvest_count": row[6] or 0}
-
-
-def _adoption_growth(row, now_ts=None):
-    """1 minute = 1 day at time_scale 1. Returns age/progress/maturity info."""
-    now_ts = now_ts if now_ts is not None else time.time()
-    try:
-        adopted_ts = datetime.fromisoformat(row["adopted_at"]).timestamp()
-    except (ValueError, TypeError):
-        adopted_ts = now_ts
-    elapsed_min = max(0.0, (now_ts - adopted_ts) / 60.0)
-    age_days = elapsed_min * (row["time_scale"] or 1)
-    growing = CROPS.get(row["crop"], {}).get("growing_days", 120)
-    pct = min(100.0, round(age_days / growing * 100, 1))
-    return {"age_days": round(age_days, 1), "pct": pct,
-            "remaining_days": round(max(0.0, growing - age_days), 1),
-            "mature": pct >= 100.0, "growing_days": growing,
-            "time_scale": row["time_scale"]}
-
-
-def _grade_for(score):
-    for low, key, label, mult in _GRADE_RULES:
-        if score >= low:
-            return {"grade": key, "label": label, "multiplier": mult}
-    return {"grade": "fail", "label": "不及格", "multiplier": 0.5}
-
-
-def _adoption_certificate_full(row):
-    return {"owner_user_id": row["owner_user_id"], "device_id": row["device_id"],
-            "crop": row["crop"], "nickname": row["nickname"], "adopted_at": row["adopted_at"],
-            "time_scale": row["time_scale"], "harvest_count": row["harvest_count"],
-            "growth": _adoption_growth(row)}
-
-
-@app.patch("/api/v1/adoptions/<device_id>")
-@require_auth("manage_sensors")
-def adoption_patch(device_id):
-    """Owner/manager adjusts the adoption time scale (1 minute = time_scale days)."""
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
-    row = _adoption_row(device_id)
-    if row is None:
-        return jsonify({"error": "adoption_not_found", "device_id": device_id}), 404
-    body = request.get_json(silent=True) or {}
-    scale = body.get("time_scale")
-    if scale is not None:
-        try:
-            scale = int(scale)
-        except (TypeError, ValueError):
-            return jsonify({"error": "time_scale_invalid"}), 400
-        if not (1 <= scale <= 60):
-            return jsonify({"error": "time_scale_out_of_range",
-                            "message": "倍率须在 1-60 之间"}), 400
-        conn = _telemetry_connect()
-        try:
-            conn.execute("UPDATE adoptions SET time_scale=? WHERE device_id=?", (scale, device_id))
-            conn.commit()
-        finally:
-            conn.close()
-        row["time_scale"] = scale
-    return jsonify(_adoption_certificate_full(row))
-
-
-@app.post("/api/v1/adoptions/<device_id>/harvest")
-@require_auth("manage_sensors")
-def harvest_adoption(device_id):
-    """Harvest a mature adopted crop: score -> grade -> points; replant afterwards."""
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
-    row = _adoption_row(device_id)
-    if row is None:
-        return jsonify({"error": "adoption_not_found", "device_id": device_id}), 404
-    growth = _adoption_growth(row)
-    if not growth["mature"]:
-        return jsonify({"error": "crop_not_mature",
-                        "message": f"作物尚未成熟（进度 {growth['pct']}%，还需约 {growth['remaining_days']} 天）"}), 409
-    score = _plot_health_score(device_id)
-    if score is None:
-        score = 50
-    grade = _grade_for(score)
-    points = max(1, round(_crop_base_points(row["crop"]) * grade["multiplier"]))
-    conn = _telemetry_connect()
-    try:
-        conn.execute(
-            "INSERT INTO harvests (owner_user_id, device_id, crop, nickname, health_score, "
-            "grade, grade_label, points, harvested_at) VALUES (?,?,?,?,?,?,?,?,?)",
-            (row["owner_user_id"], device_id, row["crop"], row["nickname"], score,
-             grade["grade"], grade["label"], points, utc_now()))
-        conn.execute("UPDATE adoptions SET harvest_count=harvest_count+1, adopted_at=? WHERE device_id=?",
-                     (utc_now(), device_id))
-        conn.commit()
-    finally:
-        conn.close()
-    return jsonify({"harvested": device_id, "crop": row["crop"], "nickname": row["nickname"],
-                    "health_score": score, "grade": grade, "points": points,
-                    "total_harvests": row["harvest_count"] + 1}), 201
-
-
-@app.get("/api/v1/adoptions/points")
-@require_auth()
-def adoption_points():
-    """The signed-in account's harvest points summary."""
-    uid = _current_user_id()
-    conn = _telemetry_connect()
-    try:
-        total = conn.execute(
-            "SELECT COALESCE(SUM(points),0), COUNT(*) FROM harvests WHERE owner_user_id=?",
-            (uid,)).fetchone()
-        by_crop = conn.execute(
-            "SELECT crop, COUNT(*), SUM(points), ROUND(AVG(health_score),1) FROM harvests "
-            "WHERE owner_user_id=? GROUP BY crop ORDER BY SUM(points) DESC", (uid,)).fetchall()
-    finally:
-        conn.close()
-    return jsonify({"total_points": total[0] or 0, "total_harvests": total[1] or 0,
-                    "by_crop": [{"crop": r[0], "harvests": r[1], "points": r[2] or 0,
-                                 "avg_health": r[3]} for r in by_crop]})
-
-
-def _farmer_display_names(user_ids):
-    """Map user ids → account name (display_name, else username) from users.db.
-
-    The leaderboard ranks FARMERS, so it must show the account holder's name,
-    not the nickname of whatever plot they happened to adopt.
-    """
-    ids = [u for u in (user_ids or []) if u is not None]
-    if not ids:
-        return {}
-    try:
-        uc = _users_connect()
-    except Exception:
-        return {}
-    try:
-        placeholders = ",".join("?" * len(ids))
-        rows = uc.execute(
-            f"SELECT id, username, display_name FROM users WHERE id IN ({placeholders})",
-            tuple(ids)).fetchall()
-    except Exception as exc:
-        LOGGER.warning("leaderboard: user-name lookup failed: %s", exc)
-        return {}
-    finally:
-        uc.close()
-    return {r[0]: (r[2] or r[1] or f"用户{r[0]}") for r in rows}
-
-
-@app.get("/api/v1/adoptions/leaderboard")
-@require_auth()
-def adoption_leaderboard():
-    """Farmer-only points leaderboard: a single ranking by total harvest points,
-    excluding any user whose role is 'manager' (so admin-collected points don't
-    pollute the public farmer standings)."""
-    manager_ids = set()
-    try:
-        uc = _users_connect()
-        manager_ids = {r[0] for r in uc.execute("SELECT id FROM users WHERE role='manager'").fetchall()}
-        uc.close()
-    except Exception as exc:
-        LOGGER.warning("leaderboard: manager-id lookup failed: %s", exc)
-    # Always exclude the built-in admin id too, even if users.db is unreachable.
-    manager_ids.add(BUILTIN_PLOT_OWNER_ID)
-    conn = _telemetry_connect()
-    try:
-        if manager_ids:
-            placeholders = ",".join("?" * len(manager_ids))
-            sql = (
-                f"SELECT owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
-                f"ROUND(AVG(health_score),1) AS avg_health FROM harvests "
-                f"WHERE owner_user_id NOT IN ({placeholders}) "
-                f"GROUP BY owner_user_id HAVING total > 0 ORDER BY total DESC LIMIT 100")
-            rows = conn.execute(sql, tuple(manager_ids)).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
-                "ROUND(AVG(health_score),1) AS avg_health FROM harvests "
-                "GROUP BY owner_user_id HAVING total > 0 ORDER BY total DESC LIMIT 100").fetchall()
-    finally:
-        conn.close()
-    names = _farmer_display_names([r[0] for r in rows])
-    # Show the ACCOUNT name (display_name → username), not the adopted plot's
-    # nickname: "老马" is a plot name, the farmer themselves is "123456".
-    entries = [{"owner_user_id": uid, "nickname": names.get(uid) or f"用户{uid}",
-                "points": total, "harvests": cnt, "avg_health": avg}
-               for uid, total, cnt, avg in rows]
-    return jsonify({"entries": entries, "scope": "farmers"})
-
-
-@app.get("/api/v1/trace/<device_id>")
-def trace_public(device_id):
-    """Public read-only one-code trace for an adopted plot (no auth required)."""
-    row = _adoption_row(device_id)
-    if row is None:
-        return jsonify({"error": "trace_not_found", "device_id": device_id}), 404
-    growth = _adoption_growth(row)
-    score = _plot_health_score(device_id)
-    grade = _grade_for(score) if score is not None else None
-    conn = _telemetry_connect()
-    try:
-        harvests = conn.execute(
-            "SELECT grade_label, points, health_score, harvested_at FROM harvests "
-            "WHERE device_id=? ORDER BY harvested_at DESC LIMIT 10", (device_id,)).fetchall()
-        actions = conn.execute(
-            "SELECT action_type, reason, created_at FROM steward_actions "
-            "WHERE device_id=? ORDER BY created_at DESC LIMIT 8", (device_id,)).fetchall()
-    finally:
-        conn.close()
-    return jsonify({
-        "crop": row["crop"], "nickname": row["nickname"], "adopted_at": row["adopted_at"],
-        "time_scale": row["time_scale"], "harvest_count": row["harvest_count"],
-        "growth": growth, "health_score": score, "grade": grade,
-        "harvests": [{"grade_label": h[0], "points": h[1], "health_score": h[2],
-                      "harvested_at": h[3]} for h in harvests],
-        "events": [{"action_type": a[0], "reason": a[1], "created_at": a[2]} for a in actions],
-    })
-
-
 @app.get("/api/v1/devices")
 @require_auth()
 def devices():
     with registry_lock:
         items = list(registry.values())
-    allowed = _accessible_device_ids()
-    if allowed is not None:
-        items = [device for device in items if device.get("device_id") in allowed]
     enriched = []
     for device in items:
-        device_id = device.get("device_id")
         item = dict(device)
-        plot = dict(device.get("plot") or PLOT_META.get(device_id, {}) or {})
-        # v15.9.0: expose planting time so the frontend can compute growing
-        # progress against the crop catalog's growing_days.
-        plot["created_at"] = _load_plot_created_at(device_id)
-        item["plot"] = plot
-        owner = device.get("owner_user_id")
-        if owner is None and device_id in PLOT_META:
-            owner = BUILTIN_PLOT_OWNER_ID
-        item["owner_user_id"] = owner
-        item["owner_label"] = _owner_label(owner)
-        item["sensors"] = list_sensors_for_device(device_id)
+        item["plot"] = device.get("plot") or PLOT_META.get(device.get("device_id"), {})
+        item["sensors"] = list_sensors_for_device(device.get("device_id"))
         enriched.append(item)
-    return jsonify({"items": enriched, "count": len(enriched),
-                    "scope": "all" if allowed is None else "own"})
-
-
-def _load_plot_created_at(device_id):
-    """Planting time from custom_plots; falls back to PLOT_META for built-ins."""
-    conn = _telemetry_connect()
-    try:
-        row = conn.execute("SELECT created_at FROM custom_plots WHERE device_id=?",
-                           (device_id,)).fetchone()
-    finally:
-        conn.close()
-    if row and row[0]:
-        return row[0]
-    meta = PLOT_META.get(device_id)
-    return (meta or {}).get("created_at")
+    return jsonify({"items": enriched, "count": len(enriched)})
 
 
 @app.post("/api/v1/devices")
@@ -1841,52 +908,25 @@ def register_device_endpoint():
     device_id = (body.get("device_id") or "").strip()
     name = (body.get("name") or "").strip()
     crop = (body.get("crop") or "").strip()
-    # Crop catalog enforcement (v15.7.0): crop must resolve to a catalog entry.
-    # Legacy plots (already stored) keep their original text; new plots must
-    # pick a canonical crop, so downstream features (growing progress, PK,
-    # crop-specific alerts) have a stable dimension to key on.
-    if crop:
-        canonical = normalize_crop(crop)
-        if canonical is None:
-            return jsonify({
-                "error": "crop_not_in_catalog",
-                "message": f"暂不支持种植「{crop}」，可选：{'、'.join(c['name'] for c in CROPS.values())}",
-                "available": [c["name"] for c in CROPS.values()],
-            }), 400
-        crop = canonical
     if not device_id:
         # Web UI creates plots without choosing an id; generate one for them.
         device_id = f"sim-plot-{uuid4().hex[:8]}"
-    # Ownership: the creator owns the plot. Managers may create a plot on behalf
-    # of another account by passing owner_user_id explicitly.
-    owner_user_id = _current_user_id()
-    if _is_manager() and isinstance(body.get("owner_user_id"), int):
-        owner_user_id = body["owner_user_id"]
-    if device_id in PLOT_META:
-        owner_user_id = BUILTIN_PLOT_OWNER_ID
-    if not _is_manager() and owner_user_id != BUILTIN_PLOT_OWNER_ID and _plot_owner(device_id) not in (None, owner_user_id):
-        return _plot_access_error(device_id)
     with registry_lock:
         if device_id in registry:
-            if not _is_manager() and registry[device_id].get("owner_user_id") not in (owner_user_id, None):
-                return _plot_access_error(device_id)
-            registry[device_id]["owner_user_id"] = registry[device_id].get("owner_user_id") or owner_user_id
             if name or crop:
-                _save_custom_plot(device_id, name, crop, registry[device_id]["owner_user_id"])
+                _save_custom_plot(device_id, name, crop)
                 registry[device_id]["plot"] = {
                     "name": name or (registry[device_id].get("plot") or {}).get("name") or device_id,
                     "crop": crop or (registry[device_id].get("plot") or {}).get("crop") or "",
                 }
             return jsonify({"device_id": device_id, "status": "exists",
-                            "owner_user_id": registry[device_id]["owner_user_id"],
                             "plot": registry[device_id].get("plot", {})}), 200
         registry[device_id] = {"device_id": device_id, "telemetry": {}, "last_seen": None,
                                "pump": {"action": "stop", "running": False, "status": "standby",
                                         "timestamp": None, "command_id": None},
-                               "plot": {"name": name or device_id, "crop": crop or ""},
-                               "owner_user_id": owner_user_id}
+                               "plot": {"name": name or device_id, "crop": crop or ""}}
     if name or crop:
-        _save_custom_plot(device_id, name, crop, owner_user_id)
+        _save_custom_plot(device_id, name, crop)
     _deleted_plots.pop(device_id, None)  # re-created → clear tombstone
     # Seed the 5 default sensor types so the new plot is immediately usable.
     for sensor_type in sorted(SENSOR_TYPES.keys()):
@@ -1901,15 +941,13 @@ def register_device_endpoint():
         _publish_new_plot(device_id)
     except Exception:
         pass
-    return jsonify({"device_id": device_id, "status": "registered", "owner_user_id": owner_user_id,
+    return jsonify({"device_id": device_id, "status": "registered",
                     "plot": {"name": name or device_id, "crop": crop or ""}}), 201
 
 
 @app.post("/api/v1/devices/<device_id>/sensors")
 @require_auth("manage_sensors")
 def create_sensor_endpoint(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     body = request.get_json(silent=True) or {}
     sensor_type = (body.get("type") or "").strip()
     if not sensor_type:
@@ -1935,11 +973,6 @@ def create_sensor_endpoint(device_id):
 @app.patch("/api/v1/sensors/<sensor_id>")
 @require_auth("manage_sensors")
 def patch_sensor_endpoint(sensor_id):
-    sensor = get_sensor(sensor_id)
-    if sensor is None:
-        return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
-    if not _can_access_plot(sensor["device_id"]):
-        return _plot_access_error(sensor["device_id"])
     body = request.get_json(silent=True) or {}
     if "status" in body:
         try:
@@ -1947,7 +980,7 @@ def patch_sensor_endpoint(sensor_id):
         except ValueError:
             return jsonify({"error": "invalid_status",
                             "allowed": [SENSOR_STATUS_CONNECTED, SENSOR_STATUS_DISCONNECTED]}), 400
-        sensor = get_sensor(sensor_id)
+    sensor = get_sensor(sensor_id)
     if sensor is None:
         return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
     return jsonify(sensor)
@@ -1959,8 +992,6 @@ def delete_sensor_endpoint(sensor_id):
     sensor = get_sensor(sensor_id)
     if sensor is None:
         return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
-    if not _can_access_plot(sensor["device_id"]):
-        return _plot_access_error(sensor["device_id"])
     delete_sensor(sensor_id)
     return jsonify({"deleted": sensor_id, "device_id": sensor["device_id"], "type": sensor["type"]})
 
@@ -1969,15 +1000,9 @@ def delete_sensor_endpoint(sensor_id):
 @require_auth("manage_sensors")
 def delete_plot_endpoint(device_id):
     """Delete a user-created plot: removes registry entry, all its sensors and
-    the persisted custom_plots row. Built-in plots (PLOT_META) are protected so
-    the demo baseline always exists. A tombstone is left so telemetry still
+    the persisted custom_plots row. A tombstone is left so telemetry still
     sent by the simulator before its next discovery cycle is dropped instead of
     implicitly re-registering the plot (registry.setdefault in the MQTT path)."""
-    if device_id in PLOT_META:
-        return jsonify({"error": "builtin_plot_cannot_be_deleted",
-                        "message": "内置地块（苹果园/梨园/橘园）不可删除，仅可删除自定义地块"}), 403
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     with registry_lock:
         existed = device_id in registry
         registry.pop(device_id, None)
@@ -2004,10 +1029,8 @@ def delete_plot_endpoint(device_id):
 @require_auth()
 def list_sensors_endpoint(device_id):
     """Convenience read endpoint; /devices already embeds the sensor list per device."""
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
-    items = list_sensors_for_device(device_id)
-    return jsonify({"device_id": device_id, "items": items, "count": len(items)})
+    return jsonify({"device_id": device_id, "items": list_sensors_for_device(device_id),
+                    "count": len(list_sensors_for_device(device_id))})
 
 
 @app.get("/api/v1/system/mqtt-broker-presets")
@@ -2110,8 +1133,6 @@ def put_mqtt_broker_endpoint():
 @app.get("/api/v1/devices/<device_id>/telemetry/latest")
 @require_auth()
 def latest_telemetry(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     with registry_lock:
         device = registry.get(device_id)
         if device is None:
@@ -2122,16 +1143,12 @@ def latest_telemetry(device_id):
 @app.get("/api/v1/devices/<device_id>/pump")
 @require_auth()
 def pump_status(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     return jsonify(_pump_snapshot(device_id))
 
 
 @app.get("/api/v1/devices/<device_id>/telemetry/history")
 @require_auth()
 def telemetry_history(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     try:
         hours = min(max(float(request.args.get("hours", "10")), 0.25), 24)
     except ValueError:
@@ -2160,8 +1177,6 @@ def telemetry_history(device_id):
 @app.get("/api/v1/devices/<device_id>/alerts")
 @require_auth()
 def device_alerts(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     with registry_lock:
         device = registry.get(device_id)
         if device is None:
@@ -2185,9 +1200,6 @@ def alerts_logs():
     Optional filters: ?device_id= & ?level= & ?limit= (default 50, max 500)."""
     device_id = request.args.get("device_id") or None
     level = request.args.get("level") or None
-    allowed = _accessible_device_ids()
-    if device_id is not None and allowed is not None and device_id not in allowed:
-        return _plot_access_error(device_id)
     try:
         limit = min(max(int(request.args.get("limit", "50")), 1), 500)
     except ValueError:
@@ -2197,16 +1209,12 @@ def alerts_logs():
     except Exception as exc:
         LOGGER.warning("alert log read failed: %s", exc)
         return jsonify({"error": "alert_log_unavailable", "message": str(exc)}), 503
-    if allowed is not None:
-        items = [item for item in items if item.get("device_id") in allowed]
     return jsonify({"items": items, "count": len(items), "filters": {"device_id": device_id, "level": level}})
 
 
 @app.post("/api/v1/devices/<device_id>/pump")
 @require_auth("control_pump")
 def pump(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     action = (request.get_json(silent=True) or {}).get("action")
     if action not in {"start", "stop"}:
         return jsonify({"error": "action_must_be_start_or_stop"}), 400
@@ -2229,16 +1237,12 @@ def _get_irrigation_rule(device_id):
 @app.get("/api/v1/devices/<device_id>/irrigation-rules")
 @require_auth()
 def get_irrigation_rule(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     return jsonify(_get_irrigation_rule(device_id))
 
 
 @app.put("/api/v1/devices/<device_id>/irrigation-rules")
 @require_auth("manage_rules")
 def put_irrigation_rule(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify({"error": "json_object_required"}), 400
@@ -2274,8 +1278,6 @@ def put_irrigation_rule(device_id):
 @app.get("/api/v1/devices/<device_id>/irrigation-events")
 @require_auth()
 def irrigation_event_history(device_id):
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     try:
         limit = min(max(int(request.args.get("limit", "20")), 1), 200)
     except ValueError:
@@ -2425,12 +1427,3 @@ def image_thumbnail(image_id):
     if record is None:
         return jsonify({"error": "image_not_found", "image_id": image_id}), 404
     return send_file(UPLOAD_DIR / f"{image_id}_thumb.jpg", mimetype="image/jpeg", max_age=3600)
-
-
-# ---------------------------------------------------------------------------
-# Boot-time seeding of the three built-in demo plots.
-# Must run last: it depends on helpers defined throughout this module
-# (create_sensor, utc_now, …) which are only bound by the time the file has
-# finished executing.
-# ---------------------------------------------------------------------------
-_seed_builtin_plots_into_registry()
