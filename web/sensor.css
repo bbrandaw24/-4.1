@@ -400,3 +400,40 @@
 }
 .f3d-legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink); padding: 3px 0; }
 .f3d-legend-row .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+/* v16.7.1: theme.css 的 KPI 指标卡网格（grid-template-areas badge/value/spark/meter/label
+   + .metric > span:not(.ag-spark) 全部塞进 "label" 区）会全局命中报告页
+   .report-metrics .metric，metric-value/metric-range 被 metric-name 药丸叠压，
+   表现为“实时指标 vs 适宜区间”卡片空白只剩药丸。此处按结构反覆盖，
+   仅作用于报告页指标卡，不影响总览页 KPI 卡。 */
+.report-metrics .metric {
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 14px 16px !important;
+  grid-template-areas: none !important;
+  grid-template-columns: none !important;
+}
+.report-metrics .metric > span:not(.ag-spark) {
+  grid-area: auto !important;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+.report-metrics .metric .metric-value {
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  color: var(--ink) !important;
+}
+.report-metrics .metric .metric-value.ok { color: var(--green) !important; }
+.report-metrics .metric .metric-value.warn { color: #c05621 !important; }
+.report-metrics .metric .metric-range { font-size: 10.5px !important; color: var(--muted) !important; }
+.report-metrics .metric .metric-name {
+  font-size: 11px !important;
+  color: var(--muted) !important;
+  background: rgba(127, 127, 127, 0.12) !important;
+  padding: 3px 10px !important;
+  border-radius: 999px !important;
+}
