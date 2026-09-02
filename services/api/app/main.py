@@ -1510,7 +1510,12 @@ _GRADE_RULES = [
 
 
 def _crop_base_points(crop):
-    return _CROP_BASE_POINTS.get(crop, 100)
+    # adoptions store the canonical Chinese name (e.g. "大豆"), while the
+    # points table is keyed by catalog key ("soybean") — resolve both.
+    for key, meta in CROPS.items():
+        if meta["name"] == crop or key == crop:
+            return _CROP_BASE_POINTS.get(key, 100)
+    return 100
 
 
 def _deviation_score(value, range_):
