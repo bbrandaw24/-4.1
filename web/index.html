@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="auth.css?v=v15.3.1">
   <link rel="stylesheet" href="agent.css">
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
-  <link rel="stylesheet" href="sensor.css?v=v16.7.1">
+  <link rel="stylesheet" href="sensor.css?v=v16.8">
   <link rel="stylesheet" href="day13.css">
   <link rel="stylesheet" href="theme.css?v=v15.15.0">
 </head>
@@ -294,6 +294,34 @@
           <div class="report-rank" id="report-rank"></div>
         </div>
         <p class="sensor-hint" id="report-hint"></p>
+        <div class="market-wrap" id="market-wrap">
+          <div class="market-head">
+            <div class="market-title"><p class="eyebrow">MARKET &amp; WAREHOUSE</p><h3>🌾 市场仓库</h3></div>
+            <div class="market-live">
+              <span class="market-live-label">当前倍率</span>
+              <strong class="market-rate" id="market-rate">--</strong>
+              <small class="market-updated" id="market-updated">每 30 秒刷新</small>
+            </div>
+          </div>
+          <div class="market-meta">
+            <div class="market-balance">我的积分 <b id="market-balance">--</b></div>
+            <p class="market-hint" id="market-hint">收获进入仓库不直接兑换积分：按「基础价格 × 实时倍率」出售赚积分，也可按当下倍率用积分买入作物囤货，等待高价再卖。</p>
+          </div>
+          <div class="market-grid">
+            <div class="market-chart-card">
+              <h4>倍率走势 <span class="market-range-note">0.5 ~ 4.0 · 正态分布</span></h4>
+              <canvas id="market-chart" height="132"></canvas>
+            </div>
+            <div class="market-prices-card">
+              <h4>基础价格公示 <span class="market-range-note" id="market-update-time"></span></h4>
+              <div class="market-price-tbody" id="market-price-tbody"></div>
+            </div>
+          </div>
+          <div class="market-stock-card">
+            <h4>我的仓库 <span class="market-range-note" id="market-stock-tip"></span></h4>
+            <div class="market-stock" id="market-stock"></div>
+          </div>
+        </div>
       </article>
     </section>
 
