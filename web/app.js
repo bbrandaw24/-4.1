@@ -3863,637 +3863,454 @@ function bindAdoptActions() {
 // adopted plots get a violet halo ring. Click a crop to inspect real data.
 
 let farm3d = {
-
   scene: null, camera: null, renderer: null, controls: null, built: false,
-
   crops: new Map(), devices: [], raycaster: null, mouse: null, animId: 0,
-
+  stars: null, hoverId: null, rotateCamera: null,
 };
 
-
-
 function farm3dColor(score) {
-
-  return score >= 80 ? 0x22c55e : score >= 60 ? 0xa3e635 : score >= 40 ? 0xfacc15 : 0xfb923c;
-
+  if (score >= 80) return 0x2fbf5f;   // 优秀 · 深绿
+  if (score >= 60) return 0x8ed44a;   // 良好 · 黄绿
+  if (score >= 40) return 0xe0b83a;   // 及格 · 金黄
+  return 0xd9733a;                    // 不及格 · 橙褐
 }
-
-
 
 function farm3dProgress(device) {
-
   const ad = adoptions.find((a) => a.device_id === device.device_id);
-
   if (ad && ad.growth && ad.growth.pct != null) return ad.growth.pct;
-
   return plotProgress(device).pct ?? 0;
-
 }
 
-
-
 function initFarm3D() {
-
   if (farm3d.built) return true;
-
   const stage = $("#farm3d-stage");
-
   if (!stage) return false;
-
   if (!window.THREE) {
-
-    $("#farm3d-hint").textContent = "3D 引擎（Three.js CDN）加载失败，请检查网络后刷新页面重试。";
-
+    const hint = $("#farm3d-hint");
+    if (hint) hint.textContent = "3D 引擎（Three.js CDN）加载失败，请检查网络后刷新页面重试。";
     return false;
-
   }
-
   const width = Math.max(320, stage.clientWidth || 680);
-
   const height = Math.max(300, stage.clientHeight || 470);
 
   const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x070c1a);
+  scene.fog = new THREE.Fog(0x070c1a, 15, 38);
 
-  scene.background = new THREE.Color(0x0b1020);
+  const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 120);
+  camera.position.set(7.5, 6.4, 10.5);
+  camera.lookAt(0, 1.0, 0);
 
-  scene.fog = new THREE.Fog(0x0b1020, 13, 28);
-
-  const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-
-  camera.position.set(7, 5.5, 9.5);
-
-  camera.lookAt(0, 1.2, 0);
-
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setSize(width, height);
-
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-
   renderer.shadowMap.enabled = true;
-
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
+  if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
+  if (THREE.ACESFilmicToneMapping) {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+  }
   stage.appendChild(renderer.domElement);
 
-  scene.add(new THREE.AmbientLight(0x8899bb, 0.7));
+  // --- lighting: soft hemisphere + warm key (soft shadows) + cyan rim -----
+  scene.add(new THREE.HemisphereLight(0x9ad8ff, 0x0a1220, 0.62));
+  const key = new THREE.DirectionalLight(0xfff1d6, 1.2);
+  key.position.set(6, 12, 5);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 42;
+  key.shadow.camera.left = -14;
+  key.shadow.camera.right = 14;
+  key.shadow.camera.top = 14;
+  key.shadow.camera.bottom = -14;
+  key.shadow.bias = -0.0007;
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0x22d3ee, 0.45);
+  rim.position.set(-8, 4.5, -6);
+  scene.add(rim);
+  const glow = new THREE.PointLight(0x0ea5e9, 0.5, 28);
+  glow.position.set(0, 6.5, 0);
+  scene.add(glow);
 
-  const dir = new THREE.DirectionalLight(0xffffff, 0.95);
+  // --- ground platform + glowing grid + core ring -------------------------
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(14, 72),
+    new THREE.MeshStandardMaterial({ color: 0x0c1424, roughness: 0.96, metalness: 0.06 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
 
-  dir.position.set(5, 9, 4);
-
-  dir.castShadow = true;
-
-  dir.shadow.mapSize.set(1024, 1024);
-
-  scene.add(dir);
-
-  const fill = new THREE.PointLight(0x22d3ee, 0.55, 22);
-
-  fill.position.set(-5, 3.5, -4);
-
-  scene.add(fill);
-
-  const grid = new THREE.GridHelper(16, 16, 0x1e3a5f, 0x152a4a);
-
-  grid.position.y = -0.02;
-
+  const grid = new THREE.GridHelper(22, 22, 0x1d4266, 0x12283f);
+  grid.position.y = 0.012;
+  if (grid.material) { grid.material.transparent = true; grid.material.opacity = 0.5; }
   scene.add(grid);
 
-  // Self-made orbit controls (cdnjs r128 ships no OrbitControls file):
+  const coreRing = new THREE.Mesh(
+    new THREE.RingGeometry(5.0, 5.16, 120),
+    new THREE.MeshBasicMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+  );
+  coreRing.rotation.x = -Math.PI / 2;
+  coreRing.position.y = 0.02;
+  scene.add(coreRing);
 
-  // drag to rotate, wheel to zoom, slow auto-rotation when idle.
-
-  const target = new THREE.Vector3(0, 1.2, 0);
-
-  farm3d.controls = { autoRotate: true };
-
-  let dragState = null;
-
-  function rotateCamera(dyaw, dpitch) {
-
-    const pos = farm3d.camera.position.clone().sub(target);
-
-    const d = Math.max(0.5, pos.length());
-
-    const yaw = Math.atan2(pos.x, pos.z) + dyaw;
-
-    let pitch = Math.asin(pos.y / d) + dpitch;
-
-    pitch = Math.max(0.15, Math.min(Math.PI / 2.05, pitch));
-
-    farm3d.camera.position.set(
-
-      Math.sin(yaw) * Math.cos(pitch) * d,
-
-      Math.sin(pitch) * d,
-
-      Math.cos(yaw) * Math.cos(pitch) * d
-
-    );
-
-    farm3d.camera.position.add(target);
-
-    farm3d.camera.lookAt(target);
-
+  // --- starfield backdrop -------------------------------------------------
+  const starCount = 460;
+  const positions = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const r = 24 + Math.random() * 18;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.random() * Math.PI * 0.42;
+    positions[i * 3] = Math.cos(th) * Math.cos(ph) * r;
+    positions[i * 3 + 1] = Math.sin(ph) * r * 0.75 + 1.5;
+    positions[i * 3 + 2] = Math.sin(th) * Math.cos(ph) * r;
   }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+    color: 0x7dd3fc, size: 0.1, transparent: true, opacity: 0.5, sizeAttenuation: true,
+  }));
+  scene.add(stars);
+  farm3d.stars = stars;
 
-  farm3d.rotateCamera = rotateCamera;
-
-  renderer.domElement.addEventListener("pointerdown", (e) => {
-
-    dragState = { x: e.clientX, y: e.clientY };
-
-    farm3d.controls.autoRotate = false;
-
-  });
-
-  window.addEventListener("pointermove", (e) => {
-
-    if (!dragState || !farm3d.built) return;
-
-    const dx = e.clientX - dragState.x;
-
-    const dy = e.clientY - dragState.y;
-
-    dragState = { x: e.clientX, y: e.clientY };
-
-    rotateCamera(dx * 0.005, dy * 0.005);
-
-  });
-
-  window.addEventListener("pointerup", () => { dragState = null; });
-
-  renderer.domElement.addEventListener("wheel", (e) => {
-
-    e.preventDefault();
-
-    const dir = new THREE.Vector3().subVectors(farm3d.camera.position, target).normalize();
-
-    const factor = 1 + e.deltaY * 0.0012;
-
-    const d = Math.min(18, Math.max(3.5, farm3d.camera.position.distanceTo(target) * factor));
-
-    farm3d.camera.position.copy(target).add(dir.multiplyScalar(d));
-
+  // --- self-made orbit controls: drag to rotate, wheel to zoom ------------
+  const target = new THREE.Vector3(0, 1.0, 0);
+  farm3d.controls = { autoRotate: true };
+  let dragState = null;
+  function rotateCamera(dyaw, dpitch) {
+    const pos = farm3d.camera.position.clone().sub(target);
+    const d = Math.max(0.5, pos.length());
+    const yaw = Math.atan2(pos.x, pos.z) + dyaw;
+    let pitch = Math.asin(pos.y / d) + dpitch;
+    pitch = Math.max(0.16, Math.min(Math.PI / 2.1, pitch));
+    farm3d.camera.position.set(
+      Math.sin(yaw) * Math.cos(pitch) * d,
+      Math.sin(pitch) * d,
+      Math.cos(yaw) * Math.cos(pitch) * d
+    );
+    farm3d.camera.position.add(target);
     farm3d.camera.lookAt(target);
-
-  }, { passive: false });
-
-  farm3d.scene = scene;
-
-  farm3d.camera = camera;
-
-  farm3d.renderer = renderer;
-
-  farm3d.raycaster = new THREE.Raycaster();
-
-  farm3d.mouse = new THREE.Vector2();
-
-  const loading = $("#farm3d-loading");
-
-  if (loading) loading.remove();
-
+  }
+  farm3d.rotateCamera = rotateCamera;
+  renderer.domElement.style.cursor = "grab";
   renderer.domElement.addEventListener("pointerdown", (e) => {
-
-    const rect = renderer.domElement.getBoundingClientRect();
-
-    farm3d.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-
-    farm3d.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
+    dragState = { x: e.clientX, y: e.clientY };
+    farm3d.controls.autoRotate = false;
+    renderer.domElement.style.cursor = "grabbing";
   });
-
+  window.addEventListener("pointermove", (e) => {
+    if (!farm3d.built) return;
+    if (dragState) {
+      const dx = e.clientX - dragState.x;
+      const dy = e.clientY - dragState.y;
+      dragState = { x: e.clientX, y: e.clientY };
+      rotateCamera(dx * 0.005, dy * 0.005);
+      return;
+    }
+    updateFarm3DHover(e, renderer.domElement);
+  });
+  window.addEventListener("pointerup", () => {
+    dragState = null;
+    if (renderer.domElement) renderer.domElement.style.cursor = "grab";
+  });
+  renderer.domElement.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const dir = new THREE.Vector3().subVectors(farm3d.camera.position, target).normalize();
+    const factor = 1 + e.deltaY * 0.0012;
+    const d = Math.min(22, Math.max(4, farm3d.camera.position.distanceTo(target) * factor));
+    farm3d.camera.position.copy(target).add(dir.multiplyScalar(d));
+    farm3d.camera.lookAt(target);
+  }, { passive: false });
   renderer.domElement.addEventListener("pointerup", onFarm3DClick);
 
+  farm3d.scene = scene;
+  farm3d.camera = camera;
+  farm3d.renderer = renderer;
+  farm3d.raycaster = new THREE.Raycaster();
+  farm3d.mouse = new THREE.Vector2();
   window.addEventListener("resize", resizeFarm3D);
-
+  const loading = $("#farm3d-loading");
+  if (loading) loading.remove();
   farm3d.built = true;
-
   animateFarm3D();
-
   return true;
-
 }
 
-
+function updateFarm3DHover(e, el) {
+  if (!farm3d.raycaster || !farm3d.camera) return;
+  const rect = el.getBoundingClientRect();
+  farm3d.mouse.set(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  farm3d.raycaster.setFromCamera(farm3d.mouse, farm3d.camera);
+  const hits = farm3d.raycaster.intersectObjects(Array.from(farm3d.crops.values()), true);
+  let id = null;
+  if (hits.length) {
+    let obj = hits[0].object;
+    while (obj && !(obj.userData && obj.userData.device)) obj = obj.parent;
+    if (obj && obj.userData.device) id = obj.userData.device.device_id;
+  }
+  if (id === farm3d.hoverId) return;
+  farm3d.hoverId = id;
+  farm3d.crops.forEach((group, gid) => {
+    const u = group.userData || {};
+    const on = gid === id;
+    (u.leafMats || []).forEach((m) => { m.emissiveIntensity = on ? 0.45 : 0.12; });
+    if (u.halo) u.halo.material.opacity = on ? 0.85 : 0.4;
+  });
+  el.style.cursor = id ? "pointer" : "grab";
+}
 
 function resizeFarm3D() {
-
   if (!farm3d.built) return;
-
   const stage = $("#farm3d-stage");
-
   if (!stage) return;
-
   const w = Math.max(320, stage.clientWidth || 680);
-
   const h = Math.max(300, stage.clientHeight || 470);
-
   farm3d.camera.aspect = w / h;
-
   farm3d.camera.updateProjectionMatrix();
-
   farm3d.renderer.setSize(w, h);
-
 }
-
-
 
 function animateFarm3D() {
-
   if (!farm3d.built) return;
-
   farm3d.animId = requestAnimationFrame(animateFarm3D);
-
   if (farm3d.controls && farm3d.controls.autoRotate && typeof farm3d.rotateCamera === "function") {
-
-    farm3d.rotateCamera(0.0035, 0);
-
+    farm3d.rotateCamera(0.0028, 0);
   }
-
+  if (farm3d.stars) farm3d.stars.rotation.y += 0.00025;
   farm3d.renderer.render(farm3d.scene, farm3d.camera);
-
 }
 
-
-
+// One plot = a raised bed carrying a 3x3 grid of plants. Growth progress sets
+// plant height/leaf size, health score sets leaf colour, maturity reveals fruit.
 function makeCropMesh(device, index, total) {
-
   const group = new THREE.Group();
-
   const health = plotHealth(device);
-
   const score = health.score ?? 50;
-
   const pct = farm3dProgress(device);
-
   const crop = reportCrops[(device.plot || {}).crop];
-
   const cropName = (crop && crop.name) || (device.plot || {}).crop || "作物";
-
   const color = farm3dColor(score);
 
-  // soil mound
-
-  const mound = new THREE.Mesh(
-
-    new THREE.CylinderGeometry(0.55, 0.7, 0.18, 16),
-
-    new THREE.MeshStandardMaterial({ color: 0x3b2f1f, roughness: 1 })
-
+  const bedW = 1.28;
+  const bed = new THREE.Mesh(
+    new THREE.BoxGeometry(bedW, 0.14, bedW),
+    new THREE.MeshStandardMaterial({ color: 0x241d15, roughness: 1 })
   );
+  bed.position.y = 0.07;
+  bed.castShadow = true;
+  bed.receiveShadow = true;
+  group.add(bed);
 
-  mound.position.y = 0.09;
-
-  mound.receiveShadow = true;
-
-  group.add(mound);
-
-  // stem height scaled by progress
-
-  const stemH = Math.max(0.25, 0.3 + (pct / 100) * 1.5);
-
-  const stem = new THREE.Mesh(
-
-    new THREE.CylinderGeometry(0.055, 0.09, stemH, 8),
-
-    new THREE.MeshStandardMaterial({ color: 0x3f7d3a, roughness: 0.75 })
-
+  const soil = new THREE.Mesh(
+    new THREE.BoxGeometry(bedW * 0.94, 0.05, bedW * 0.94),
+    new THREE.MeshStandardMaterial({ color: 0x3a2d1c, roughness: 1 })
   );
+  soil.position.y = 0.155;
+  soil.receiveShadow = true;
+  group.add(soil);
 
-  stem.position.y = 0.18 + stemH / 2;
+  const plants = new THREE.Group();
+  const stems = [];
+  const leafMats = [];
+  const fruits = [];
+  const rows = 3;
+  const spacing = 0.36;
+  for (let ix = 0; ix < rows; ix++) {
+    for (let iz = 0; iz < rows; iz++) {
+      const seed = (ix * 7 + iz * 13) % 9;
+      const plant = new THREE.Group();
 
-  stem.castShadow = true;
+      const stem = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.013, 0.024, 1, 6),
+        new THREE.MeshStandardMaterial({ color: 0x3f7d3a, roughness: 0.72 })
+      );
+      stem.castShadow = true;
+      plant.add(stem);
+      stems.push(stem);
 
-  group.add(stem);
+      const leafMat = new THREE.MeshStandardMaterial({
+        color, roughness: 0.55, emissive: color, emissiveIntensity: 0.12,
+      });
+      leafMats.push(leafMat);
+      const leafGroup = new THREE.Group();
+      for (let l = 0; l < 4; l++) {
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.082, 9, 7), leafMat);
+        leaf.scale.set(1, 0.3, 0.6);
+        const a = (l / 4) * Math.PI * 2 + seed * 0.34;
+        leaf.position.set(Math.cos(a) * 0.058, 0, Math.sin(a) * 0.058);
+        leaf.rotation.y = a;
+        leaf.rotation.z = -0.42;
+        leaf.castShadow = true;
+        leafGroup.add(leaf);
+      }
+      plant.add(leafGroup);
 
-  // leaves: count & size grow with progress
+      const fruit = new THREE.Mesh(
+        new THREE.SphereGeometry(0.033, 10, 8),
+        new THREE.MeshStandardMaterial({
+          color: 0xef4444, roughness: 0.28, emissive: 0x7f1d1d, emissiveIntensity: 0.35,
+        })
+      );
+      fruit.castShadow = true;
+      fruits.push(fruit);
+      plant.add(fruit);
 
-  const leafCount = Math.max(2, Math.round(2 + (pct / 100) * 5));
-
-  const leafMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, emissive: color, emissiveIntensity: 0.06 });
-
-  const leaves = new THREE.Group();
-
-  for (let i = 0; i < leafCount; i++) {
-
-    const leaf = new THREE.Mesh(
-
-      new THREE.SphereGeometry(0.16 + (pct / 100) * 0.14, 10, 8),
-
-      leafMat
-
-    );
-
-    leaf.scale.y = 0.42;
-
-    const t = leafCount > 1 ? i / (leafCount - 1) : 0.5;
-
-    leaf.position.y = 0.5 + t * stemH * 0.72;
-
-    const angle = (i / leafCount) * Math.PI * 2 + (index * 0.7);
-
-    leaf.position.x = Math.cos(angle) * (0.14 + (pct / 100) * 0.18);
-
-    leaf.position.z = Math.sin(angle) * (0.14 + (pct / 100) * 0.18);
-
-    leaves.add(leaf);
-
-  }
-
-  group.add(leaves);
-
-  // fruits appear when mature
-
-  const fruits = new THREE.Group();
-
-  if (pct >= 80) {
-
-    const fruitMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.35 });
-
-    const n = pct >= 100 ? 3 : 2;
-
-    for (let i = 0; i < n; i++) {
-
-      const f = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), fruitMat);
-
-      const a = (i / n) * Math.PI * 2 + index;
-
-      f.position.set(Math.cos(a) * 0.22, 0.5 + stemH * 0.55, Math.sin(a) * 0.22);
-
-      fruits.add(f);
-
+      plant.userData.leafGroup = leafGroup;
+      plant.position.set((ix - 1) * spacing + seed * 0.008, 0.18, (iz - 1) * spacing - seed * 0.006);
+      plants.add(plant);
     }
-
   }
-
-  group.add(fruits);
-
-  // adopted halo ring
+  group.add(plants);
 
   const isAdopted = adoptions.some((a) => a.device_id === device.device_id);
-
   if (isAdopted) {
-
-    const ring = new THREE.Mesh(
-
-      new THREE.TorusGeometry(0.62, 0.028, 8, 40),
-
-      new THREE.MeshBasicMaterial({ color: 0x7c3aed })
-
+    const halo = new THREE.Mesh(
+      new THREE.RingGeometry(bedW * 0.6, bedW * 0.72, 54),
+      new THREE.MeshBasicMaterial({
+        color: 0x7c3aed, transparent: true, opacity: 0.4, side: THREE.DoubleSide,
+      })
     );
-
-    ring.rotation.x = Math.PI / 2;
-
-    ring.position.y = 0.03;
-
-    group.add(ring);
-
+    halo.rotation.x = -Math.PI / 2;
+    halo.position.y = 0.19;
+    group.add(halo);
+    group.userData.halo = halo;
   }
 
   const angle = total > 1 ? (index / total) * Math.PI * 2 : 0;
-
-  const radius = Math.min(4.2, 1.6 + total * 0.55);
-
+  const radius = Math.min(4.7, 1.9 + total * 0.4);
   group.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+  group.rotation.y = -angle;
 
-  // store dynamic refs for updates
-
-  group.userData = { device, stem, leaves, fruits, leafMat, name: cropName, pct, score };
-
+  Object.assign(group.userData, {
+    device, plants, stems, leafMats, fruits, name: cropName, pct, score, bedW,
+  });
+  applyFarm3DGrowth(group, pct, score);
   return group;
-
 }
 
-
+function applyFarm3DGrowth(group, pct, score) {
+  const u = group.userData || {};
+  const h = Math.max(0.12, 0.16 + (pct / 100) * 0.95);
+  (u.stems || []).forEach((stem, i) => {
+    const plantH = h * (0.85 + ((i % 4) * 0.06));
+    stem.scale.y = plantH;
+    stem.position.y = plantH / 2;
+  });
+  const leafScale = 0.55 + (pct / 100) * 0.8;
+  const leafY = h * 0.72;
+  const showFruit = pct >= 78;
+  (u.plants ? u.plants.children : []).forEach((plant, i) => {
+    const lg = plant.userData.leafGroup;
+    if (lg) { lg.scale.setScalar(leafScale); lg.position.y = leafY; }
+    const fruit = (u.fruits || [])[i];
+    if (fruit) { fruit.visible = showFruit; fruit.position.y = h * 0.78; }
+  });
+  const color = farm3dColor(score);
+  (u.leafMats || []).forEach((m) => {
+    m.color.setHex(color);
+    m.emissive.setHex(color);
+  });
+  group.userData.pct = pct;
+  group.userData.score = score;
+}
 
 function buildFarm3DCrops() {
-
   const devices = state.allDevices || [];
-
   if (!devices.length) {
-
-    $("#farm3d-hint").textContent = "暂无地块数据。";
-
+    const hint = $("#farm3d-hint");
+    if (hint) hint.textContent = "暂无地块数据。";
     return;
-
   }
-
-  const existing = new Set();
-
   devices.forEach((d, i) => {
-
-    let group = farm3d.crops.get(d.device_id);
-
-    if (!group) {
-
-      group = makeCropMesh(d, i, devices.length);
-
-      farm3d.scene.add(group);
-
-      farm3d.crops.set(d.device_id, group);
-
-    } else {
-
-      existing.add(d.device_id);
-
-    }
-
+    if (farm3d.crops.has(d.device_id)) return;
+    const group = makeCropMesh(d, i, devices.length);
+    farm3d.scene.add(group);
+    farm3d.crops.set(d.device_id, group);
   });
-
-  // remove vanished plots
-
   const ids = new Set(devices.map((d) => d.device_id));
-
   farm3d.crops.forEach((group, deviceId) => {
-
     if (!ids.has(deviceId)) {
-
       farm3d.scene.remove(group);
-
       farm3d.crops.delete(deviceId);
-
     }
-
   });
-
 }
-
-
 
 function updateFarm3DCrops() {
-
   farm3d.devices = state.allDevices || [];
-
   const devices = farm3d.devices;
-
   const onlineCount = devices.filter((d) => d.last_seen).length;
-
-  $("#farm3d-hint").textContent = devices.length
-
-    ? `${devices.length} 个地块 · ${onlineCount} 在线 · 数据每 30 秒刷新`
-
-    : "";
-
+  const hint = $("#farm3d-hint");
+  if (hint) {
+    hint.textContent = devices.length
+      ? `${devices.length} 个地块 · ${onlineCount} 在线 · 拖拽旋转 · 滚轮缩放 · 点击作物看数据`
+      : "";
+  }
   devices.forEach((device) => {
-
     const group = farm3d.crops.get(device.device_id);
-
     if (!group) return;
-
-    const u = group.userData || {};
-
     const health = plotHealth(device);
-
-    const score = health.score ?? 50;
-
-    const pct = farm3dProgress(device);
-
-    const color = farm3dColor(score);
-
-    if (u.stem) {
-
-      const stemH = Math.max(0.25, 0.3 + (pct / 100) * 1.5);
-
-      u.stem.geometry.dispose();
-
-      u.stem.geometry = new THREE.CylinderGeometry(0.055, 0.09, stemH, 8);
-
-      u.stem.position.y = 0.18 + stemH / 2;
-
-    }
-
-    if (u.leafMat) u.leafMat.color.setHex(color);
-
-    if (u.fruits) u.fruits.visible = pct >= 80;
-
-    u.pct = pct;
-
-    u.score = score;
-
+    applyFarm3DGrowth(group, farm3dProgress(device), health.score ?? 50);
   });
-
 }
-
-
 
 function onFarm3DClick() {
-
   if (!farm3d.built || !farm3d.raycaster) return;
-
   farm3d.raycaster.setFromCamera(farm3d.mouse, farm3d.camera);
-
-  const groups = Array.from(farm3d.crops.values());
-
-  const hits = farm3d.raycaster.intersectObjects(groups, true);
-
+  const hits = farm3d.raycaster.intersectObjects(Array.from(farm3d.crops.values()), true);
   if (!hits.length) return;
-
   let obj = hits[0].object;
-
-  while (obj && !farm3d.crops.has(obj.userData && obj.userData.device && obj.userData.device.device_id)) {
-
-    obj = obj.parent;
-
-  }
-
-  const deviceId = obj && obj.userData.device ? obj.userData.device.device_id : null;
-
-  const device = deviceId ? farm3d.devices.find((d) => d.device_id === deviceId) : null;
-
+  while (obj && !(obj.userData && obj.userData.device)) obj = obj.parent;
+  const device = obj && obj.userData.device ? obj.userData.device : null;
   if (device) showFarm3DInfo(device);
-
 }
-
-
 
 function showFarm3DInfo(device) {
-
   const box = $("#farm3d-selected");
-
   if (!box) return;
-
   const plot = device.plot || {};
-
   const health = plotHealth(device);
-
   const score = health.score ?? "--";
-
   const pct = farm3dProgress(device);
-
   const stageLabel = pct >= 100 ? "已成熟" : pct >= 70 ? "成熟期" : pct >= 40 ? "生长期" : pct >= 10 ? "幼苗期" : "播种期";
-
   const soil = (device.telemetry || {}).soil?.payload || {};
-
   const climate = (device.telemetry || {}).climate?.payload || {};
-
   const ad = adoptions.find((a) => a.device_id === device.device_id);
-
-  const owner = device.owner_label || "";
-
-  const cropName = plot.crop || "—";
-
+  const hex = score === "--" ? "64748b" : farm3dColor(score).toString(16).padStart(6, "0");
   box.innerHTML = `
-
     <div class="f3d-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-
-      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#${(score === "--" ? "64748b" : farm3dColor(score).toString(16).padStart(6, "0"))}"></span>
-
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#${hex};box-shadow:0 0 8px #${hex}"></span>
       ${escapeHtml(plot.name || device.device_id)} ${ad ? '<span class="f3d-adopt">认养</span>' : ""}
-
     </div>
-
     <div class="f3d-meta">
-
-      <span>作物 ${escapeHtml(cropName)}</span><span>${owner ? `归属 ${escapeHtml(owner)}` : ""}</span>
-
-      <span>健康度 <b>${score}</b></span><span>进度 ${pct}% · ${stageLabel}</span>
-
-      <span>湿度 ${soil.moisture_pct ?? "--"}%</span><span>气温 ${climate.air_temperature_c ?? "--"}°C</span>
-
-      <span>pH ${soil.ph ?? "--"}</span><span>${device.last_seen ? "● 在线" : "○ 离线"}</span>
-
+      <span>作物 ${escapeHtml(plot.crop || "—")}</span>
+      <span>${device.owner_label ? `归属 ${escapeHtml(device.owner_label)}` : ""}</span>
+      <span>健康度 <b>${score}</b> · 进度 <b>${pct}%</b> · ${stageLabel}</span>
+      <span>湿度 ${soil.moisture_pct ?? "--"}% · 气温 ${climate.air_temperature_c ?? "--"}°C</span>
+      <span>pH ${soil.ph ?? "--"} · ${device.last_seen ? "● 在线" : "○ 离线"}</span>
     </div>
-
     <div class="f3d-body">${health.parts && health.parts.length ? escapeHtml(health.parts.join("；")) : "各项指标处于作物适宜区间，长势良好。"}</div>`;
-
 }
 
-
-
 async function renderFarm3D(force) {
-
   if (!initFarm3D()) return;
-
-  // farm3d depends on the crop catalog (health/progress scoring) and the
-
-  // adoption list (time-scaled growth). Load both before building/updating.
-
   await ensureReportCrops();
-
   try {
-
     if (!adoptions.length) {
-
       const resp = await Auth.request("/api/v1/adoptions", { cache: "no-store" });
-
       if (resp.ok) {
-
         const d = await resp.json();
-
         adoptions = d.items || [];
-
       }
-
     }
-
-  } catch (_) { /* non-fatal: adopted plots fall back to real-time progress */ }
-
+  } catch (_) { /* non-fatal */ }
   if (force || farm3d.crops.size === 0) buildFarm3DCrops();
-
   updateFarm3DCrops();
-
 }
 
 
