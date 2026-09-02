@@ -64,9 +64,11 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Plot metadata (multi-plot deployment: apple / pear / orange orchards) ----
 PLOT_META = {
-    "sim-plot-apple": {"name": "苹果园", "crop": "苹果"},
-    "sim-plot-pear": {"name": "梨园", "crop": "梨"},
-    "sim-plot-orange": {"name": "橘园", "crop": "橘子"},
+    # created_at: fixed demo start so built-in plots carry a realistic growth
+    # age for the report / 3D-farm progress views (they have no custom_plots row).
+    "sim-plot-apple": {"name": "苹果园", "crop": "苹果", "created_at": "2026-08-01T00:00:00+00:00"},
+    "sim-plot-pear": {"name": "梨园", "crop": "梨", "created_at": "2026-08-01T00:00:00+00:00"},
+    "sim-plot-orange": {"name": "橘园", "crop": "橘子", "created_at": "2026-08-01T00:00:00+00:00"},
 }
 
 # --- Crop catalog (v15.7.0): canonical list of plantable crops ----------------
@@ -608,12 +610,14 @@ def _seed_builtin_plots_into_registry():
     multi-tenant ownership unambiguous.
     """
     for device_id, meta in PLOT_META.items():
+        plot = {"name": meta["name"], "crop": meta["crop"],
+                "created_at": meta.get("created_at")}
         with registry_lock:
             existing = registry.get(device_id)
             if existing is not None:
                 if existing.get("owner_user_id") is None:
                     existing["owner_user_id"] = BUILTIN_PLOT_OWNER_ID
-                existing["plot"] = {"name": meta["name"], "crop": meta["crop"]}
+                existing["plot"] = plot
                 continue
             registry[device_id] = {
                 "device_id": device_id,
@@ -621,7 +625,7 @@ def _seed_builtin_plots_into_registry():
                 "last_seen": None,
                 "pump": {"action": "stop", "running": False, "status": "standby",
                          "timestamp": None, "command_id": None},
-                "plot": {"name": meta["name"], "crop": meta["crop"]},
+                "plot": plot,
                 "owner_user_id": BUILTIN_PLOT_OWNER_ID,
             }
         for sensor_type in sorted(SENSOR_TYPES.keys()):
@@ -1382,7 +1386,8 @@ def _create_owned_plot(device_id, name, crop, owner_user_id):
         registry[device_id] = {"device_id": device_id, "telemetry": {}, "last_seen": None,
                                "pump": {"action": "stop", "running": False, "status": "standby",
                                         "timestamp": None, "command_id": None},
-                               "plot": {"name": name or device_id, "crop": crop or ""},
+                               "plot": {"name": name or device_id, "crop": crop or "",
+                                        "created_at": utc_now()},
                                "owner_user_id": owner_user_id}
     _save_custom_plot(device_id, name, crop, owner_user_id)
     _deleted_plots.pop(device_id, None)
@@ -1775,14 +1780,17 @@ def devices():
 
 
 def _load_plot_created_at(device_id):
-    """Planting time from custom_plots; None for the built-in demo plots."""
+    """Planting time from custom_plots; falls back to PLOT_META for built-ins."""
     conn = _telemetry_connect()
     try:
         row = conn.execute("SELECT created_at FROM custom_plots WHERE device_id=?",
                            (device_id,)).fetchone()
     finally:
         conn.close()
-    return row[0] if row else None
+    if row and row[0]:
+        return row[0]
+    meta = PLOT_META.get(device_id)
+    return (meta or {}).get("created_at")
 
 
 @app.post("/api/v1/devices")
