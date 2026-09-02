@@ -201,7 +201,7 @@ function renderTrendPanels() {
 }
 
 function setRoute(route) {
-  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard"].includes(route) ? route : "overview";
+  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard", "reports"].includes(route) ? route : "overview";
   document.body.classList.toggle("dashboard-active", nextRoute === "dashboard");
   document.querySelectorAll("[data-view]").forEach((panel) => {
     panel.hidden = panel.dataset.view !== nextRoute;
@@ -221,6 +221,9 @@ function setRoute(route) {
     if (typeof window.__dashResize === "function") {
       setTimeout(window.__dashResize, 50); // re-measure after the view is shown
     }
+  }
+  if (nextRoute === "reports") {
+    renderReports();
   }
 }
 
@@ -1506,6 +1509,222 @@ function bindStewardActions() {
   loadSteward();
 }
 
+// --- v15.9.0: farm report + PK ranking --------------------------------------
+let reportCrops = {};        // crop name -> catalog meta
+let reportActions = [];      // steward timeline for the selected plot
+let reportSelected = "";
+
+async function ensureReportCrops() {
+  if (Object.keys(reportCrops).length) return;
+  try {
+    const resp = await Auth.request("/api/v1/crops", { cache: "no-store" });
+    if (resp.ok) {
+      const data = await resp.json();
+      reportCrops = {};
+      (data.items || []).forEach((c) => { reportCrops[c.name] = c; });
+    }
+  } catch (_) { /* catalog unreachable → score falls back to "未知作物" */ }
+}
+
+function deviationScore(value, range) {
+  // 0 = centered in range, 1 = at/beyond a boundary
+  if (!Number.isFinite(value) || !Array.isArray(range) || range[0] == null) return null;
+  const mid = (range[0] + range[1]) / 2;
+  const half = Math.max(0.0001, (range[1] - range[0]) / 2);
+  return Math.min(1, Math.abs(value - mid) / half);
+}
+
+function plotHealth(device) {
+  const crop = reportCrops[(device.plot || {}).crop];
+  if (!crop) return { score: null, parts: [], name: "未知作物" };
+  const soil = (device.telemetry || {}).soil?.payload || {};
+  const climate = (device.telemetry || {}).climate?.payload || {};
+  const moisture = Number(soil.moisture_pct);
+  const temp = Number(climate.air_temperature_c);
+  const ph = Number(soil.ph);
+  let deduct = 0;
+  const parts = [];
+  const m = deviationScore(moisture, crop.soil_moisture);
+  if (m != null) { deduct += 40 * m; parts.push(`湿度 ${moisture.toFixed(0)}% 偏离 ${(m * 100).toFixed(0)}%`); }
+  const t = deviationScore(temp, crop.air_temp);
+  if (t != null) { deduct += 30 * t; parts.push(`气温 ${temp.toFixed(0)}°C 偏离 ${(t * 100).toFixed(0)}%`); }
+  const p = deviationScore(ph, crop.ph);
+  if (p != null) { deduct += 20 * p; parts.push(`pH ${ph.toFixed(1)} 偏离 ${(p * 100).toFixed(0)}%`); }
+  const sensors = device.sensors || [];
+  if (sensors.length) {
+    const offline = sensors.filter((s) => s.status !== "connected").length;
+    if (offline) { deduct += 10 * (offline / sensors.length); parts.push(`${offline} 个传感器离线`); }
+  }
+  return { score: Math.max(0, Math.round(100 - deduct)), parts, name: crop.name };
+}
+
+function plotProgress(device) {
+  const crop = reportCrops[(device.plot || {}).crop];
+  const created = (device.plot || {}).created_at;
+  if (!crop || !created) return { pct: null, label: "种植时间未知" };
+  const ageDays = Math.max(0, (Date.now() - new Date(created).getTime()) / 86400000);
+  const pct = Math.min(100, Math.round((ageDays / crop.growing_days) * 100));
+  const stage = pct >= 100 ? "已成熟" : pct >= 70 ? "成熟期" : pct >= 40 ? "生长期" : pct >= 10 ? "幼苗期" : "播种期";
+  return { pct, label: `${ageDays.toFixed(1)} / ${crop.growing_days} 天 · ${stage}` };
+}
+
+function reportCardHtml(device) {
+  const plot = device.plot || {};
+  const health = plotHealth(device);
+  const progress = plotProgress(device);
+  const crop = reportCrops[plot.crop];
+  const soil = (device.telemetry || {}).soil?.payload || {};
+  const climate = (device.telemetry || {}).climate?.payload || {};
+  const scoreCls = health.score == null ? "" : health.score >= 80 ? "excellent" : health.score >= 60 ? "good" : health.score >= 40 ? "fair" : "poor";
+  const rangeLine = (v, r, unit) => {
+    if (v == null || !Array.isArray(r) || r[0] == null) return `<span class="metric-value">--</span><span class="metric-range">参考 ${r ? (r[0] + "–" + r[1]) + (unit || "") : ""}</span>`;
+    const ok = v >= r[0] && v <= r[1];
+    return `<span class="metric-value ${ok ? "ok" : "warn"}">${v.toFixed ? v.toFixed(1) : v}${unit || ""}</span><span class="metric-range">${ok ? "适宜" : `参考 ${r[0]}–${r[1]}${unit || ""}`}</span>`;
+  };
+  const events = reportActions.slice(0, 5).map((a) => {
+    const icon = a.action_type === "pump_on" ? "💧" : a.action_type === "pump_off" ? "✅" : "🛡️";
+    return `<div class="report-event"><span>${icon}</span><p>${escapeHtml(a.reason)}</p><time>${new Date(a.created_at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}</time></div>`;
+  }).join("") || '<div class="report-event"><span>🌱</span><p>还没有管家动作，开启 AI 管家后自动记录。</p></div>';
+  return `
+    <div class="report-cover">
+      <div class="report-cover-top"><span class="report-crop">${escapeHtml(plot.crop || "—")}</span><span class="report-owner">${escapeHtml(device.owner_label || "")}</span></div>
+      <div class="report-cover-name">${escapeHtml(plot.name || device.device_id)}</div>
+      <div class="report-score-ring ${scoreCls}">
+        <div class="ring-inner"><strong>${health.score == null ? "--" : health.score}</strong><span>健康度</span></div>
+      </div>
+      <div class="report-progress">
+        <div class="progress-track"><div class="progress-fill" style="width:${progress.pct == null ? 0 : progress.pct}%"></div></div>
+        <span>生长进度 ${progress.label}</span>
+      </div>
+      <div class="report-crop-info">${crop ? `${crop.type} · 生长周期 ${crop.growing_days} 天 · ${escapeHtml(plot.crop)}` : ""}</div>
+    </div>
+    <div class="report-body">
+      <h4>实时指标 vs 适宜区间</h4>
+      <div class="report-metrics">
+        <div class="metric">${rangeLine(Number(soil.moisture_pct), crop && crop.soil_moisture, "%")}<span class="metric-name">土壤湿度</span></div>
+        <div class="metric">${rangeLine(Number(climate.air_temperature_c), crop && crop.air_temp, "°C")}<span class="metric-name">空气温度</span></div>
+        <div class="metric">${rangeLine(Number(soil.ph), crop && crop.ph, "")}<span class="metric-name">土壤 pH</span></div>
+      </div>
+      <h4>关键事件</h4>
+      <div class="report-events">${events}</div>
+      <div class="report-deviation">${health.parts.length ? "扣分项：" + escapeHtml(health.parts.join("；")) : (health.score != null ? "所有指标均在适宜区间内 🎉" : "作物不在目录，无法评分")}</div>
+    </div>`;
+}
+
+function shareReportText(device) {
+  const plot = device.plot || {};
+  const health = plotHealth(device);
+  const progress = plotProgress(device);
+  const lines = [
+    `🌱 作物成长报告 · ${plot.name || device.device_id}`,
+    `作物：${plot.crop || "—"}  归属：${device.owner_label || ""}`,
+    `健康度：${health.score == null ? "--" : health.score + " 分"}`,
+    `生长进度：${progress.label}`,
+    health.parts.length ? `状态说明：${health.parts.join("；")}` : "所有指标均在适宜区间内 🎉",
+    "—— 来自智慧农业大数据平台",
+  ];
+  return lines.join("\n");
+}
+
+async function loadReportActions(deviceId) {
+  reportActions = [];
+  try {
+    const resp = await Auth.request(`/api/v1/steward/actions?limit=10&device_id=${encodeURIComponent(deviceId)}`, { cache: "no-store" });
+    if (resp.ok) {
+      const data = await resp.json();
+      reportActions = (data.items || []).filter((a) => a.device_id === deviceId);
+    }
+  } catch (_) { /* timeline optional */ }
+}
+
+function renderRanking() {
+  const wrap = $("#report-rank");
+  if (!wrap) return;
+  const devices = state.allDevices || [];
+  const scored = devices.map((d) => ({ d, h: plotHealth(d) })).filter((x) => x.h.score != null);
+  const byCrop = {};
+  scored.forEach((x) => {
+    const crop = x.h.name;
+    (byCrop[crop] = byCrop[crop] || []).push(x);
+  });
+  const cropNames = Object.keys(byCrop).sort();
+  if (!cropNames.length) {
+    wrap.innerHTML = '<div class="rank-empty">还没有可评分的地块（需作物在目录中且有传感器数据）。</div>';
+    return;
+  }
+  wrap.innerHTML = `<h3 class="reports-h3">🏆 同作物健康度 PK</h3>` + cropNames.map((crop) => {
+    const rows = byCrop[crop].sort((a, b) => b.h.score - a.h.score);
+    const medals = ["🥇", "🥈", "🥉"];
+    return `<div class="rank-group">
+      <div class="rank-group-head">${escapeHtml(crop)} <span>${rows.length} 块地</span></div>
+      ${rows.slice(0, 5).map((x, i) => `
+        <div class="rank-row ${i === 0 ? "top" : ""}" data-device="${x.d.device_id}">
+          <span class="rank-medal">${medals[i] || i + 1}</span>
+          <span class="rank-name">${escapeHtml((x.d.plot || {}).name || x.d.device_id)}</span>
+          <span class="rank-tag">${i === 0 ? "最稳农夫" : ""}</span>
+          <span class="rank-score ${x.h.score >= 80 ? "good" : x.h.score >= 60 ? "mid" : "low"}">${x.h.score}</span>
+        </div>`).join("")}
+    </div>`;
+  }).join("");
+  wrap.querySelectorAll(".rank-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      const select = $("#report-plot-select");
+      if (select) { select.value = row.dataset.device; select.dispatchEvent(new Event("change")); }
+    });
+  });
+}
+
+async function renderReports() {
+  await ensureReportCrops();
+  const devices = state.allDevices || [];
+  const select = $("#report-plot-select");
+  if (!select) return;
+  if (!devices.length) {
+    $("#report-card").innerHTML = '<div class="rank-empty">还没有地块，去「设备」页创建一个吧。</div>';
+    renderRanking();
+    return;
+  }
+  select.innerHTML = devices.map((d) => {
+    const plot = d.plot || {};
+    const label = plot.name ? `${plot.name}（${plot.crop || d.device_id}）` : d.device_id;
+    return `<option value="${escapeHtml(d.device_id)}">${escapeHtml(label)}</option>`;
+  }).join("");
+  if (!reportSelected || !devices.some((d) => d.device_id === reportSelected)) {
+    reportSelected = devices[0].device_id;
+  }
+  select.value = reportSelected;
+  await loadReportActions(reportSelected);
+  const device = devices.find((d) => d.device_id === reportSelected) || devices[0];
+  $("#report-card").innerHTML = reportCardHtml(device);
+  renderRanking();
+  $("#report-hint").textContent = "";
+}
+
+function bindReportsActions() {
+  const select = $("#report-plot-select");
+  if (!select || select.dataset.bound) return;
+  select.dataset.bound = "1";
+  select.addEventListener("change", () => { reportSelected = select.value; renderReports(); });
+  $("#report-refresh")?.addEventListener("click", () => { refresh().then(renderReports); });
+  const shareBtn = $("#report-share");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", async () => {
+      const devices = state.allDevices || [];
+      const device = devices.find((d) => d.device_id === reportSelected);
+      if (!device) return;
+      const text = shareReportText(device);
+      try {
+        await navigator.clipboard.writeText(text);
+        $("#report-hint").textContent = "分享文本已复制到剪贴板 🎉";
+        $("#report-hint").style.color = "var(--green)";
+      } catch (_) {
+        $("#report-hint").textContent = "复制失败，请手动选择文本";
+        $("#report-hint").style.color = "";
+      }
+    });
+  }
+}
+
 // --- v15.4.0: big data screen ----------------------------------------------
 const DASH_SENSOR_LABELS = {
   soil_temperature: "土壤温度",
@@ -1794,6 +2013,7 @@ if (window.lucide) window.lucide.createIcons();
 bindBrokerActions();
 bindUsersActions();
 bindStewardActions();
+bindReportsActions();
 loadBrokerPresets();
 loadBroker();
 refreshUserPermissions();
