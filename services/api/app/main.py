@@ -1696,6 +1696,32 @@ def adoption_points():
                                  "avg_health": r[3]} for r in by_crop]})
 
 
+def _farmer_display_names(user_ids):
+    """Map user ids → account name (display_name, else username) from users.db.
+
+    The leaderboard ranks FARMERS, so it must show the account holder's name,
+    not the nickname of whatever plot they happened to adopt.
+    """
+    ids = [u for u in (user_ids or []) if u is not None]
+    if not ids:
+        return {}
+    try:
+        uc = _users_connect()
+    except Exception:
+        return {}
+    try:
+        placeholders = ",".join("?" * len(ids))
+        rows = uc.execute(
+            f"SELECT id, username, display_name FROM users WHERE id IN ({placeholders})",
+            tuple(ids)).fetchall()
+    except Exception as exc:
+        LOGGER.warning("leaderboard: user-name lookup failed: %s", exc)
+        return {}
+    finally:
+        uc.close()
+    return {r[0]: (r[2] or r[1] or f"用户{r[0]}") for r in rows}
+
+
 @app.get("/api/v1/adoptions/leaderboard")
 @require_auth()
 def adoption_leaderboard():
@@ -1726,11 +1752,11 @@ def adoption_leaderboard():
                 "SELECT owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
                 "ROUND(AVG(health_score),1) AS avg_health FROM harvests "
                 "GROUP BY owner_user_id HAVING total > 0 ORDER BY total DESC LIMIT 100").fetchall()
-        nick_rows = conn.execute(
-            "SELECT owner_user_id, nickname FROM adoptions GROUP BY owner_user_id").fetchall()
     finally:
         conn.close()
-    names = {r[0]: r[1] for r in nick_rows}
+    names = _farmer_display_names([r[0] for r in rows])
+    # Show the ACCOUNT name (display_name → username), not the adopted plot's
+    # nickname: "老马" is a plot name, the farmer themselves is "123456".
     entries = [{"owner_user_id": uid, "nickname": names.get(uid) or f"用户{uid}",
                 "points": total, "harvests": cnt, "avg_health": avg}
                for uid, total, cnt, avg in rows]
