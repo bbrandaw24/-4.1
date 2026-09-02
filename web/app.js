@@ -1586,7 +1586,9 @@ function reportCardHtml(device) {
   const climate = (device.telemetry || {}).climate?.payload || {};
   const scoreCls = health.score == null ? "" : health.score >= 80 ? "excellent" : health.score >= 60 ? "good" : health.score >= 40 ? "fair" : "poor";
   const rangeLine = (v, r, unit) => {
-    if (v == null || !Array.isArray(r) || r[0] == null) return `<span class="metric-value">--</span><span class="metric-range">参考 ${r ? (r[0] + "–" + r[1]) + (unit || "") : ""}</span>`;
+    // Number.isFinite also filters NaN from a missing telemetry payload —
+    // otherwise "NaN%" leaks into the card right after an API restart.
+    if (!Number.isFinite(v) || !Array.isArray(r) || r[0] == null) return `<span class="metric-value">--</span><span class="metric-range">参考 ${r ? (r[0] + "–" + r[1]) + (unit || "") : ""}</span>`;
     const ok = v >= r[0] && v <= r[1];
     return `<span class="metric-value ${ok ? "ok" : "warn"}">${v.toFixed ? v.toFixed(1) : v}${unit || ""}</span><span class="metric-range">${ok ? "适宜" : `参考 ${r[0]}–${r[1]}${unit || ""}`}</span>`;
   };
@@ -1646,41 +1648,34 @@ async function loadReportActions(deviceId) {
   } catch (_) { /* timeline optional */ }
 }
 
-function renderRanking() {
+async function renderRanking() {
+  // v16.6: the right column is the harvest-points leaderboard (same data as
+  // the adopt page), replacing the per-crop health PK block.
   const wrap = $("#report-rank");
   if (!wrap) return;
-  const devices = state.allDevices || [];
-  const scored = devices.map((d) => ({ d, h: plotHealth(d) })).filter((x) => x.h.score != null);
-  const byCrop = {};
-  scored.forEach((x) => {
-    const crop = x.h.name;
-    (byCrop[crop] = byCrop[crop] || []).push(x);
-  });
-  const cropNames = Object.keys(byCrop).sort();
-  if (!cropNames.length) {
-    wrap.innerHTML = '<div class="rank-empty">还没有可评分的地块（需作物在目录中且有传感器数据）。</div>';
-    return;
-  }
-  wrap.innerHTML = `<h3 class="reports-h3">🏆 同作物健康度 PK</h3>` + cropNames.map((crop) => {
-    const rows = byCrop[crop].sort((a, b) => b.h.score - a.h.score);
+  try {
+    const resp = await Auth.request("/api/v1/adoptions/leaderboard", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+    const entries = d.entries || [];
+    if (!entries.length) {
+      wrap.innerHTML = '<h3 class="reports-h3">🏆 农户积分排行榜</h3><div class="rank-empty">还没有农户收获过作物，去「认养农场」收获拿积分上榜！</div>';
+      return;
+    }
     const medals = ["🥇", "🥈", "🥉"];
-    return `<div class="rank-group">
-      <div class="rank-group-head">${escapeHtml(crop)} <span>${rows.length} 块地</span></div>
-      ${rows.slice(0, 5).map((x, i) => `
-        <div class="rank-row ${i === 0 ? "top" : ""}" data-device="${x.d.device_id}">
-          <span class="rank-medal">${medals[i] || i + 1}</span>
-          <span class="rank-name">${escapeHtml((x.d.plot || {}).name || x.d.device_id)}</span>
-          <span class="rank-tag">${i === 0 ? "最稳农夫" : ""}</span>
-          <span class="rank-score ${x.h.score >= 80 ? "good" : x.h.score >= 60 ? "mid" : "low"}">${x.h.score}</span>
-        </div>`).join("")}
-    </div>`;
-  }).join("");
-  wrap.querySelectorAll(".rank-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      const select = $("#report-plot-select");
-      if (select) { select.value = row.dataset.device; select.dispatchEvent(new Event("change")); }
-    });
-  });
+    wrap.innerHTML = `<h3 class="reports-h3">🏆 农户积分排行榜</h3>
+      <div class="rank-group" style="margin-bottom:0;">
+        ${entries.map((r, i) => `
+          <div class="rank-row ${i === 0 ? "top" : ""}">
+            <span class="rank-medal">${i < 3 ? medals[i] : i + 1}</span>
+            <span class="rank-name" title="${escapeHtml(r.nickname)}">${escapeHtml(r.nickname)}</span>
+            <span class="rank-tag">${r.harvests} 次收获 · 均健康 ${r.avg_health ?? "--"}</span>
+            <span class="rank-score ${r.points >= 200 ? "good" : r.points >= 100 ? "mid" : "low"}">${r.points} 分</span>
+          </div>`).join("")}
+      </div>`;
+  } catch (error) {
+    wrap.innerHTML = `<h3 class="reports-h3">🏆 农户积分排行榜</h3><div class="rank-empty">加载失败：${escapeHtml(String(error.message || error))}</div>`;
+  }
 }
 
 async function renderReports() {
