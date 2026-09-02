@@ -1568,6 +1568,16 @@ function plotHealth(device) {
 }
 
 function plotProgress(device) {
+  // v16.7.2: adopted plots run on the accelerated clock (1 minute = time_scale
+  // days, same as the adopt page and the 3D farm). The real-calendar age would
+  // read ~0 right after adoption and contradict every other page. Plots without
+  // an adoption record keep the real-calendar fallback.
+  const ad = Array.isArray(adoptions) ? adoptions.find((a) => a.device_id === device.device_id) : null;
+  if (ad && ad.growth && ad.growth.pct != null) {
+    const g = ad.growth;
+    const stage = g.pct >= 100 ? "已成熟" : g.pct >= 70 ? "成熟期" : g.pct >= 40 ? "生长期" : g.pct >= 10 ? "幼苗期" : "播种期";
+    return { pct: g.pct, label: `${(g.age_days ?? 0).toFixed(1)} / ${g.growing_days ?? "—"} 天 · ${stage}` };
+  }
   const crop = reportCrops[(device.plot || {}).crop];
   const created = (device.plot || {}).created_at;
   if (!crop || !created) return { pct: null, label: "种植时间未知" };
@@ -1680,6 +1690,15 @@ async function renderRanking() {
 
 async function renderReports() {
   await ensureReportCrops();
+  // v16.7.2: the accelerated growth clock lives in the adoption records; make
+  // sure they are loaded before the progress card renders, or a direct visit
+  // to the reports tab would fall back to the real-calendar age.
+  if (!adoptions.length) {
+    try {
+      const resp = await Auth.request("/api/v1/adoptions", { cache: "no-store" });
+      if (resp.ok) adoptions = (await resp.json()).items || [];
+    } catch (_) { /* non-fatal: falls back to real-calendar growth */ }
+  }
   const devices = state.allDevices || [];
   const select = $("#report-plot-select");
   if (!select) return;
