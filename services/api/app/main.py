@@ -1471,8 +1471,6 @@ def list_adoptions():
 @require_auth("manage_sensors")
 def unadopt(device_id):
     """Release an adoption: deletes the dedicated plot and its certificate."""
-    if not _can_access_plot(device_id):
-        return _plot_access_error(device_id)
     conn = _telemetry_connect()
     try:
         row = conn.execute("SELECT owner_user_id FROM adoptions WHERE device_id=?", (device_id,)).fetchone()
@@ -1480,6 +1478,12 @@ def unadopt(device_id):
         conn.close()
     if row is None:
         return jsonify({"error": "adoption_not_found", "device_id": device_id}), 404
+    # The certificate owner may always release their adoption — even when the
+    # plot itself has already vanished (stale certificate after a registry
+    # loss), where _can_access_plot would fall back to orphan ownership (None)
+    # and wrongly 403 the legitimate owner.
+    if not (_is_manager() or row[0] == _current_user_id() or _can_access_plot(device_id)):
+        return _plot_access_error(device_id)
     # Mirror delete_plot_endpoint: drop registry entry, sensors, custom_plots row.
     with registry_lock:
         registry.pop(device_id, None)
