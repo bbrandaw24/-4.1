@@ -1345,7 +1345,11 @@ def devices():
     for device in items:
         device_id = device.get("device_id")
         item = dict(device)
-        item["plot"] = device.get("plot") or PLOT_META.get(device_id, {})
+        plot = dict(device.get("plot") or PLOT_META.get(device_id, {}) or {})
+        # v15.9.0: expose planting time so the frontend can compute growing
+        # progress against the crop catalog's growing_days.
+        plot["created_at"] = _load_plot_created_at(device_id)
+        item["plot"] = plot
         owner = device.get("owner_user_id")
         if owner is None and device_id in PLOT_META:
             owner = BUILTIN_PLOT_OWNER_ID
@@ -1355,6 +1359,17 @@ def devices():
         enriched.append(item)
     return jsonify({"items": enriched, "count": len(enriched),
                     "scope": "all" if allowed is None else "own"})
+
+
+def _load_plot_created_at(device_id):
+    """Planting time from custom_plots; None for the built-in demo plots."""
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute("SELECT created_at FROM custom_plots WHERE device_id=?",
+                           (device_id,)).fetchone()
+    finally:
+        conn.close()
+    return row[0] if row else None
 
 
 @app.post("/api/v1/devices")
