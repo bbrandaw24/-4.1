@@ -5,6 +5,7 @@ import logging
 import os
 import sqlite3
 import time
+import random as _random
 from pathlib import Path
 from threading import Lock, Thread
 from uuid import uuid4
@@ -409,6 +410,43 @@ def init_telemetry_db():
                 grade_label TEXT NOT NULL,
                 points INTEGER NOT NULL,
                 harvested_at TEXT NOT NULL
+            )
+            """
+        )
+        # v16.8: market warehouse — harvests land in storage, not points; the
+        # multiplier clock rolls every 30s and every trade posts to a ledger.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_ticks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts REAL NOT NULL UNIQUE,
+                multiplier REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS warehouse (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id INTEGER NOT NULL,
+                crop TEXT NOT NULL,
+                qty INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                UNIQUE(owner_user_id, crop)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS market_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                crop TEXT NOT NULL,
+                qty INTEGER NOT NULL,
+                unit_price INTEGER NOT NULL,
+                total_points INTEGER NOT NULL,
+                created_at TEXT NOT NULL
             )
             """
         )
@@ -1669,23 +1707,228 @@ def harvest_adoption(device_id):
     if score is None:
         score = 50
     grade = _grade_for(score)
-    points = max(1, round(_crop_base_points(row["crop"]) * grade["multiplier"]))
+    # v16.8: harvest no longer mints points directly — the crop goes into the
+    # warehouse, where the farmer sells it at the live market multiplier.
+    # The old grade-based value is reported for reference only.
+    face_value = max(1, round(_crop_base_points(row["crop"]) * grade["multiplier"]))
     conn = _telemetry_connect()
     try:
         conn.execute(
             "INSERT INTO harvests (owner_user_id, device_id, crop, nickname, health_score, "
             "grade, grade_label, points, harvested_at) VALUES (?,?,?,?,?,?,?,?,?)",
             (row["owner_user_id"], device_id, row["crop"], row["nickname"], score,
-             grade["grade"], grade["label"], points, utc_now()))
+             grade["grade"], grade["label"], 0, utc_now()))
         conn.execute("UPDATE adoptions SET harvest_count=harvest_count+1, adopted_at=? WHERE device_id=?",
                      (utc_now(), device_id))
+        conn.execute(
+            "INSERT INTO warehouse (owner_user_id, crop, qty, updated_at) VALUES (?,?,1,?) "
+            "ON CONFLICT(owner_user_id, crop) DO UPDATE SET qty=qty+1, updated_at=excluded.updated_at",
+            (row["owner_user_id"], row["crop"], utc_now()))
         conn.commit()
     finally:
         conn.close()
     return jsonify({"harvested": device_id, "crop": row["crop"], "nickname": row["nickname"],
-                    "health_score": score, "grade": grade, "points": points,
+                    "health_score": score, "grade": grade, "points": 0,
+                    "face_value": face_value, "stored": True,
+                    "message": f"已收入仓库（参考价值 {face_value} 积分，可在 农场报告→仓库 按实时倍率出售）",
                     "total_harvests": row["harvest_count"] + 1}), 201
 
+
+# ================= v16.8 市场仓库（倍率行情 + 仓库交易） =================
+MARKET_TICK_SECONDS = 30
+MARKET_MIN = 0.5
+MARKET_MAX = 4.0
+MARKET_MEAN = 2.25
+MARKET_STEP = 0.16
+_market_rng = _random.Random()
+
+def _market_resolve_key(crop):
+    """Resolve a canonical display name (or key) to the catalog key."""
+    for key, meta in CROPS.items():
+        if meta["name"] == crop or key == crop:
+            return key
+    return None
+
+def _market_next(m):
+    """One 30s step: pull back toward the centre + Gaussian jitter, clamped to
+    [0.5, 4]. The stationary distribution of the walk is roughly bell-shaped,
+    so the multiplier spends most time near the middle of the band."""
+    nxt = m + (MARKET_MEAN - m) * 0.06 + _market_rng.gauss(0, MARKET_STEP)
+    return round(max(MARKET_MIN, min(MARKET_MAX, nxt)), 4)
+
+def _market_advance(now_ts=None, cap_ticks=240):
+    """Lazily roll the global market clock forward in 30s ticks. Ticks are
+    persisted so every client sees the same single source of truth."""
+    now_ts = now_ts if now_ts is not None else time.time()
+    conn = _telemetry_connect()
+    try:
+        last = conn.execute(
+            "SELECT ts, multiplier FROM market_ticks ORDER BY ts DESC LIMIT 1").fetchone()
+        if last is None:
+            # Seed ~40 minutes of history with a mean-reverting random walk so
+            # the chart is immediately usable on a fresh database.
+            start_ts = now_ts - (cap_ticks - 1) * MARKET_TICK_SECONDS
+            m = MARKET_MEAN
+            rows = []
+            for k in range(cap_ticks):
+                ts = start_ts + k * MARKET_TICK_SECONDS
+                if ts > now_ts:
+                    break
+                m = _market_next(m)
+                rows.append((ts, m))
+            conn.executemany("INSERT OR IGNORE INTO market_ticks (ts, multiplier) VALUES (?,?)", rows)
+            conn.commit()
+            last = conn.execute(
+                "SELECT ts, multiplier FROM market_ticks ORDER BY ts DESC LIMIT 1").fetchone()
+        ts, m = last[0], last[1]
+        steps = 0
+        while ts + MARKET_TICK_SECONDS <= now_ts and steps < cap_ticks:
+            m = _market_next(m)
+            ts += MARKET_TICK_SECONDS
+            conn.execute("INSERT OR IGNORE INTO market_ticks (ts, multiplier) VALUES (?,?)", (ts, m))
+            steps += 1
+        conn.commit()
+        cur = conn.execute(
+            "SELECT ts, multiplier FROM market_ticks ORDER BY ts DESC LIMIT 1").fetchone()
+        hist = conn.execute(
+            "SELECT ts, multiplier FROM market_ticks WHERE ts >= ? ORDER BY ts ASC",
+            (now_ts - cap_ticks * MARKET_TICK_SECONDS,)).fetchall()
+        return {"ts": cur[0], "multiplier": cur[1],
+                "history": [{"t": h[0], "multiplier": h[1]} for h in hist]}
+    finally:
+        conn.close()
+
+def _points_balance(uid, conn):
+    """Spendable balance: legacy harvest points (all historical rows are kept,
+    new harvests insert points=0) + net market ledger (sell + / buy -)."""
+    legacy = conn.execute(
+        "SELECT COALESCE(SUM(points),0) FROM harvests WHERE owner_user_id=?", (uid,)).fetchone()[0]
+    traded = conn.execute(
+        "SELECT COALESCE(SUM(total_points),0) FROM market_ledger WHERE owner_user_id=?", (uid,)).fetchone()[0]
+    return int(legacy) + int(traded)
+
+@app.get("/api/v1/market")
+@require_auth()
+def market_view():
+    """Current multiplier + rolling 30s history + the base-price table (公示)."""
+    st = _market_advance()
+    prices = []
+    for key, meta in CROPS.items():
+        base = _CROP_BASE_POINTS.get(key, 100)
+        prices.append({"crop": meta["name"], "key": key, "base_price": base,
+                       "unit_value": max(1, round(base * st["multiplier"]))})
+    return jsonify({"multiplier": st["multiplier"], "ts": st["ts"],
+                    "history": st["history"], "base_prices": prices})
+
+@app.get("/api/v1/warehouse")
+@require_auth()
+def warehouse_view():
+    uid = _current_user_id()
+    st = _market_advance()
+    conn = _telemetry_connect()
+    try:
+        balance = _points_balance(uid, conn)
+        items = conn.execute(
+            "SELECT crop, qty FROM warehouse WHERE owner_user_id=? AND qty > 0 "
+            "ORDER BY qty DESC, crop", (uid,)).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for crop, qty in items:
+        key = _market_resolve_key(crop)
+        base = _CROP_BASE_POINTS.get(key, 100) if key else 100
+        out.append({"crop": crop, "qty": qty, "base_price": base,
+                    "unit_sell": max(1, round(base * st["multiplier"]))})
+    return jsonify({"balance": balance, "multiplier": st["multiplier"],
+                    "items": out, "ts": st["ts"]})
+
+def _trade_common(body):
+    crop = (body.get("crop") or "").strip()
+    try:
+        qty = int(body.get("qty") or 0)
+    except (TypeError, ValueError):
+        qty = 0
+    if not crop or qty < 1:
+        return None, jsonify({"error": "trade_invalid",
+                              "message": "请提供作物与不小于 1 的数量"}), 400
+    key = _market_resolve_key(crop)
+    if key is None:
+        return None, jsonify({"error": "crop_not_in_catalog",
+                              "message": f"不支持交易「{crop}」"}), 400
+    return qty, None, None
+
+@app.post("/api/v1/warehouse/sell")
+@require_auth()
+def warehouse_sell():
+    uid = _current_user_id()
+    qty, err, code = _trade_common(request.get_json(silent=True) or {})
+    if err is not None:
+        return err, code
+    crop = (request.get_json(silent=True) or {}).get("crop", "").strip()
+    st = _market_advance()
+    base = _crop_base_points(crop)
+    unit = max(1, round(base * st["multiplier"]))
+    total = unit * qty
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute(
+            "SELECT qty FROM warehouse WHERE owner_user_id=? AND crop=?",
+            (uid, crop)).fetchone()
+        if row is None or (row[0] or 0) < qty:
+            return jsonify({"error": "insufficient_stock",
+                            "message": f"仓库里「{crop}」不足 {qty} 份"}), 409
+        conn.execute("UPDATE warehouse SET qty=qty-?, updated_at=? WHERE owner_user_id=? AND crop=?",
+                     (qty, utc_now(), uid, crop))
+        conn.execute("DELETE FROM warehouse WHERE owner_user_id=? AND crop=? AND qty<=0", (uid, crop))
+        conn.execute(
+            "INSERT INTO market_ledger (owner_user_id, kind, crop, qty, unit_price, "
+            "total_points, created_at) VALUES (?,?,?,?,?,?,?)",
+            (uid, "sell", crop, qty, unit, total, utc_now()))
+        conn.commit()
+        balance = _points_balance(uid, conn)
+        stock = conn.execute(
+            "SELECT COALESCE(SUM(qty),0) FROM warehouse WHERE owner_user_id=? AND crop=?",
+            (uid, crop)).fetchone()[0]
+    finally:
+        conn.close()
+    return jsonify({"sold": crop, "qty": qty, "unit": unit, "points": total,
+                    "multiplier": st["multiplier"], "balance": balance, "stock": stock})
+
+@app.post("/api/v1/warehouse/buy")
+@require_auth()
+def warehouse_buy():
+    uid = _current_user_id()
+    body = request.get_json(silent=True) or {}
+    qty, err, code = _trade_common(body)
+    if err is not None:
+        return err, code
+    crop = body.get("crop", "").strip()
+    st = _market_advance()
+    base = _crop_base_points(crop)
+    unit = max(1, round(base * st["multiplier"]))
+    total = unit * qty
+    conn = _telemetry_connect()
+    try:
+        if _points_balance(uid, conn) < total:
+            return jsonify({"error": "insufficient_points",
+                            "message": f"积分不足：买入 {qty} 份「{crop}」需 {total} 积分"}), 409
+        conn.execute(
+            "INSERT INTO warehouse (owner_user_id, crop, qty, updated_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(owner_user_id, crop) DO UPDATE SET qty=qty+excluded.qty, updated_at=excluded.updated_at",
+            (uid, crop, qty, utc_now()))
+        conn.execute(
+            "INSERT INTO market_ledger (owner_user_id, kind, crop, qty, unit_price, "
+            "total_points, created_at) VALUES (?,?,?,?,?,?,?)",
+            (uid, "buy", crop, qty, unit, -total, utc_now()))
+        conn.commit()
+        balance = _points_balance(uid, conn)
+        stock = conn.execute(
+            "SELECT COALESCE(SUM(qty),0) FROM warehouse WHERE owner_user_id=? AND crop=?",
+            (uid, crop)).fetchone()[0]
+    finally:
+        conn.close()
+    return jsonify({"bought": crop, "qty": qty, "unit": unit, "cost": total,
+                    "multiplier": st["multiplier"], "balance": balance, "stock": stock})
 
 @app.get("/api/v1/adoptions/points")
 @require_auth()
@@ -1694,9 +1937,12 @@ def adoption_points():
     uid = _current_user_id()
     conn = _telemetry_connect()
     try:
-        total = conn.execute(
-            "SELECT COALESCE(SUM(points),0), COUNT(*) FROM harvests WHERE owner_user_id=?",
-            (uid,)).fetchone()
+        # v16.8: total_points = spendable balance = legacy harvest points + ledger
+        legacy = conn.execute(
+            "SELECT COALESCE(SUM(points),0) FROM harvests WHERE owner_user_id=?", (uid,)).fetchone()[0]
+        traded = conn.execute(
+            "SELECT COALESCE(SUM(total_points),0) FROM market_ledger WHERE owner_user_id=?", (uid,)).fetchone()[0]
+        total = (int(legacy) + int(traded), 0)
         by_crop = conn.execute(
             "SELECT crop, COUNT(*), SUM(points), ROUND(AVG(health_score),1) FROM harvests "
             "WHERE owner_user_id=? GROUP BY crop ORDER BY SUM(points) DESC", (uid,)).fetchall()
@@ -1750,19 +1996,35 @@ def adoption_leaderboard():
     manager_ids.add(BUILTIN_PLOT_OWNER_ID)
     conn = _telemetry_connect()
     try:
+        # v16.8: rank by spendable balance (legacy harvest points + market net)
         if manager_ids:
             placeholders = ",".join("?" * len(manager_ids))
-            sql = (
-                f"SELECT owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
-                f"ROUND(AVG(health_score),1) AS avg_health FROM harvests "
-                f"WHERE owner_user_id NOT IN ({placeholders}) "
-                f"GROUP BY owner_user_id HAVING total > 0 ORDER BY total DESC LIMIT 100")
-            rows = conn.execute(sql, tuple(manager_ids)).fetchall()
+            sql = (f"SELECT owner_user_id, SUM(points) AS hp, COUNT(*) AS cnt, "
+                   f"ROUND(AVG(health_score),1) AS avg_health FROM harvests "
+                   f"WHERE owner_user_id NOT IN ({placeholders}) "
+                   f"GROUP BY owner_user_id")
+            harvest_rows = conn.execute(sql, tuple(manager_ids)).fetchall()
         else:
-            rows = conn.execute(
-                "SELECT owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
+            harvest_rows = conn.execute(
+                "SELECT owner_user_id, SUM(points) AS hp, COUNT(*) AS cnt, "
                 "ROUND(AVG(health_score),1) AS avg_health FROM harvests "
-                "GROUP BY owner_user_id HAVING total > 0 ORDER BY total DESC LIMIT 100").fetchall()
+                "GROUP BY owner_user_id").fetchall()
+        ledger_rows = conn.execute(
+            "SELECT owner_user_id, SUM(total_points) FROM market_ledger GROUP BY owner_user_id").fetchall()
+        ledger_map = {r[0]: r[1] or 0 for r in ledger_rows}
+        agg = {}
+        for uid, hp, cnt, avg in harvest_rows:
+            agg[uid] = {"hp": hp or 0, "cnt": cnt or 0, "avg": avg}
+        all_uids = set(agg) | set(ledger_map)
+        rows = []
+        for uid in all_uids:
+            total = (agg[uid]["hp"] if uid in agg else 0) + (ledger_map[uid] if uid in ledger_map else 0)
+            if total <= 0:
+                continue
+            rows.append((uid, total, agg[uid]["cnt"] if uid in agg else 0,
+                         agg[uid]["avg"] if uid in agg else None))
+        rows.sort(key=lambda r: r[1], reverse=True)
+        rows = rows[:100]
     finally:
         conn.close()
     names = _farmer_display_names([r[0] for r in rows])
