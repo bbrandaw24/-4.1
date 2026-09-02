@@ -343,6 +343,33 @@ def init_telemetry_db():
             (BUILTIN_PLOT_OWNER_ID,),
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_plots_owner ON custom_plots(owner_user_id)")
+        # AI farm steward (v15.8.0): per-account automation config + action log.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS steward_config (
+                owner_user_id INTEGER PRIMARY KEY,
+                auto_pump_enabled INTEGER NOT NULL DEFAULT 0,
+                moisture_threshold_pct REAL NOT NULL DEFAULT 35.0,
+                pump_duration_min INTEGER NOT NULL DEFAULT 5,
+                auto_tickets_enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS steward_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                detail TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_steward_actions_owner ON steward_actions(owner_user_id, created_at)")
         conn.commit()
     finally:
         conn.close()
@@ -1093,6 +1120,217 @@ def crops_catalog():
             "ph": meta["ph"], "npk": meta["npk"],
         })
     return jsonify({"items": items, "count": len(items)})
+
+
+# --- AI farm steward (v15.8.0) ----------------------------------------------
+# Per-account automation "butler": the user configures permissions (which
+# automations may run) and thresholds (moisture level that triggers a pump);
+# a deterministic rule engine executes the decision, and every action is
+# written to the steward_actions timeline ("08:32 自动开泵，因为湿度跌破 35%").
+# LLM is deliberately NOT in the hot decision path (slow/expensive/unstable);
+# it may be layered on later for explaining/ticketing in natural language.
+STEWARD_LOOP_SECONDS = 30
+STEWARD_TICKET_COOLDOWN_SECONDS = 1800  # per-plot ticket flood protection
+STEWARD_ACTION_COOLDOWN_SECONDS = 300   # per-plot per-action pump spam guard
+
+_steward_cooldown: dict[tuple, float] = {}
+_steward_pump_started_at: dict[str, float] = {}
+
+
+def _steward_default_config():
+    return {"owner_user_id": None, "auto_pump_enabled": False,
+            "moisture_threshold_pct": 35.0, "pump_duration_min": 5,
+            "auto_tickets_enabled": True}
+
+
+def _load_steward_config(owner_user_id):
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute("SELECT * FROM steward_config WHERE owner_user_id=?",
+                           (owner_user_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        cfg = _steward_default_config()
+        cfg["owner_user_id"] = owner_user_id
+        return cfg
+    return {"owner_user_id": row[0], "auto_pump_enabled": bool(row[1]),
+            "moisture_threshold_pct": row[2], "pump_duration_min": row[3],
+            "auto_tickets_enabled": bool(row[4]), "updated_at": row[5]}
+
+
+def _save_steward_config(owner_user_id, auto_pump_enabled, moisture_threshold_pct,
+                         pump_duration_min, auto_tickets_enabled):
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            """INSERT INTO steward_config (owner_user_id, auto_pump_enabled,
+               moisture_threshold_pct, pump_duration_min, auto_tickets_enabled, updated_at)
+               VALUES (?,?,?,?,?,?)
+               ON CONFLICT(owner_user_id) DO UPDATE SET
+                 auto_pump_enabled=excluded.auto_pump_enabled,
+                 moisture_threshold_pct=excluded.moisture_threshold_pct,
+                 pump_duration_min=excluded.pump_duration_min,
+                 auto_tickets_enabled=excluded.auto_tickets_enabled,
+                 updated_at=excluded.updated_at""",
+            (owner_user_id, 1 if auto_pump_enabled else 0, float(moisture_threshold_pct),
+             int(pump_duration_min), 1 if auto_tickets_enabled else 0, utc_now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _insert_steward_action(owner_user_id, device_id, action_type, reason, detail=None):
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "INSERT INTO steward_actions (owner_user_id, device_id, action_type, reason, detail, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (owner_user_id, device_id, action_type, reason, detail, utc_now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _plot_moisture(device):
+    return (device.get("telemetry", {}).get("soil", {}).get("payload", {}) or {}).get("moisture_pct")
+
+
+def _plot_temperature(device):
+    return (device.get("telemetry", {}).get("climate", {}).get("payload", {}) or {}).get("air_temperature_c")
+
+
+@app.get("/api/v1/steward/config")
+@require_auth()
+def steward_config_get():
+    """The signed-in account's butler config (per-account: isolated by owner)."""
+    uid = _current_user_id()
+    return jsonify(_load_steward_config(uid))
+
+
+@app.put("/api/v1/steward/config")
+@require_auth("manage_rules")
+def steward_config_put():
+    """Save automation permissions + thresholds for the signed-in account."""
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "json_object_required"}), 400
+    if "auto_pump_enabled" in body and not isinstance(body["auto_pump_enabled"], bool):
+        return jsonify({"error": "auto_pump_enabled_must_be_boolean"}), 400
+    threshold = body.get("moisture_threshold_pct", 35.0)
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        return jsonify({"error": "moisture_threshold_pct_must_be_number"}), 400
+    if not 10 <= threshold <= 90:
+        return jsonify({"error": "moisture_threshold_pct_out_of_range", "range": [10, 90]}), 400
+    try:
+        duration = int(body.get("pump_duration_min", 5))
+    except (TypeError, ValueError):
+        return jsonify({"error": "pump_duration_min_must_be_integer"}), 400
+    if not 1 <= duration <= 60:
+        return jsonify({"error": "pump_duration_min_out_of_range", "range": [1, 60]}), 400
+    if "auto_tickets_enabled" in body and not isinstance(body["auto_tickets_enabled"], bool):
+        return jsonify({"error": "auto_tickets_enabled_must_be_boolean"}), 400
+    uid = _current_user_id()
+    _save_steward_config(uid,
+                         body.get("auto_pump_enabled", False),
+                         threshold, duration,
+                         body.get("auto_tickets_enabled", True))
+    return jsonify(_load_steward_config(uid))
+
+
+@app.get("/api/v1/steward/actions")
+@require_auth()
+def steward_actions_get():
+    """Butler timeline, scoped to plots the signed-in account may see."""
+    try:
+        limit = min(max(int(request.args.get("limit", "50")), 1), 200)
+    except ValueError:
+        return jsonify({"error": "limit_must_be_integer"}), 400
+    allowed = _accessible_device_ids()
+    conn = _telemetry_connect()
+    try:
+        if allowed is None:
+            rows = conn.execute(
+                "SELECT owner_user_id, device_id, action_type, reason, detail, created_at "
+                "FROM steward_actions ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        else:
+            placeholders = ",".join("?" * len(allowed))
+            rows = conn.execute(
+                f"SELECT owner_user_id, device_id, action_type, reason, detail, created_at "
+                f"FROM steward_actions WHERE device_id IN ({placeholders}) ORDER BY id DESC LIMIT ?",
+                (*allowed, limit)).fetchall()
+    finally:
+        conn.close()
+    items = [{"owner_user_id": r[0], "device_id": r[1], "action_type": r[2],
+              "reason": r[3], "detail": r[4], "created_at": r[5]} for r in rows]
+    return jsonify({"items": items, "count": len(items)})
+
+
+def steward_loop():
+    """Deterministic rule engine: read per-account configs, act on live telemetry,
+    write every decision to the steward_actions timeline."""
+    while True:
+        time.sleep(STEWARD_LOOP_SECONDS)  # sleep first: module fully loads first
+        try:
+            with registry_lock:
+                devices = {did: dict(dev) for did, dev in registry.items()}
+            conn = _telemetry_connect()
+            try:
+                rows = conn.execute("SELECT owner_user_id, auto_pump_enabled, "
+                                    "moisture_threshold_pct, pump_duration_min, auto_tickets_enabled "
+                                    "FROM steward_config WHERE auto_pump_enabled=1 OR auto_tickets_enabled=1").fetchall()
+            finally:
+                conn.close()
+            now = time.time()
+            for owner, pump_on, threshold, duration, tickets_on in rows:
+                mine = [d for d in devices.values() if d.get("owner_user_id") == owner]
+                for device in mine:
+                    did = device.get("device_id")
+                    moisture = _plot_moisture(device)
+                    temperature = _plot_temperature(device)
+                    pump_state = (device.get("pump") or {})
+                    running = pump_state.get("running") or pump_state.get("status") == "pending"
+                    # 1) Automatic irrigation: moisture below threshold → start pump.
+                    if pump_on and isinstance(moisture, (int, float)):
+                        key = (owner, did, "pump_on")
+                        last = _steward_cooldown.get(key, 0.0)
+                        if moisture < threshold and not running and (now - last) > STEWARD_ACTION_COOLDOWN_SECONDS:
+                            command, error = _publish_pump_command(did, "start", source="steward")
+                            if error is None:
+                                _steward_cooldown[key] = now
+                                _steward_pump_started_at[did] = now
+                                _insert_steward_action(
+                                    owner, did, "pump_on",
+                                    f"检测到土壤湿度 {moisture:.1f}% 跌破阈值 {threshold:.0f}%，自动开启水泵 {duration} 分钟")
+                        # 2) Stop after the configured duration.
+                        elif running and did in _steward_pump_started_at:
+                            elapsed_min = (now - _steward_pump_started_at[did]) / 60.0
+                            if elapsed_min >= duration:
+                                _publish_pump_command(did, "stop", source="steward")
+                                _steward_pump_started_at.pop(did, None)
+                                _insert_steward_action(
+                                    owner, did, "pump_off",
+                                    f"自动灌溉完成（已运行 {duration} 分钟），关闭水泵")
+                    # 3) Pest/ticket heuristic: hot + humid for a while → advisory ticket.
+                    if tickets_on and isinstance(temperature, (int, float)) and isinstance(moisture, (int, float)):
+                        if temperature > 30 and moisture > 80:
+                            key = (owner, did, "ticket")
+                            if (now - _steward_cooldown.get(key, 0.0)) > STEWARD_TICKET_COOLDOWN_SECONDS:
+                                _steward_cooldown[key] = now
+                                detail = (f"温度 {temperature:.1f}°C、湿度 {moisture:.1f}% 持续偏高，"
+                                          "易诱发白粉病/霜霉病。建议：加强通风、降低密度、"
+                                          "傍晚喷施对症防治药剂，连续 3 天复查。")
+                                _insert_steward_action(owner, did, "ticket",
+                                                       "高温高湿预警：已生成病虫害防治工单", detail)
+        except Exception as exc:
+            LOGGER.warning("steward loop pass failed: %s", exc)
+
+
+Thread(target=steward_loop, name="steward-loop", daemon=True).start()
 
 
 @app.get("/api/v1/devices")
