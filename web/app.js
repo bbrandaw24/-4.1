@@ -2028,6 +2028,8 @@ function initFarm3D() {
   farm3d.controls = controls;
   farm3d.raycaster = new THREE.Raycaster();
   farm3d.mouse = new THREE.Vector2();
+  const loading = $("#farm3d-loading");
+  if (loading) loading.remove();
   renderer.domElement.addEventListener("pointerdown", (e) => {
     const rect = renderer.domElement.getBoundingClientRect();
     farm3d.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -2232,7 +2234,7 @@ function showFarm3DInfo(device) {
 
 function renderFarm3D(force) {
   if (!initFarm3D()) return;
-  if (force) buildFarm3DCrops();
+  if (force || farm3d.crops.size === 0) buildFarm3DCrops();
   updateFarm3DCrops();
 }
 
