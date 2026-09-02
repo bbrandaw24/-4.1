@@ -386,6 +386,29 @@ def init_telemetry_db():
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_adoptions_owner ON adoptions(owner_user_id)")
+        # v15.11.0: adoption gamification — time acceleration + harvest ledger.
+        for col, decl in (("time_scale", "INTEGER NOT NULL DEFAULT 1"),
+                          ("harvest_count", "INTEGER NOT NULL DEFAULT 0")):
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(adoptions)").fetchall()]
+            if col not in cols:
+                conn.execute(f"ALTER TABLE adoptions ADD COLUMN {col} {decl}")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS harvests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                crop TEXT NOT NULL,
+                nickname TEXT,
+                health_score REAL NOT NULL,
+                grade TEXT NOT NULL,
+                grade_label TEXT NOT NULL,
+                points INTEGER NOT NULL,
+                harvested_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_harvests_owner ON harvests(owner_user_id, harvested_at)")
         conn.commit()
     finally:
         conn.close()
@@ -1423,16 +1446,19 @@ def list_adoptions():
     try:
         if _is_manager():
             rows = conn.execute(
-                "SELECT owner_user_id, device_id, crop, nickname, adopted_at FROM adoptions "
-                "ORDER BY id DESC LIMIT 200").fetchall()
+                "SELECT owner_user_id, device_id, crop, nickname, adopted_at, time_scale, harvest_count "
+                "FROM adoptions ORDER BY id DESC LIMIT 200").fetchall()
         else:
             rows = conn.execute(
-                "SELECT owner_user_id, device_id, crop, nickname, adopted_at FROM adoptions "
-                "WHERE owner_user_id=? ORDER BY id DESC LIMIT 200", (uid,)).fetchall()
+                "SELECT owner_user_id, device_id, crop, nickname, adopted_at, time_scale, harvest_count "
+                "FROM adoptions WHERE owner_user_id=? ORDER BY id DESC LIMIT 200", (uid,)).fetchall()
     finally:
         conn.close()
-    items = [{"owner_user_id": r[0], "device_id": r[1], "crop": r[2],
-              "nickname": r[3], "adopted_at": r[4]} for r in rows]
+    items = []
+    for r in rows:
+        row = {"owner_user_id": r[0], "device_id": r[1], "crop": r[2], "nickname": r[3],
+               "adopted_at": r[4], "time_scale": r[5] or 1, "harvest_count": r[6] or 0}
+        items.append(_adoption_certificate_full(row))
     return jsonify({"items": items, "count": len(items)})
 
 
@@ -1462,6 +1488,257 @@ def unadopt(device_id):
     finally:
         conn.close()
     return jsonify({"deleted": device_id})
+
+
+# --- v15.11.0: adoption gamification -----------------------------------------
+# Time acceleration (1 minute = time_scale days), harvest + points, points
+# leaderboard, and the public one-code trace endpoint. Health scoring mirrors
+# the frontend report card (moisture 40 / temperature 30 / ph 20 / offline 10).
+_CROP_BASE_POINTS = {
+    "apple": 150, "pear": 150, "orange": 160, "grape": 140,
+    "strawberry": 120, "tomato": 100, "cucumber": 90, "chili": 100,
+    "eggplant": 100, "watermelon": 90, "bokchoy": 70, "spinach": 70,
+    "lettuce": 70, "rice": 140, "wheat": 150, "corn": 140, "soybean": 110,
+    "peanut": 110,
+}
+_GRADE_RULES = [
+    (80, "excellent", "优秀", 2.0),
+    (60, "good", "良好", 1.5),
+    (40, "pass", "及格", 1.0),
+    (0, "fail", "不及格", 0.5),
+]
+
+
+def _crop_base_points(crop):
+    return _CROP_BASE_POINTS.get(crop, 100)
+
+
+def _deviation_score(value, range_):
+    """Mirror frontend deviationScore(): 0 = centered, 1 = at/beyond boundary."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not range_ or range_[0] is None:
+        return None
+    mid = (range_[0] + range_[1]) / 2
+    half = max(0.0001, (range_[1] - range_[0]) / 2)
+    return min(1.0, abs(value - mid) / half)
+
+
+def _plot_health_score(device_id):
+    """Health score 0-100 for a device (same algorithm as the frontend report)."""
+    with registry_lock:
+        device = registry.get(device_id)
+    if device is None:
+        return None
+    plot = device.get("plot") or {}
+    crop_key = normalize_crop(plot.get("crop") or "")
+    crop = CROPS.get(crop_key)
+    if crop is None:
+        return None
+    soil = (device.get("telemetry", {}).get("soil", {}).get("payload", {}) or {})
+    climate = (device.get("telemetry", {}).get("climate", {}).get("payload", {}) or {})
+    deduct = 0.0
+    m = _deviation_score(soil.get("moisture_pct"), crop["soil_moisture"])
+    if m is not None:
+        deduct += 40 * m
+    t = _deviation_score(climate.get("air_temperature_c"), crop["air_temp"])
+    if t is not None:
+        deduct += 30 * t
+    p = _deviation_score(soil.get("ph"), crop["ph"])
+    if p is not None:
+        deduct += 20 * p
+    sensors = list_sensors_for_device(device_id)
+    if sensors:
+        offline = sum(1 for s in sensors if s.get("status") != "connected")
+        if offline:
+            deduct += 10 * (offline / len(sensors))
+    return max(0, round(100 - deduct))
+
+
+def _adoption_row(device_id):
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute(
+            "SELECT owner_user_id, device_id, crop, nickname, adopted_at, time_scale, harvest_count "
+            "FROM adoptions WHERE device_id=?", (device_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return {"owner_user_id": row[0], "device_id": row[1], "crop": row[2], "nickname": row[3],
+            "adopted_at": row[4], "time_scale": row[5] or 1, "harvest_count": row[6] or 0}
+
+
+def _adoption_growth(row, now_ts=None):
+    """1 minute = 1 day at time_scale 1. Returns age/progress/maturity info."""
+    now_ts = now_ts if now_ts is not None else time.time()
+    try:
+        adopted_ts = datetime.fromisoformat(row["adopted_at"]).timestamp()
+    except (ValueError, TypeError):
+        adopted_ts = now_ts
+    elapsed_min = max(0.0, (now_ts - adopted_ts) / 60.0)
+    age_days = elapsed_min * (row["time_scale"] or 1)
+    growing = CROPS.get(row["crop"], {}).get("growing_days", 120)
+    pct = min(100.0, round(age_days / growing * 100, 1))
+    return {"age_days": round(age_days, 1), "pct": pct,
+            "remaining_days": round(max(0.0, growing - age_days), 1),
+            "mature": pct >= 100.0, "growing_days": growing,
+            "time_scale": row["time_scale"]}
+
+
+def _grade_for(score):
+    for low, key, label, mult in _GRADE_RULES:
+        if score >= low:
+            return {"grade": key, "label": label, "multiplier": mult}
+    return {"grade": "fail", "label": "不及格", "multiplier": 0.5}
+
+
+def _adoption_certificate_full(row):
+    return {"owner_user_id": row["owner_user_id"], "device_id": row["device_id"],
+            "crop": row["crop"], "nickname": row["nickname"], "adopted_at": row["adopted_at"],
+            "time_scale": row["time_scale"], "harvest_count": row["harvest_count"],
+            "growth": _adoption_growth(row)}
+
+
+@app.patch("/api/v1/adoptions/<device_id>")
+@require_auth("manage_sensors")
+def adoption_patch(device_id):
+    """Owner/manager adjusts the adoption time scale (1 minute = time_scale days)."""
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
+    row = _adoption_row(device_id)
+    if row is None:
+        return jsonify({"error": "adoption_not_found", "device_id": device_id}), 404
+    body = request.get_json(silent=True) or {}
+    scale = body.get("time_scale")
+    if scale is not None:
+        try:
+            scale = int(scale)
+        except (TypeError, ValueError):
+            return jsonify({"error": "time_scale_invalid"}), 400
+        if not (1 <= scale <= 60):
+            return jsonify({"error": "time_scale_out_of_range",
+                            "message": "倍率须在 1-60 之间"}), 400
+        conn = _telemetry_connect()
+        try:
+            conn.execute("UPDATE adoptions SET time_scale=? WHERE device_id=?", (scale, device_id))
+            conn.commit()
+        finally:
+            conn.close()
+        row["time_scale"] = scale
+    return jsonify(_adoption_certificate_full(row))
+
+
+@app.post("/api/v1/adoptions/<device_id>/harvest")
+@require_auth("manage_sensors")
+def harvest_adoption(device_id):
+    """Harvest a mature adopted crop: score -> grade -> points; replant afterwards."""
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
+    row = _adoption_row(device_id)
+    if row is None:
+        return jsonify({"error": "adoption_not_found", "device_id": device_id}), 404
+    growth = _adoption_growth(row)
+    if not growth["mature"]:
+        return jsonify({"error": "crop_not_mature",
+                        "message": f"作物尚未成熟（进度 {growth['pct']}%，还需约 {growth['remaining_days']} 天）"}), 409
+    score = _plot_health_score(device_id)
+    if score is None:
+        score = 50
+    grade = _grade_for(score)
+    points = max(1, round(_crop_base_points(row["crop"]) * grade["multiplier"]))
+    conn = _telemetry_connect()
+    try:
+        conn.execute(
+            "INSERT INTO harvests (owner_user_id, device_id, crop, nickname, health_score, "
+            "grade, grade_label, points, harvested_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (row["owner_user_id"], device_id, row["crop"], row["nickname"], score,
+             grade["grade"], grade["label"], points, utc_now()))
+        conn.execute("UPDATE adoptions SET harvest_count=harvest_count+1, adopted_at=? WHERE device_id=?",
+                     (utc_now(), device_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"harvested": device_id, "crop": row["crop"], "nickname": row["nickname"],
+                    "health_score": score, "grade": grade, "points": points,
+                    "total_harvests": row["harvest_count"] + 1}), 201
+
+
+@app.get("/api/v1/adoptions/points")
+@require_auth()
+def adoption_points():
+    """The signed-in account's harvest points summary."""
+    uid = _current_user_id()
+    conn = _telemetry_connect()
+    try:
+        total = conn.execute(
+            "SELECT COALESCE(SUM(points),0), COUNT(*) FROM harvests WHERE owner_user_id=?",
+            (uid,)).fetchone()
+        by_crop = conn.execute(
+            "SELECT crop, COUNT(*), SUM(points), ROUND(AVG(health_score),1) FROM harvests "
+            "WHERE owner_user_id=? GROUP BY crop ORDER BY SUM(points) DESC", (uid,)).fetchall()
+    finally:
+        conn.close()
+    return jsonify({"total_points": total[0] or 0, "total_harvests": total[1] or 0,
+                    "by_crop": [{"crop": r[0], "harvests": r[1], "points": r[2] or 0,
+                                 "avg_health": r[3]} for r in by_crop]})
+
+
+@app.get("/api/v1/adoptions/leaderboard")
+@require_auth()
+def adoption_leaderboard():
+    """Cross-account leaderboard grouped by crop, ranked by harvest POINTS."""
+    conn = _telemetry_connect()
+    try:
+        rows = conn.execute(
+            "SELECT crop, owner_user_id, SUM(points) AS total, COUNT(*) AS cnt, "
+            "ROUND(AVG(health_score),1) AS avg_health FROM harvests "
+            "GROUP BY crop, owner_user_id HAVING total > 0 "
+            "ORDER BY crop, total DESC LIMIT 300").fetchall()
+        nick_rows = conn.execute(
+            "SELECT owner_user_id, nickname FROM adoptions "
+            "WHERE owner_user_id IN (SELECT DISTINCT owner_user_id FROM harvests) "
+            "GROUP BY owner_user_id").fetchall()
+    finally:
+        conn.close()
+    names = {r[0]: r[1] for r in nick_rows}
+    groups = {}
+    for crop, uid, total, cnt, avg in rows:
+        groups.setdefault(crop, []).append({
+            "owner_user_id": uid, "nickname": names.get(uid) or f"用户{uid}",
+            "points": total, "harvests": cnt, "avg_health": avg})
+    return jsonify({"groups": groups})
+
+
+@app.get("/api/v1/trace/<device_id>")
+def trace_public(device_id):
+    """Public read-only one-code trace for an adopted plot (no auth required)."""
+    row = _adoption_row(device_id)
+    if row is None:
+        return jsonify({"error": "trace_not_found", "device_id": device_id}), 404
+    growth = _adoption_growth(row)
+    score = _plot_health_score(device_id)
+    grade = _grade_for(score) if score is not None else None
+    conn = _telemetry_connect()
+    try:
+        harvests = conn.execute(
+            "SELECT grade_label, points, health_score, harvested_at FROM harvests "
+            "WHERE device_id=? ORDER BY harvested_at DESC LIMIT 10", (device_id,)).fetchall()
+        actions = conn.execute(
+            "SELECT action_type, reason, created_at FROM steward_actions "
+            "WHERE device_id=? ORDER BY created_at DESC LIMIT 8", (device_id,)).fetchall()
+    finally:
+        conn.close()
+    return jsonify({
+        "crop": row["crop"], "nickname": row["nickname"], "adopted_at": row["adopted_at"],
+        "time_scale": row["time_scale"], "harvest_count": row["harvest_count"],
+        "growth": growth, "health_score": score, "grade": grade,
+        "harvests": [{"grade_label": h[0], "points": h[1], "health_score": h[2],
+                      "harvested_at": h[3]} for h in harvests],
+        "events": [{"action_type": a[0], "reason": a[1], "created_at": a[2]} for a in actions],
+    })
 
 
 @app.get("/api/v1/devices")
