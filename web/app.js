@@ -201,7 +201,7 @@ function renderTrendPanels() {
 }
 
 function setRoute(route) {
-  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard", "reports", "adopt"].includes(route) ? route : "overview";
+  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard", "reports", "adopt", "farm3d"].includes(route) ? route : "overview";
   document.body.classList.toggle("dashboard-active", nextRoute === "dashboard");
   document.querySelectorAll("[data-view]").forEach((panel) => {
     panel.hidden = panel.dataset.view !== nextRoute;
@@ -227,6 +227,9 @@ function setRoute(route) {
   }
   if (nextRoute === "adopt") {
     renderAdopt();
+  }
+  if (nextRoute === "farm3d") {
+    renderFarm3D(true);
   }
 }
 
@@ -394,6 +397,9 @@ async function refresh() {
     }
     if (document.querySelector('[data-view="adopt"]') && !document.querySelector('[data-view="adopt"]').hidden) {
       renderAdopt();
+    }
+    if (document.querySelector('[data-view="farm3d"]') && !document.querySelector('[data-view="farm3d"]').hidden) {
+      renderFarm3D(false);
     }
   } catch (error) {
     // Refresh failure only shows the error in the device-status slot; the
@@ -1953,6 +1959,281 @@ function bindAdoptActions() {
       if (scale) setAdoptScale(scale.dataset.device, scale.value);
     });
   }
+}
+
+// --- v15.12.0: 3D digital twin farm ----------------------------------------
+// Three.js scene where virtual crops are driven by live telemetry:
+// stem height/growth = progress, leaf color = health score, moisture tint,
+// adopted plots get a violet halo ring. Click a crop to inspect real data.
+let farm3d = {
+  scene: null, camera: null, renderer: null, controls: null, built: false,
+  crops: new Map(), devices: [], raycaster: null, mouse: null, animId: 0,
+};
+
+function farm3dColor(score) {
+  return score >= 80 ? 0x22c55e : score >= 60 ? 0xa3e635 : score >= 40 ? 0xfacc15 : 0xfb923c;
+}
+
+function farm3dProgress(device) {
+  const ad = adoptions.find((a) => a.device_id === device.device_id);
+  if (ad && ad.growth && ad.growth.pct != null) return ad.growth.pct;
+  return plotProgress(device).pct ?? 0;
+}
+
+function initFarm3D() {
+  if (farm3d.built) return true;
+  const stage = $("#farm3d-stage");
+  if (!stage) return false;
+  if (!window.THREE) {
+    $("#farm3d-hint").textContent = "3D 引擎（Three.js CDN）加载失败，请检查网络后刷新页面重试。";
+    return false;
+  }
+  const width = Math.max(320, stage.clientWidth || 680);
+  const height = Math.max(300, stage.clientHeight || 470);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b1020);
+  scene.fog = new THREE.Fog(0x0b1020, 13, 28);
+  const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+  camera.position.set(7, 5.5, 9.5);
+  camera.lookAt(0, 1.2, 0);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  stage.appendChild(renderer.domElement);
+  scene.add(new THREE.AmbientLight(0x8899bb, 0.7));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.95);
+  dir.position.set(5, 9, 4);
+  dir.castShadow = true;
+  dir.shadow.mapSize.set(1024, 1024);
+  scene.add(dir);
+  const fill = new THREE.PointLight(0x22d3ee, 0.55, 22);
+  fill.position.set(-5, 3.5, -4);
+  scene.add(fill);
+  const grid = new THREE.GridHelper(16, 16, 0x1e3a5f, 0x152a4a);
+  grid.position.y = -0.02;
+  scene.add(grid);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 3.5;
+  controls.maxDistance = 20;
+  controls.maxPolarAngle = Math.PI / 2.05;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.8;
+  farm3d.scene = scene;
+  farm3d.camera = camera;
+  farm3d.renderer = renderer;
+  farm3d.controls = controls;
+  farm3d.raycaster = new THREE.Raycaster();
+  farm3d.mouse = new THREE.Vector2();
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    farm3d.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    farm3d.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  });
+  renderer.domElement.addEventListener("pointerup", onFarm3DClick);
+  window.addEventListener("resize", resizeFarm3D);
+  farm3d.built = true;
+  animateFarm3D();
+  return true;
+}
+
+function resizeFarm3D() {
+  if (!farm3d.built) return;
+  const stage = $("#farm3d-stage");
+  if (!stage) return;
+  const w = Math.max(320, stage.clientWidth || 680);
+  const h = Math.max(300, stage.clientHeight || 470);
+  farm3d.camera.aspect = w / h;
+  farm3d.camera.updateProjectionMatrix();
+  farm3d.renderer.setSize(w, h);
+}
+
+function animateFarm3D() {
+  if (!farm3d.built) return;
+  farm3d.animId = requestAnimationFrame(animateFarm3D);
+  if (farm3d.controls) farm3d.controls.update();
+  farm3d.renderer.render(farm3d.scene, farm3d.camera);
+}
+
+function makeCropMesh(device, index, total) {
+  const group = new THREE.Group();
+  const health = plotHealth(device);
+  const score = health.score ?? 50;
+  const pct = farm3dProgress(device);
+  const crop = reportCrops[(device.plot || {}).crop];
+  const cropName = (crop && crop.name) || (device.plot || {}).crop || "作物";
+  const color = farm3dColor(score);
+  // soil mound
+  const mound = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.7, 0.18, 16),
+    new THREE.MeshStandardMaterial({ color: 0x3b2f1f, roughness: 1 })
+  );
+  mound.position.y = 0.09;
+  mound.receiveShadow = true;
+  group.add(mound);
+  // stem height scaled by progress
+  const stemH = Math.max(0.25, 0.3 + (pct / 100) * 1.5);
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.055, 0.09, stemH, 8),
+    new THREE.MeshStandardMaterial({ color: 0x3f7d3a, roughness: 0.75 })
+  );
+  stem.position.y = 0.18 + stemH / 2;
+  stem.castShadow = true;
+  group.add(stem);
+  // leaves: count & size grow with progress
+  const leafCount = Math.max(2, Math.round(2 + (pct / 100) * 5));
+  const leafMat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, emissive: color, emissiveIntensity: 0.06 });
+  const leaves = new THREE.Group();
+  for (let i = 0; i < leafCount; i++) {
+    const leaf = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16 + (pct / 100) * 0.14, 10, 8),
+      leafMat
+    );
+    leaf.scale.y = 0.42;
+    const t = leafCount > 1 ? i / (leafCount - 1) : 0.5;
+    leaf.position.y = 0.5 + t * stemH * 0.72;
+    const angle = (i / leafCount) * Math.PI * 2 + (index * 0.7);
+    leaf.position.x = Math.cos(angle) * (0.14 + (pct / 100) * 0.18);
+    leaf.position.z = Math.sin(angle) * (0.14 + (pct / 100) * 0.18);
+    leaves.add(leaf);
+  }
+  group.add(leaves);
+  // fruits appear when mature
+  const fruits = new THREE.Group();
+  if (pct >= 80) {
+    const fruitMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.35 });
+    const n = pct >= 100 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const f = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), fruitMat);
+      const a = (i / n) * Math.PI * 2 + index;
+      f.position.set(Math.cos(a) * 0.22, 0.5 + stemH * 0.55, Math.sin(a) * 0.22);
+      fruits.add(f);
+    }
+  }
+  group.add(fruits);
+  // adopted halo ring
+  const isAdopted = adoptions.some((a) => a.device_id === device.device_id);
+  if (isAdopted) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.62, 0.028, 8, 40),
+      new THREE.MeshBasicMaterial({ color: 0x7c3aed })
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.03;
+    group.add(ring);
+  }
+  const angle = total > 1 ? (index / total) * Math.PI * 2 : 0;
+  const radius = Math.min(4.2, 1.6 + total * 0.55);
+  group.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+  // store dynamic refs for updates
+  group.userData = { device, stem, leaves, fruits, leafMat, name: cropName, pct, score };
+  return group;
+}
+
+function buildFarm3DCrops() {
+  const devices = state.allDevices || [];
+  if (!devices.length) {
+    $("#farm3d-hint").textContent = "暂无地块数据。";
+    return;
+  }
+  const existing = new Set();
+  devices.forEach((d, i) => {
+    let group = farm3d.crops.get(d.device_id);
+    if (!group) {
+      group = makeCropMesh(d, i, devices.length);
+      farm3d.scene.add(group);
+      farm3d.crops.set(d.device_id, group);
+    } else {
+      existing.add(d.device_id);
+    }
+  });
+  // remove vanished plots
+  const ids = new Set(devices.map((d) => d.device_id));
+  farm3d.crops.forEach((group, deviceId) => {
+    if (!ids.has(deviceId)) {
+      farm3d.scene.remove(group);
+      farm3d.crops.delete(deviceId);
+    }
+  });
+}
+
+function updateFarm3DCrops() {
+  farm3d.devices = state.allDevices || [];
+  const devices = farm3d.devices;
+  const onlineCount = devices.filter((d) => d.last_seen).length;
+  $("#farm3d-hint").textContent = devices.length
+    ? `${devices.length} 个地块 · ${onlineCount} 在线 · 数据每 30 秒刷新`
+    : "";
+  devices.forEach((device) => {
+    const group = farm3d.crops.get(device.device_id);
+    if (!group) return;
+    const u = group.userData || {};
+    const health = plotHealth(device);
+    const score = health.score ?? 50;
+    const pct = farm3dProgress(device);
+    const color = farm3dColor(score);
+    if (u.stem) {
+      const stemH = Math.max(0.25, 0.3 + (pct / 100) * 1.5);
+      u.stem.geometry.dispose();
+      u.stem.geometry = new THREE.CylinderGeometry(0.055, 0.09, stemH, 8);
+      u.stem.position.y = 0.18 + stemH / 2;
+    }
+    if (u.leafMat) u.leafMat.color.setHex(color);
+    if (u.fruits) u.fruits.visible = pct >= 80;
+    u.pct = pct;
+    u.score = score;
+  });
+}
+
+function onFarm3DClick() {
+  if (!farm3d.built || !farm3d.raycaster) return;
+  farm3d.raycaster.setFromCamera(farm3d.mouse, farm3d.camera);
+  const groups = Array.from(farm3d.crops.values());
+  const hits = farm3d.raycaster.intersectObjects(groups, true);
+  if (!hits.length) return;
+  let obj = hits[0].object;
+  while (obj && !farm3d.crops.has(obj.userData && obj.userData.device && obj.userData.device.device_id)) {
+    obj = obj.parent;
+  }
+  const deviceId = obj && obj.userData.device ? obj.userData.device.device_id : null;
+  const device = deviceId ? farm3d.devices.find((d) => d.device_id === deviceId) : null;
+  if (device) showFarm3DInfo(device);
+}
+
+function showFarm3DInfo(device) {
+  const box = $("#farm3d-selected");
+  if (!box) return;
+  const plot = device.plot || {};
+  const health = plotHealth(device);
+  const score = health.score ?? "--";
+  const pct = farm3dProgress(device);
+  const stageLabel = pct >= 100 ? "已成熟" : pct >= 70 ? "成熟期" : pct >= 40 ? "生长期" : pct >= 10 ? "幼苗期" : "播种期";
+  const soil = (device.telemetry || {}).soil?.payload || {};
+  const climate = (device.telemetry || {}).climate?.payload || {};
+  const ad = adoptions.find((a) => a.device_id === device.device_id);
+  const owner = device.owner_label || "";
+  const cropName = plot.crop || "—";
+  box.innerHTML = `
+    <div class="f3d-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#${(score === "--" ? "64748b" : farm3dColor(score).toString(16).padStart(6, "0"))}"></span>
+      ${escapeHtml(plot.name || device.device_id)} ${ad ? '<span class="f3d-adopt">认养</span>' : ""}
+    </div>
+    <div class="f3d-meta">
+      <span>作物 ${escapeHtml(cropName)}</span><span>${owner ? `归属 ${escapeHtml(owner)}` : ""}</span>
+      <span>健康度 <b>${score}</b></span><span>进度 ${pct}% · ${stageLabel}</span>
+      <span>湿度 ${soil.moisture_pct ?? "--"}%</span><span>气温 ${climate.air_temperature_c ?? "--"}°C</span>
+      <span>pH ${soil.ph ?? "--"}</span><span>${device.last_seen ? "● 在线" : "○ 离线"}</span>
+    </div>
+    <div class="f3d-body">${health.parts && health.parts.length ? escapeHtml(health.parts.join("；")) : "各项指标处于作物适宜区间，长势良好。"}</div>`;
+}
+
+function renderFarm3D(force) {
+  if (!initFarm3D()) return;
+  if (force) buildFarm3DCrops();
+  updateFarm3DCrops();
 }
 
 // --- v15.4.0: big data screen ----------------------------------------------
