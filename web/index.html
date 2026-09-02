@@ -19,10 +19,10 @@
   <link rel="stylesheet" href="auth.css?v=v15.3.1">
   <link rel="stylesheet" href="agent.css">
   <link rel="stylesheet" href="kitten.css?v=day16-kitten">
-  <link rel="stylesheet" href="sensor.css?v=v15.8.0">
+  <link rel="stylesheet" href="sensor.css?v=v15.9.0">
   <link rel="stylesheet" href="day13.css">
   <link rel="stylesheet" href="theme.css?v=v15-perf">
-  <link rel="stylesheet" href="dashboard.css?v=v15.8.0">
+  <link rel="stylesheet" href="dashboard.css?v=v15.9.0">
 </head>
 <body>
   <header class="topbar">
@@ -44,6 +44,7 @@
       <button class="nav-item" data-route="devices"><i data-lucide="cpu"></i><span>设备</span></button>
       <button class="nav-item" data-route="agent"><i data-lucide="message-circle"></i><span>智能体问答</span></button>
       <button class="nav-item" data-route="dashboard"><i data-lucide="monitor"></i><span>数据屏幕</span></button>
+      <button class="nav-item" data-route="reports"><i data-lucide="sprout"></i><span>农场报告</span></button>
     </nav>
 
     <section class="metric-grid route-panel" data-view="overview" aria-label="关键指标">
@@ -359,10 +360,28 @@
         <article class="dpanel"><div class="dpanel-head"><span class="corner tl"></span><span class="corner tr"></span><h4><i data-lucide="sprout"></i> 作物生长进度<small class="est-tag">演示</small></h4></div><div class="growth-list" id="dash-growth"></div></article>
       </div>
     </section>
+
+    <section class="route-panel" data-view="reports" aria-label="农场报告">
+      <article class="panel reports-panel">
+        <div class="panel-heading"><div><p class="eyebrow">FARM REPORT</p><h2>🌱 农场报告</h2><p class="agent-sub">每块地的「作物的一生」：健康度评分（对照作物适宜区间）、生长进度（种植天数 ÷ 生长周期）、关键事件时间线，以及同作物健康度 PK 排行。</p></div></div>
+        <div class="reports-toolbar">
+          <label class="reports-plot-select">地块
+            <select id="report-plot-select"></select>
+          </label>
+          <button class="notify-button" id="report-share" type="button">📋 复制分享文本</button>
+          <button class="notify-button" id="report-refresh" type="button">刷新</button>
+        </div>
+        <div class="reports-grid">
+          <div class="report-card" id="report-card"></div>
+          <div class="report-rank" id="report-rank"></div>
+        </div>
+        <p class="sensor-hint" id="report-hint"></p>
+      </article>
+    </section>
   </main>
   <footer class="footer"><span>SMART AGRICULTURE / LOCAL DEVELOPMENT</span><span>API <code id="api-url"></code></span></footer>
   <script src="auth.js?v=day16-beijing-gateway"></script>
-  <script src="app.js?v=v15.8.0"></script>
+  <script src="app.js?v=v15.9.0"></script>
   <script src="kitten.js?v=day16-kitten"></script>
   <script src="agent.js?v=day16-kitten"></script>
   <script src="enhance.js?v=v15-perf"></script>
