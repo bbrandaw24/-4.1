@@ -201,7 +201,7 @@ function renderTrendPanels() {
 }
 
 function setRoute(route) {
-  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard", "reports"].includes(route) ? route : "overview";
+  const nextRoute = ["overview", "trends", "devices", "agent", "dashboard", "reports", "adopt"].includes(route) ? route : "overview";
   document.body.classList.toggle("dashboard-active", nextRoute === "dashboard");
   document.querySelectorAll("[data-view]").forEach((panel) => {
     panel.hidden = panel.dataset.view !== nextRoute;
@@ -224,6 +224,9 @@ function setRoute(route) {
   }
   if (nextRoute === "reports") {
     renderReports();
+  }
+  if (nextRoute === "adopt") {
+    renderAdopt();
   }
 }
 
@@ -388,6 +391,9 @@ async function refresh() {
     // never leaves the report card / ranking empty.
     if (document.querySelector('[data-view="reports"]') && !document.querySelector('[data-view="reports"]').hidden) {
       renderReports();
+    }
+    if (document.querySelector('[data-view="adopt"]') && !document.querySelector('[data-view="adopt"]').hidden) {
+      renderAdopt();
     }
   } catch (error) {
     // Refresh failure only shows the error in the device-status slot; the
@@ -1731,6 +1737,119 @@ function bindReportsActions() {
   }
 }
 
+// --- v15.10.0: adoption farm ------------------------------------------------
+let adoptions = [];  // [{owner_user_id, device_id, crop, nickname, adopted_at}]
+
+function adoptCropOptions() {
+  const select = $("#adopt-crop");
+  if (!select) return;
+  const names = Object.keys(reportCrops).sort();
+  select.innerHTML = names.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+}
+
+async function adoptPlot() {
+  const hint = $("#adopt-hint");
+  const crop = $("#adopt-crop")?.value;
+  const nickname = ($("#adopt-nickname")?.value || "").trim();
+  if (!crop) { hint.textContent = "请选择认养作物"; return; }
+  try {
+    const response = await Auth.request("/api/v1/adoptions", {
+      method: "POST",
+      body: JSON.stringify({ crop, nickname }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    $("#adopt-nickname").value = "";
+    hint.textContent = `🎉 认养成功！「${data.nickname}」已为你创建，模拟器约 30 秒内开始上报`;
+    hint.style.color = "var(--green)";
+    await refresh();
+    await loadAdoptions();
+  } catch (error) {
+    hint.textContent = `认养失败：${error.message || error}`;
+    hint.style.color = "";
+  }
+}
+
+async function loadAdoptions() {
+  const list = $("#adopt-list");
+  if (!list) return;
+  try {
+    const resp = await Auth.request("/api/v1/adoptions", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    adoptions = data.items || [];
+  } catch (error) {
+    list.innerHTML = `<div class="rank-empty">认养列表加载失败：${escapeHtml(error.message || error)}</div>`;
+    return;
+  }
+  if (!adoptions.length) {
+    list.innerHTML = '<div class="rank-empty">还没有认养的地块。选一个作物，点击「认养这块地」开始。</div>';
+    return;
+  }
+  const devices = state.allDevices || [];
+  list.innerHTML = adoptions.map((ad) => {
+    const device = devices.find((d) => d.device_id === ad.device_id);
+    const health = device ? plotHealth(device) : { score: null };
+    const progress = device ? plotProgress(device) : { label: "—" };
+    const online = device ? Boolean(device.last_seen) : false;
+    return `<div class="adopt-card">
+      <div class="adopt-card-head">
+        <span class="adopt-crop">${escapeHtml(ad.crop)}</span>
+        <span class="adopt-date">认养于 ${new Date(ad.adopted_at).toLocaleDateString("zh-CN")}</span>
+      </div>
+      <div class="adopt-name">${escapeHtml(ad.nickname || ad.device_id)}</div>
+      <div class="adopt-meta">
+        <span>健康度 <b class="${health.score == null ? "" : health.score >= 60 ? "ok" : "warn"}">${health.score == null ? "--" : health.score}</b></span>
+        <span>${escapeHtml(progress.label)}</span>
+        <span class="${online ? "ok" : "warn"}">${online ? "● 在线" : "○ 离线"}</span>
+      </div>
+      <div class="adopt-actions">
+        <button class="action ghost adopt-report" data-device="${escapeHtml(ad.device_id)}" type="button">📊 查看报告</button>
+        <button class="adopt-unadopt" data-device="${escapeHtml(ad.device_id)}" type="button">解除认养</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function renderAdopt() {
+  await ensureReportCrops();
+  adoptCropOptions();
+  await loadAdoptions();
+}
+
+function bindAdoptActions() {
+  const adoptBtn = $("#adopt-btn");
+  if (adoptBtn && !adoptBtn.dataset.bound) {
+    adoptBtn.dataset.bound = "1";
+    adoptBtn.addEventListener("click", adoptPlot);
+  }
+  const list = $("#adopt-list");
+  if (list && !list.dataset.bound) {
+    list.dataset.bound = "1";
+    list.addEventListener("click", async (event) => {
+      const reportBtn = event.target.closest(".adopt-report");
+      if (reportBtn) {
+        reportSelected = reportBtn.dataset.device;
+        setRoute("reports");
+        return;
+      }
+      const unadoptBtn = event.target.closest(".adopt-unadopt");
+      if (unadoptBtn) {
+        if (!window.confirm("确定解除认养？该地块和它的数据会被删除。")) return;
+        try {
+          const resp = await Auth.request(`/api/v1/adoptions/${unadoptBtn.dataset.device}`, { method: "DELETE" });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          await refresh();
+          await loadAdoptions();
+          $("#adopt-hint").textContent = "已解除认养";
+        } catch (error) {
+          $("#adopt-hint").textContent = `解除失败：${error.message || error}`;
+        }
+      }
+    });
+  }
+}
+
 // --- v15.4.0: big data screen ----------------------------------------------
 const DASH_SENSOR_LABELS = {
   soil_temperature: "土壤温度",
@@ -2020,6 +2139,7 @@ bindBrokerActions();
 bindUsersActions();
 bindStewardActions();
 bindReportsActions();
+bindAdoptActions();
 loadBrokerPresets();
 loadBroker();
 refreshUserPermissions();
