@@ -14,10 +14,10 @@ from PIL import Image, UnidentifiedImageError
 import paho.mqtt.client as mqtt
 
 try:
-    from .auth import current_user, init_db, register_auth_routes, require_auth
+    from .auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth
     from .agent import answer_question, load_knowledge_base
 except ImportError:  # allow running main.py directly without the package context
-    from auth import current_user, init_db, register_auth_routes, require_auth
+    from auth import current_user, get_user_by_id, init_db, register_auth_routes, require_auth
     from agent import answer_question, load_knowledge_base
 
 app = Flask(__name__)
@@ -68,6 +68,77 @@ PLOT_META = {
     "sim-plot-pear": {"name": "梨园", "crop": "梨"},
     "sim-plot-orange": {"name": "橘园", "crop": "橘子"},
 }
+
+# --- Plot ownership (multi-tenant isolation) ---------------------------------
+# Every plot belongs to exactly one account. A regular account (farmer/guest)
+# only ever sees its own plots; a manager ("管理员") sees every plot.
+# The three built-in demo plots are owned by the seeded admin account (id=1).
+BUILTIN_PLOT_OWNER_ID = 1
+# Plots that appear only via MQTT (never created through the API) have no owner
+# and are therefore invisible to non-managers until they are claimed.
+ORPHAN_PLOT_OWNER_ID = None
+
+
+def _current_user():
+    return current_user() or {}
+
+
+def _current_user_id():
+    return _current_user().get("user_id")
+
+
+def _is_manager():
+    return _current_user().get("role") == "manager"
+
+
+def _plot_owner(device_id):
+    """Resolve the owning user id for a plot (registry first, then DB, then built-in)."""
+    with registry_lock:
+        device = registry.get(device_id)
+    if device is not None and device.get("owner_user_id") is not None:
+        return device["owner_user_id"]
+    if device_id in PLOT_META:
+        return BUILTIN_PLOT_OWNER_ID
+    owner = _load_plot_owner(device_id)
+    if owner is not None:
+        return owner
+    return ORPHAN_PLOT_OWNER_ID
+
+
+def _accessible_device_ids():
+    """Ids the current user may see. Returns None when the user may see all."""
+    if _is_manager():
+        return None
+    uid = _current_user_id()
+    with registry_lock:
+        return {did for did, device in registry.items() if device.get("owner_user_id") == uid}
+
+
+def _can_access_plot(device_id):
+    """True when the current user owns the plot (or is a manager)."""
+    if _is_manager():
+        return True
+    return _plot_owner(device_id) == _current_user_id()
+
+
+def _plot_access_error(device_id):
+    """Uniform 403 payload for cross-tenant plot access attempts."""
+    return jsonify({"error": "plot_forbidden", "device_id": device_id,
+                    "message": "该地块不属于当前账户，仅管理员可访问全部地块"}), 403
+
+
+def _owner_label(owner_user_id):
+    if owner_user_id is None:
+        return "未分配"
+    if owner_user_id == BUILTIN_PLOT_OWNER_ID:
+        return "内置"
+    try:
+        user = get_user_by_id(owner_user_id)
+    except Exception:
+        return f"#{owner_user_id}"
+    if not user:
+        return f"#{owner_user_id}"
+    return user.get("display_name") or user.get("username") or f"#{owner_user_id}"
 
 # --- Day 16: sensor registry ------------------------------------------------
 # Each plot (device) owns a fixed set of virtual hardware (sensors). Sensors
@@ -205,6 +276,17 @@ def init_telemetry_db():
             )
             """
         )
+        # Multi-tenant migration: every plot belongs to an account. Existing rows
+        # pre-date ownership, so they are back-filled to the seeded admin account.
+        try:
+            conn.execute("ALTER TABLE custom_plots ADD COLUMN owner_user_id INTEGER")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        conn.execute(
+            "UPDATE custom_plots SET owner_user_id=? WHERE owner_user_id IS NULL",
+            (BUILTIN_PLOT_OWNER_ID,),
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_plots_owner ON custom_plots(owner_user_id)")
         conn.commit()
     finally:
         conn.close()
@@ -340,31 +422,47 @@ init_telemetry_db()
 
 
 # --- Day 16: user-created plots (persistent "add plot" feature) -------------
-def _save_custom_plot(device_id, name, crop):
-    """Persist a user-created plot so it survives API restarts."""
+def _save_custom_plot(device_id, name, crop, owner_user_id=None):
+    """Persist a user-created plot (and its owning account) so it survives API restarts."""
     conn = _telemetry_connect()
     try:
         conn.execute(
-            "INSERT INTO custom_plots (device_id, name, crop, created_at) VALUES (?,?,?,?) "
-            "ON CONFLICT(device_id) DO UPDATE SET name=excluded.name, crop=excluded.crop",
-            (device_id, name or device_id, crop or "", utc_now()),
+            "INSERT INTO custom_plots (device_id, name, crop, created_at, owner_user_id) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(device_id) DO UPDATE SET name=excluded.name, crop=excluded.crop"
+            + (", owner_user_id=excluded.owner_user_id" if owner_user_id is not None else ""),
+            (device_id, name or device_id, crop or "", utc_now(), owner_user_id),
         )
         conn.commit()
     finally:
         conn.close()
 
 
+def _load_plot_owner(device_id):
+    """Read a plot's owner straight from SQLite (used when it is not in the registry)."""
+    conn = _telemetry_connect()
+    try:
+        row = conn.execute(
+            "SELECT owner_user_id FROM custom_plots WHERE device_id=?", (device_id,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        conn.close()
+    return row[0] if row and row[0] is not None else None
+
+
 def _load_custom_plots_into_registry():
     """Re-register persisted user plots after an API restart."""
     conn = _telemetry_connect()
     try:
-        rows = conn.execute("SELECT device_id, name, crop FROM custom_plots").fetchall()
+        rows = conn.execute("SELECT device_id, name, crop, owner_user_id FROM custom_plots").fetchall()
     finally:
         conn.close()
-    for device_id, name, crop in rows:
+    for device_id, name, crop, owner_user_id in rows:
         with registry_lock:
             if device_id in registry:
                 registry[device_id]["plot"] = {"name": name, "crop": crop or ""}
+                registry[device_id]["owner_user_id"] = owner_user_id
                 continue
             registry[device_id] = {
                 "device_id": device_id,
@@ -373,8 +471,9 @@ def _load_custom_plots_into_registry():
                 "pump": {"action": "stop", "running": False, "status": "standby",
                          "timestamp": None, "command_id": None},
                 "plot": {"name": name, "crop": crop or ""},
+                "owner_user_id": owner_user_id,
             }
-        LOGGER.info("restored custom plot %s (%s)", device_id, name)
+        LOGGER.info("restored custom plot %s (%s) owner=%s", device_id, name, owner_user_id)
 
 
 _load_custom_plots_into_registry()
@@ -894,13 +993,23 @@ def system_status():
 def devices():
     with registry_lock:
         items = list(registry.values())
+    allowed = _accessible_device_ids()
+    if allowed is not None:
+        items = [device for device in items if device.get("device_id") in allowed]
     enriched = []
     for device in items:
+        device_id = device.get("device_id")
         item = dict(device)
-        item["plot"] = device.get("plot") or PLOT_META.get(device.get("device_id"), {})
-        item["sensors"] = list_sensors_for_device(device.get("device_id"))
+        item["plot"] = device.get("plot") or PLOT_META.get(device_id, {})
+        owner = device.get("owner_user_id")
+        if owner is None and device_id in PLOT_META:
+            owner = BUILTIN_PLOT_OWNER_ID
+        item["owner_user_id"] = owner
+        item["owner_label"] = _owner_label(owner)
+        item["sensors"] = list_sensors_for_device(device_id)
         enriched.append(item)
-    return jsonify({"items": enriched, "count": len(enriched)})
+    return jsonify({"items": enriched, "count": len(enriched),
+                    "scope": "all" if allowed is None else "own"})
 
 
 @app.post("/api/v1/devices")
@@ -913,22 +1022,36 @@ def register_device_endpoint():
     if not device_id:
         # Web UI creates plots without choosing an id; generate one for them.
         device_id = f"sim-plot-{uuid4().hex[:8]}"
+    # Ownership: the creator owns the plot. Managers may create a plot on behalf
+    # of another account by passing owner_user_id explicitly.
+    owner_user_id = _current_user_id()
+    if _is_manager() and isinstance(body.get("owner_user_id"), int):
+        owner_user_id = body["owner_user_id"]
+    if device_id in PLOT_META:
+        owner_user_id = BUILTIN_PLOT_OWNER_ID
+    if not _is_manager() and owner_user_id != BUILTIN_PLOT_OWNER_ID and _plot_owner(device_id) not in (None, owner_user_id):
+        return _plot_access_error(device_id)
     with registry_lock:
         if device_id in registry:
+            if not _is_manager() and registry[device_id].get("owner_user_id") not in (owner_user_id, None):
+                return _plot_access_error(device_id)
+            registry[device_id]["owner_user_id"] = registry[device_id].get("owner_user_id") or owner_user_id
             if name or crop:
-                _save_custom_plot(device_id, name, crop)
+                _save_custom_plot(device_id, name, crop, registry[device_id]["owner_user_id"])
                 registry[device_id]["plot"] = {
                     "name": name or (registry[device_id].get("plot") or {}).get("name") or device_id,
                     "crop": crop or (registry[device_id].get("plot") or {}).get("crop") or "",
                 }
             return jsonify({"device_id": device_id, "status": "exists",
+                            "owner_user_id": registry[device_id]["owner_user_id"],
                             "plot": registry[device_id].get("plot", {})}), 200
         registry[device_id] = {"device_id": device_id, "telemetry": {}, "last_seen": None,
                                "pump": {"action": "stop", "running": False, "status": "standby",
                                         "timestamp": None, "command_id": None},
-                               "plot": {"name": name or device_id, "crop": crop or ""}}
+                               "plot": {"name": name or device_id, "crop": crop or ""},
+                               "owner_user_id": owner_user_id}
     if name or crop:
-        _save_custom_plot(device_id, name, crop)
+        _save_custom_plot(device_id, name, crop, owner_user_id)
     _deleted_plots.pop(device_id, None)  # re-created → clear tombstone
     # Seed the 5 default sensor types so the new plot is immediately usable.
     for sensor_type in sorted(SENSOR_TYPES.keys()):
@@ -943,13 +1066,15 @@ def register_device_endpoint():
         _publish_new_plot(device_id)
     except Exception:
         pass
-    return jsonify({"device_id": device_id, "status": "registered",
+    return jsonify({"device_id": device_id, "status": "registered", "owner_user_id": owner_user_id,
                     "plot": {"name": name or device_id, "crop": crop or ""}}), 201
 
 
 @app.post("/api/v1/devices/<device_id>/sensors")
 @require_auth("manage_sensors")
 def create_sensor_endpoint(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     body = request.get_json(silent=True) or {}
     sensor_type = (body.get("type") or "").strip()
     if not sensor_type:
@@ -975,6 +1100,11 @@ def create_sensor_endpoint(device_id):
 @app.patch("/api/v1/sensors/<sensor_id>")
 @require_auth("manage_sensors")
 def patch_sensor_endpoint(sensor_id):
+    sensor = get_sensor(sensor_id)
+    if sensor is None:
+        return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
+    if not _can_access_plot(sensor["device_id"]):
+        return _plot_access_error(sensor["device_id"])
     body = request.get_json(silent=True) or {}
     if "status" in body:
         try:
@@ -982,7 +1112,7 @@ def patch_sensor_endpoint(sensor_id):
         except ValueError:
             return jsonify({"error": "invalid_status",
                             "allowed": [SENSOR_STATUS_CONNECTED, SENSOR_STATUS_DISCONNECTED]}), 400
-    sensor = get_sensor(sensor_id)
+        sensor = get_sensor(sensor_id)
     if sensor is None:
         return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
     return jsonify(sensor)
@@ -994,6 +1124,8 @@ def delete_sensor_endpoint(sensor_id):
     sensor = get_sensor(sensor_id)
     if sensor is None:
         return jsonify({"error": "sensor_not_found", "sensor_id": sensor_id}), 404
+    if not _can_access_plot(sensor["device_id"]):
+        return _plot_access_error(sensor["device_id"])
     delete_sensor(sensor_id)
     return jsonify({"deleted": sensor_id, "device_id": sensor["device_id"], "type": sensor["type"]})
 
@@ -1009,6 +1141,8 @@ def delete_plot_endpoint(device_id):
     if device_id in PLOT_META:
         return jsonify({"error": "builtin_plot_cannot_be_deleted",
                         "message": "内置地块（苹果园/梨园/橘园）不可删除，仅可删除自定义地块"}), 403
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     with registry_lock:
         existed = device_id in registry
         registry.pop(device_id, None)
@@ -1035,8 +1169,10 @@ def delete_plot_endpoint(device_id):
 @require_auth()
 def list_sensors_endpoint(device_id):
     """Convenience read endpoint; /devices already embeds the sensor list per device."""
-    return jsonify({"device_id": device_id, "items": list_sensors_for_device(device_id),
-                    "count": len(list_sensors_for_device(device_id))})
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
+    items = list_sensors_for_device(device_id)
+    return jsonify({"device_id": device_id, "items": items, "count": len(items)})
 
 
 @app.get("/api/v1/system/mqtt-broker-presets")
@@ -1139,6 +1275,8 @@ def put_mqtt_broker_endpoint():
 @app.get("/api/v1/devices/<device_id>/telemetry/latest")
 @require_auth()
 def latest_telemetry(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     with registry_lock:
         device = registry.get(device_id)
         if device is None:
@@ -1149,12 +1287,16 @@ def latest_telemetry(device_id):
 @app.get("/api/v1/devices/<device_id>/pump")
 @require_auth()
 def pump_status(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     return jsonify(_pump_snapshot(device_id))
 
 
 @app.get("/api/v1/devices/<device_id>/telemetry/history")
 @require_auth()
 def telemetry_history(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     try:
         hours = min(max(float(request.args.get("hours", "10")), 0.25), 24)
     except ValueError:
@@ -1183,6 +1325,8 @@ def telemetry_history(device_id):
 @app.get("/api/v1/devices/<device_id>/alerts")
 @require_auth()
 def device_alerts(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     with registry_lock:
         device = registry.get(device_id)
         if device is None:
@@ -1206,6 +1350,9 @@ def alerts_logs():
     Optional filters: ?device_id= & ?level= & ?limit= (default 50, max 500)."""
     device_id = request.args.get("device_id") or None
     level = request.args.get("level") or None
+    allowed = _accessible_device_ids()
+    if device_id is not None and allowed is not None and device_id not in allowed:
+        return _plot_access_error(device_id)
     try:
         limit = min(max(int(request.args.get("limit", "50")), 1), 500)
     except ValueError:
@@ -1215,12 +1362,16 @@ def alerts_logs():
     except Exception as exc:
         LOGGER.warning("alert log read failed: %s", exc)
         return jsonify({"error": "alert_log_unavailable", "message": str(exc)}), 503
+    if allowed is not None:
+        items = [item for item in items if item.get("device_id") in allowed]
     return jsonify({"items": items, "count": len(items), "filters": {"device_id": device_id, "level": level}})
 
 
 @app.post("/api/v1/devices/<device_id>/pump")
 @require_auth("control_pump")
 def pump(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     action = (request.get_json(silent=True) or {}).get("action")
     if action not in {"start", "stop"}:
         return jsonify({"error": "action_must_be_start_or_stop"}), 400
@@ -1243,12 +1394,16 @@ def _get_irrigation_rule(device_id):
 @app.get("/api/v1/devices/<device_id>/irrigation-rules")
 @require_auth()
 def get_irrigation_rule(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     return jsonify(_get_irrigation_rule(device_id))
 
 
 @app.put("/api/v1/devices/<device_id>/irrigation-rules")
 @require_auth("manage_rules")
 def put_irrigation_rule(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return jsonify({"error": "json_object_required"}), 400
@@ -1284,6 +1439,8 @@ def put_irrigation_rule(device_id):
 @app.get("/api/v1/devices/<device_id>/irrigation-events")
 @require_auth()
 def irrigation_event_history(device_id):
+    if not _can_access_plot(device_id):
+        return _plot_access_error(device_id)
     try:
         limit = min(max(int(request.args.get("limit", "20")), 1), 200)
     except ValueError:
